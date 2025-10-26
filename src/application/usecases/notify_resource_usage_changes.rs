@@ -43,7 +43,9 @@ where
         Ok(())
     }
 
-    async fn fetch_current_usages(&self) -> Result<HashMap<String, ResourceUsage>, ApplicationError> {
+    async fn fetch_current_usages(
+        &self,
+    ) -> Result<HashMap<String, ResourceUsage>, ApplicationError> {
         let usages = self.repository.find_all().await?;
         Ok(usages
             .into_iter()
