@@ -5,7 +5,7 @@
 //! Repositoryは**永続化の詳細を隠蔽し、コレクションのような抽象を提供**するパターン。
 //!
 //! ## 依存性逆転の原則（DIP）
-//! ```
+//! ```text
 //! Domain層（ポート定義）
 //!    ↑
 //!    | 依存
@@ -19,7 +19,7 @@
 //! データベースではなく「コレクション」として扱う。
 //!
 //! ### 2. ドメイン駆動のクエリ
-//! ```rust
+//! ```rust,ignore
 //! // ✅ ドメインの言葉
 //! async fn find_overlapping(&self, time_period: &TimePeriod) -> Result<Vec<ResourceUsage>>;
 //!

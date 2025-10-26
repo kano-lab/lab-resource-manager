@@ -1,7 +1,15 @@
 [package]
-name = "kanolab-resource-manager"
+name = "lab-resource-manager"
 version = "0.1.0"
 edition = "2024"
+authors = ["Kinji Kawaguchi"]
+license = "MIT OR Apache-2.0"
+description = "GPU and room resource management system with Google Calendar and Slack integration"
+repository = "https://github.com/kano-lab/lab-resource-manager"
+keywords = ["resource-management", "calendar", "slack", "notification", "ddd"]
+categories = ["web-programming", "api-bindings", "command-line-utilities"]
+readme = "README.md"
+rust-version = "1.90"
 
 [dependencies]
 async-trait = "0.1.89"

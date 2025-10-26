@@ -1,5 +1,5 @@
 use clap::Parser;
-use kanolab_resource_manager::*;
+use lab_resource_manager::*;
 use std::time::Duration;
 
 #[derive(Parser, Debug)]
