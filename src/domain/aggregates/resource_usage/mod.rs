@@ -7,5 +7,6 @@
 //! `ResourceUsage`エンティティが集約ルートとして機能し、使用予定全体の整合性を保証します。
 pub mod entity;
 pub mod errors;
+pub mod factory;
 pub mod service;
 pub mod value_objects;
