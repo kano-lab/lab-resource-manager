@@ -28,7 +28,7 @@
 //!
 //! ### 2. Dependency Inversion Principle (DIP)
 //! Use Caseは抽象（ポート）に依存し、具象には依存しない。
-//! ```rust
+//! ```rust,ignore
 //! pub struct SomeUseCase<R, N>
 //! where
 //!     R: ResourceUsageRepository,  // trait（抽象）に依存
