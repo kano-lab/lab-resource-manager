@@ -1,0 +1,27 @@
+[[servers]]
+name = "Name1"
+calendar_id = "hoge@group.calendar.google.com"
+
+[[servers.devices]]
+id = 0
+model = "RTX PRO 6000 Blackwell Max-Q"
+
+[[servers.devices]]
+id = 1
+model = "RTX PRO 6000 Blackwell Max-Q"
+
+[[servers]]
+name = "Name2"
+calendar_id = "hoge@group.calendar.google.com"
+
+[[servers.devices]]
+id = 0
+model = "A100 80GB PCIe"
+
+[[servers.devices]]
+id = 1
+model = "A100 80GB PCIe"
+
+[[rooms]]
+name = "部屋1"
+calendar_id = "hoge@group.calendar.google.com"
