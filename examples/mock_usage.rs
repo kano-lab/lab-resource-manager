@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Mock repository and notification router initialized");
 
     // Create use case
-    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier);
+    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier).await?;
 
     // Poll once to demonstrate
     println!("📊 Polling for changes...\n");
