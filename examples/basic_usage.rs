@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Notification router initialized (using configured destinations)");
 
     // Create use case
-    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier);
+    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier).await?;
 
     // Run polling loop
     let interval = Duration::from_secs(60);

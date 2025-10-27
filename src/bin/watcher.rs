@@ -72,8 +72,19 @@ where
     R: ResourceUsageRepository,
     N: Notifier,
 {
-    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier);
     let interval = Duration::from_secs(interval_secs);
+
+    println!("🔍 初期状態を読み込んでいます...");
+    let usecase = match NotifyResourceUsageChangesUseCase::new(repository, notifier).await {
+        Ok(uc) => {
+            println!("✅ 初期状態の読み込みが完了しました");
+            uc
+        }
+        Err(e) => {
+            eprintln!("❌ 初期化エラー: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     println!("🔍 カレンダー監視を開始します（間隔: {:?}）", interval);
 
