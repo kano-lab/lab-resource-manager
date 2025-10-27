@@ -55,7 +55,7 @@
 //! let notifier = NotificationRouter::new(config);
 //!
 //! // Create and run use case
-//! let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier);
+//! let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier).await?;
 //! usecase.poll_once().await?;
 //! # Ok(())
 //! # }
