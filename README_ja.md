@@ -5,9 +5,10 @@
 ## Features
 
 - **Google Calendar統合**: GPUサーバーと部屋の予約をカレンダーで管理
-- **Slack通知**: 予約の作成・更新・削除をSlackに自動通知
+- **マルチ通知先対応**: リソースごとに異なる通知先を設定可能（Slack、Mockなど）
 - **柔軟なデバイス指定**: `0-2,5,7-9` 形式での複数デバイス指定に対応
 - **クリーンアーキテクチャ**: DDD + ヘキサゴナルアーキテクチャで設計
+- **Mock実装**: テスト用のモックリポジトリと通知機能を内蔵
 
 ## Architecture
 
@@ -35,10 +36,11 @@ cp .env.example .env
 `.env`を編集して以下を設定:
 
 ```env
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 GOOGLE_SERVICE_ACCOUNT_KEY=secrets/service-account.json
 CONFIG_PATH=config/resources.toml
 ```
+
+**注意**: 通知設定（Slack Webhook URLなど）は `config/resources.toml` でリソースごとに設定します。
 
 ### 2. Google Calendar API設定
 
@@ -57,25 +59,41 @@ CONFIG_PATH=config/resources.toml
 name = "Thalys"
 calendar_id = "your-calendar-id@group.calendar.google.com"
 
+# リソースごとに通知先を設定
+[[servers.notifications]]
+type = "slack"
+webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
+# オプション: テスト用にMock通知を追加
+# [[servers.notifications]]
+# type = "mock"
+
 [[servers.devices]]
 id = 0
 model = "A100 80GB PCIe"
 
+[[servers.devices]]
+id = 1
+model = "A100 80GB PCIe"
+
 [[rooms]]
-name = "Meeting Room A"
+name = "会議室A"
 calendar_id = "room-calendar-id@group.calendar.google.com"
+
+[[rooms.notifications]]
+type = "slack"
+webhook_url = "https://hooks.slack.com/services/YOUR/ROOM/WEBHOOK"
 ```
+
+各リソースに複数の通知先を設定でき、異なるリソースで異なるチャンネルに通知できます。
 
 ## Usage
 
 ### Watcher起動
 
 ```bash
-# デフォルト（Slack + Google Calendar）
+# デフォルト（Google Calendar + 設定済み通知先）
 cargo run --bin watcher
-
-# Mock notifier使用（標準出力）
-cargo run --bin watcher --notifier mock
 
 # Mock repository使用（テスト用）
 cargo run --bin watcher --repository mock
@@ -86,9 +104,10 @@ cargo run --bin watcher --interval 30
 
 ### オプション
 
-- `--notifier <slack|mock>`: 通知先の選択
 - `--repository <google_calendar|mock>`: データソースの選択
 - `--interval <秒>`: ポーリング間隔
+
+通知先は `config/resources.toml` でリソースごとに設定します。
 
 ## Development
 
@@ -132,7 +151,7 @@ cargo clippy
 
 ### 実装済み ✅
 
-- [x] Slackへの変更通知（作成・更新・削除）
+- [x] リソースベースの通知ルーティング
 
 ### Roadmap
 
