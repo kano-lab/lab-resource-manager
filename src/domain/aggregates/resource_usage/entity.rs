@@ -1,10 +1,11 @@
 use super::errors::ResourceUsageError;
 use super::value_objects::*;
+use crate::domain::aggregates::identity_link::value_objects::EmailAddress; // TODO: 別の集約ルートからのインポートを許容するのか検討
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResourceUsage {
     id: UsageId,
-    user: User,
+    owner_email: EmailAddress,
     time_period: TimePeriod,
     resources: Vec<Resource>,
     notes: Option<String>,
@@ -13,7 +14,7 @@ pub struct ResourceUsage {
 impl ResourceUsage {
     pub fn new(
         id: UsageId,
-        user: User,
+        owner_email: EmailAddress,
         time_period: TimePeriod,
         resources: Vec<Resource>,
         notes: Option<String>,
@@ -24,7 +25,7 @@ impl ResourceUsage {
 
         Ok(Self {
             id,
-            user,
+            owner_email,
             time_period,
             resources,
             notes,
@@ -35,8 +36,8 @@ impl ResourceUsage {
         &self.id
     }
 
-    pub fn user(&self) -> &User {
-        &self.user
+    pub fn owner_email(&self) -> &EmailAddress {
+        &self.owner_email
     }
 
     pub fn time_period(&self) -> &TimePeriod {
