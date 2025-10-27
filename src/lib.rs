@@ -116,7 +116,7 @@ pub mod prelude {
 
     // Infrastructure implementations
     pub use crate::infrastructure::{
-        config::{load_config, DeviceConfig, ResourceConfig, RoomConfig, ServerConfig},
+        config::{DeviceConfig, ResourceConfig, RoomConfig, ServerConfig, load_config},
         notifier::{mock::MockNotifier, slack::SlackNotifier},
         repositories::resource_usage::{
             google_calendar::GoogleCalendarUsageRepository, mock::MockUsageRepository,
