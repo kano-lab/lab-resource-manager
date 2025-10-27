@@ -8,13 +8,6 @@ use std::time::Duration;
 struct Args {
     #[arg(
         long,
-        default_value = "slack",
-        help = "Notifier implementation: slack or mock"
-    )]
-    notifier: String,
-
-    #[arg(
-        long,
         default_value = "google_calendar",
         help = "Repository implementation: google_calendar or mock"
     )]
@@ -36,7 +29,6 @@ async fn main() {
         .unwrap_or_else(|| std::env::current_dir().expect("❌ カレントディレクトリの取得に失敗"));
 
     println!("🚀 カレンダー監視サービスを起動します");
-    println!("📋 Notifier: {}", args.notifier);
     println!("📋 Repository: {}", args.repository);
     println!("📋 Interval: {}秒", args.interval);
 
@@ -45,58 +37,31 @@ async fn main() {
     let config = load_config(absolute_config_path.to_str().expect("❌ パスの変換に失敗"))
         .expect("❌ 設定ファイルの読み込みに失敗");
 
-    match (args.repository.as_str(), args.notifier.as_str()) {
-        ("google_calendar", "slack") => {
-            let service_account_key_path = std::env::var("GOOGLE_SERVICE_ACCOUNT_KEY")
-                .expect("❌ GOOGLE_SERVICE_ACCOUNT_KEY must be set");
-            let webhook_url =
-                std::env::var("SLACK_WEBHOOK_URL").expect("❌ SLACK_WEBHOOK_URL must be set");
-            let absolute_key_path = project_root.join(&service_account_key_path);
-
-            let repository = GoogleCalendarUsageRepository::new(
-                absolute_key_path.to_str().expect("❌ パスの変換に失敗"),
-                config,
-            )
-            .await
-            .expect("❌ Google Calendar接続に失敗");
-            let notifier = SlackNotifier::new(webhook_url);
-            run_watcher(repository, notifier, args.interval).await;
-        }
-        ("google_calendar", "mock") => {
+    match args.repository.as_str() {
+        "google_calendar" => {
             let service_account_key_path = std::env::var("GOOGLE_SERVICE_ACCOUNT_KEY")
                 .expect("❌ GOOGLE_SERVICE_ACCOUNT_KEY must be set");
             let absolute_key_path = project_root.join(&service_account_key_path);
 
             let repository = GoogleCalendarUsageRepository::new(
                 absolute_key_path.to_str().expect("❌ パスの変換に失敗"),
-                config,
+                config.clone(),
             )
             .await
             .expect("❌ Google Calendar接続に失敗");
-            let notifier = MockNotifier::new();
-            run_watcher(repository, notifier, args.interval).await;
-        }
-        ("mock", "slack") => {
-            let webhook_url =
-                std::env::var("SLACK_WEBHOOK_URL").expect("❌ SLACK_WEBHOOK_URL must be set");
 
-            let repository = MockUsageRepository::new();
-            let notifier = SlackNotifier::new(webhook_url);
+            let notifier = NotificationRouter::new(config);
             run_watcher(repository, notifier, args.interval).await;
         }
-        ("mock", "mock") => {
+        "mock" => {
             let repository = MockUsageRepository::new();
-            let notifier = MockNotifier::new();
+            let notifier = NotificationRouter::new(config);
             run_watcher(repository, notifier, args.interval).await;
         }
         _ => {
-            eprintln!(
-                "❌ Invalid combination: repository={}, notifier={}",
-                args.repository, args.notifier
-            );
+            eprintln!("❌ Invalid repository: {}", args.repository);
             eprintln!("Valid values:");
             eprintln!("  --repository: google_calendar, mock");
-            eprintln!("  --notifier: slack, mock");
             std::process::exit(1);
         }
     }
@@ -107,8 +72,19 @@ where
     R: ResourceUsageRepository,
     N: Notifier,
 {
-    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier);
     let interval = Duration::from_secs(interval_secs);
+
+    println!("🔍 初期状態を読み込んでいます...");
+    let usecase = match NotifyResourceUsageChangesUseCase::new(repository, notifier).await {
+        Ok(uc) => {
+            println!("✅ 初期状態の読み込みが完了しました");
+            uc
+        }
+        Err(e) => {
+            eprintln!("❌ 初期化エラー: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     println!("🔍 カレンダー監視を開始します（間隔: {:?}）", interval);
 

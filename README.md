@@ -11,7 +11,7 @@ GPU and room resource management system with Google Calendar and Slack integrati
 ## Features
 
 - **Google Calendar Integration**: Manage GPU server and room reservations via calendar
-- **Slack Notifications**: Automatically notify Slack of reservation create/update/delete events
+- **Multi-Destination Notifications**: Configure different notification destinations per resource (Slack, Mock, etc.)
 - **Flexible Device Specification**: Support for multi-device notation like `0-2,5,7-9`
 - **Clean Architecture**: Designed with DDD + Hexagonal Architecture
 - **Mock Implementations**: Built-in mock repository and notifier for testing
@@ -52,10 +52,11 @@ cp .env.example .env
 Edit `.env` to configure:
 
 ```env
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 GOOGLE_SERVICE_ACCOUNT_KEY=secrets/service-account.json
 CONFIG_PATH=config/resources.toml
 ```
+
+**Note**: Notification settings (Slack webhook URLs, etc.) are configured in `config/resources.toml` per resource.
 
 ### 2. Google Calendar API Setup
 
@@ -74,6 +75,15 @@ Define GPU servers and rooms in `config/resources.toml`:
 name = "Thalys"
 calendar_id = "your-calendar-id@group.calendar.google.com"
 
+# Configure notification destinations per resource
+[[servers.notifications]]
+type = "slack"
+webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
+# Optional: Add mock notifications for testing
+# [[servers.notifications]]
+# type = "mock"
+
 [[servers.devices]]
 id = 0
 model = "A100 80GB PCIe"
@@ -85,18 +95,21 @@ model = "A100 80GB PCIe"
 [[rooms]]
 name = "Meeting Room A"
 calendar_id = "room-calendar-id@group.calendar.google.com"
+
+[[rooms.notifications]]
+type = "slack"
+webhook_url = "https://hooks.slack.com/services/YOUR/ROOM/WEBHOOK"
 ```
+
+Each resource can have multiple notification destinations, and different resources can notify different channels.
 
 ## Usage
 
 ### Running the Watcher
 
 ```bash
-# Default (Slack + Google Calendar)
+# Default (Google Calendar + configured notifications)
 cargo run --bin watcher
-
-# Use mock notifier (stdout output)
-cargo run --bin watcher --notifier mock
 
 # Use mock repository (for testing)
 cargo run --bin watcher --repository mock
@@ -107,9 +120,10 @@ cargo run --bin watcher --interval 30
 
 ### CLI Options
 
-- `--notifier <slack|mock>`: Select notification destination
 - `--repository <google_calendar|mock>`: Select data source
 - `--interval <seconds>`: Set polling interval
+
+Notification destinations are configured per resource in `config/resources.toml`.
 
 ### Using as a Library
 
@@ -133,14 +147,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create repository and notifier
     let repository = GoogleCalendarUsageRepository::new(
         "secrets/service-account.json",
-        config,
+        config.clone(),
     ).await?;
-    let notifier = SlackNotifier::new(
-        "https://hooks.slack.com/...".to_string()
-    );
+
+    // NotificationRouter automatically handles all configured notification types
+    let notifier = NotificationRouter::new(config);
 
     // Create and run use case
-    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier);
+    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier).await?;
     usecase.poll_once().await?;
 
     Ok(())
@@ -197,7 +211,7 @@ The `ResourceFactory` in the domain layer handles parsing these specifications.
 
 ### Implemented ✅
 
-- [x] Slack notifications for changes (create/update/delete)
+- [x] Resource-based notification routing
 
 ### Roadmap
 

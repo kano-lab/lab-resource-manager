@@ -9,7 +9,8 @@
 //! ```
 
 use lab_resource_manager::{
-    GoogleCalendarUsageRepository, MockNotifier, NotifyResourceUsageChangesUseCase, load_config,
+    GoogleCalendarUsageRepository, NotificationRouter, NotifyResourceUsageChangesUseCase,
+    load_config,
 };
 use std::time::Duration;
 
@@ -43,17 +44,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let repository = GoogleCalendarUsageRepository::new(
         absolute_key_path.to_str().expect("Failed to convert path"),
-        config,
+        config.clone(),
     )
     .await?;
     println!("✅ Google Calendar repository initialized");
 
-    // Create notifier (using MockNotifier for this example)
-    let notifier = MockNotifier::new();
-    println!("✅ Mock notifier initialized (will print to stdout)");
+    // Create notification router (uses configured notification destinations)
+    let notifier = NotificationRouter::new(config);
+    println!("✅ Notification router initialized (using configured destinations)");
 
     // Create use case
-    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier);
+    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier).await?;
 
     // Run polling loop
     let interval = Duration::from_secs(60);

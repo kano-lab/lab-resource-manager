@@ -19,12 +19,17 @@ where
     R: ResourceUsageRepository,
     N: Notifier,
 {
-    pub fn new(repository: R, notifier: N) -> Self {
-        Self {
+    pub async fn new(repository: R, notifier: N) -> Result<Self, ApplicationError> {
+        let instance = Self {
             repository,
             notifier,
             previous_state: tokio::sync::Mutex::new(HashMap::new()),
-        }
+        };
+
+        let current_usages = instance.fetch_current_usages().await?;
+        *instance.previous_state.lock().await = current_usages;
+
+        Ok(instance)
     }
 
     pub async fn poll_once(&self) -> Result<(), ApplicationError> {
@@ -107,10 +112,7 @@ where
     }
 
     async fn notify_deleted(&self, usage: ResourceUsage) -> Result<(), ApplicationError> {
-        let event = NotificationEvent::ResourceUsageDeleted {
-            id: usage.id().clone(),
-            user: usage.user().clone(),
-        };
+        let event = NotificationEvent::ResourceUsageDeleted(usage);
         self.notifier.notify(event).await?;
         Ok(())
     }

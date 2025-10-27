@@ -8,21 +8,26 @@
 //! cargo run --example mock_usage
 //! ```
 
-use lab_resource_manager::{MockNotifier, MockUsageRepository, NotifyResourceUsageChangesUseCase};
+use lab_resource_manager::{
+    MockUsageRepository, NotificationRouter, NotifyResourceUsageChangesUseCase, load_config,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Starting resource usage watcher (mock example)");
     println!("This example uses mock implementations - no credentials required!\n");
 
-    // Create mock repository and notifier
-    let repository = MockUsageRepository::new();
-    let notifier = MockNotifier::new();
+    // Load configuration
+    let config = load_config("config/resources.toml")?;
 
-    println!("✅ Mock repository and notifier initialized");
+    // Create mock repository and notification router
+    let repository = MockUsageRepository::new();
+    let notifier = NotificationRouter::new(config);
+
+    println!("✅ Mock repository and notification router initialized");
 
     // Create use case
-    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier);
+    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier).await?;
 
     // Poll once to demonstrate
     println!("📊 Polling for changes...\n");
@@ -30,7 +35,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n✅ Example completed successfully!");
     println!("💡 Note: Mock repository returns empty results by default.");
-    println!("   To see actual notifications, add items to MockUsageRepository.");
+    println!(
+        "   To see actual notifications, configure mock notifications in config/resources.toml"
+    );
 
     Ok(())
 }
