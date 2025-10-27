@@ -37,7 +37,7 @@
 //! use lab_resource_manager::{
 //!     NotifyResourceUsageChangesUseCase,
 //!     GoogleCalendarUsageRepository,
-//!     SlackNotifier,
+//!     NotificationRouter,
 //!     load_config,
 //! };
 //!
@@ -48,9 +48,11 @@
 //! // Create repository and notifier
 //! let repository = GoogleCalendarUsageRepository::new(
 //!     "secrets/service-account.json",
-//!     config,
+//!     config.clone(),
 //! ).await?;
-//! let notifier = SlackNotifier::new("https://hooks.slack.com/...".to_string());
+//! // NotificationRouter automatically supports all configured notification types
+//! // (Slack, Mock, etc.) based on config/resources.toml
+//! let notifier = NotificationRouter::new(config);
 //!
 //! // Create and run use case
 //! let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier);
@@ -116,8 +118,11 @@ pub mod prelude {
 
     // Infrastructure implementations
     pub use crate::infrastructure::{
-        config::{load_config, DeviceConfig, ResourceConfig, RoomConfig, ServerConfig},
-        notifier::{mock::MockNotifier, slack::SlackNotifier},
+        config::{DeviceConfig, ResourceConfig, RoomConfig, ServerConfig, load_config},
+        notifier::{
+            router::NotificationRouter,
+            senders::{MockSender, SlackSender},
+        },
         repositories::resource_usage::{
             google_calendar::GoogleCalendarUsageRepository, mock::MockUsageRepository,
         },
@@ -132,7 +137,10 @@ pub use domain::ports::{
 };
 pub use infrastructure::{
     config::load_config,
-    notifier::{mock::MockNotifier, slack::SlackNotifier},
+    notifier::{
+        router::NotificationRouter,
+        senders::{MockSender, SlackSender},
+    },
     repositories::resource_usage::{
         google_calendar::GoogleCalendarUsageRepository, mock::MockUsageRepository,
     },

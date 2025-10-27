@@ -1,6 +1,14 @@
+use crate::domain::aggregates::resource_usage::value_objects::Resource;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
+
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Hash)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum NotificationConfig {
+    Slack { webhook_url: String },
+    Mock {},
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ResourceConfig {
@@ -13,6 +21,7 @@ pub struct ServerConfig {
     pub name: String,
     pub calendar_id: String,
     pub devices: Vec<DeviceConfig>,
+    pub notifications: Vec<NotificationConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -25,6 +34,7 @@ pub struct DeviceConfig {
 pub struct RoomConfig {
     pub name: String,
     pub calendar_id: String,
+    pub notifications: Vec<NotificationConfig>,
 }
 
 impl ResourceConfig {
@@ -37,6 +47,23 @@ impl ResourceConfig {
 
     pub fn get_server(&self, name: &str) -> Option<&ServerConfig> {
         self.servers.iter().find(|s| s.name == name)
+    }
+
+    pub fn get_notifications_for_resource(&self, resource: &Resource) -> Vec<NotificationConfig> {
+        match resource {
+            Resource::Gpu(gpu) => self
+                .servers
+                .iter()
+                .find(|s| s.name == gpu.server())
+                .map(|s| s.notifications.clone())
+                .unwrap_or_default(),
+            Resource::Room { name } => self
+                .rooms
+                .iter()
+                .find(|r| r.name == *name)
+                .map(|r| r.notifications.clone())
+                .unwrap_or_default(),
+        }
     }
 }
 

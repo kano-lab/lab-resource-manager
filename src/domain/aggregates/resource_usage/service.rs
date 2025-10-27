@@ -46,7 +46,10 @@ impl UsageConflictChecker {
     }
 }
 
-fn format_resource_item(item: &Resource) -> String {
+/// リソースを人間が読みやすい文字列にフォーマットする
+///
+/// 通知メッセージやエラーメッセージで使用するための純粋関数
+pub fn format_resource_item(item: &Resource) -> String {
     match item {
         Resource::Gpu(spec) => {
             format!(
@@ -58,4 +61,36 @@ fn format_resource_item(item: &Resource) -> String {
         }
         Resource::Room { name } => name.clone(),
     }
+}
+
+/// 複数のリソースを改行で区切り、インデントを付けて結合した文字列にフォーマットする
+///
+/// 通知メッセージやログ出力で使用するための純粋関数
+///
+/// # 出力例
+/// ```text
+///   - サーバー: Thalys, モデル: A100 80GB PCIe, デバイスID: 1
+///   - サーバー: Thalys, モデル: A100 80GB PCIe, デバイスID: 2
+/// ```
+pub fn format_resources(resources: &[Resource]) -> String {
+    if resources.is_empty() {
+        return String::new();
+    }
+
+    resources
+        .iter()
+        .map(|r| format!("  - {}", format_resource_item(r)))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// 時間期間を人間が読みやすい文字列にフォーマットする
+///
+/// "YYYY-MM-DD HH:MM - YYYY-MM-DD HH:MM" の形式で返す
+pub fn format_time_period(period: &super::value_objects::TimePeriod) -> String {
+    format!(
+        "{} - {}",
+        period.start().format("%Y-%m-%d %H:%M"),
+        period.end().format("%Y-%m-%d %H:%M")
+    )
 }
