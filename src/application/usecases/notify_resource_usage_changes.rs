@@ -107,10 +107,7 @@ where
     }
 
     async fn notify_deleted(&self, usage: ResourceUsage) -> Result<(), ApplicationError> {
-        let event = NotificationEvent::ResourceUsageDeleted {
-            id: usage.id().clone(),
-            user: usage.user().clone(),
-        };
+        let event = NotificationEvent::ResourceUsageDeleted(usage);
         self.notifier.notify(event).await?;
         Ok(())
     }
