@@ -1,6 +1,18 @@
+# リソース設定ファイル
+# このファイルをコピーして config/resources.toml として使用してください
+
 [[servers]]
 name = "Name1"
 calendar_id = "hoge@group.calendar.google.com"
+
+# 通知設定(複数設定可能)
+[[servers.notifications]]
+type = "slack"
+webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
+# テスト/開発用のMock通知
+# [[servers.notifications]]
+# type = "mock"
 
 [[servers.devices]]
 id = 0
@@ -9,11 +21,17 @@ model = "RTX PRO 6000 Blackwell Max-Q"
 [[servers.devices]]
 id = 1
 model = "RTX PRO 6000 Blackwell Max-Q"
+
+# ---
 
 [[servers]]
 name = "Name2"
 calendar_id = "hoge@group.calendar.google.com"
 
+[[servers.notifications]]
+type = "slack"
+webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
 [[servers.devices]]
 id = 0
 model = "A100 80GB PCIe"
@@ -22,6 +40,12 @@ model = "A100 80GB PCIe"
 id = 1
 model = "A100 80GB PCIe"
 
+# ---
+
 [[rooms]]
 name = "部屋1"
 calendar_id = "hoge@group.calendar.google.com"
+
+[[rooms.notifications]]
+type = "slack"
+webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
