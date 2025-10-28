@@ -1,9 +1,9 @@
-use crate::domain::common::EmailAddress;
 use crate::domain::aggregates::resource_usage::{
     entity::ResourceUsage,
     factory::ResourceFactory,
     value_objects::{Resource, TimePeriod, UsageId},
 };
+use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{RepositoryError, ResourceUsageRepository};
 use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;

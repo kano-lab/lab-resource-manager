@@ -1,8 +1,5 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::identity_link::{
-    entity::IdentityLink,
-    value_objects::SlackUserId,
-};
+use crate::domain::aggregates::identity_link::{entity::IdentityLink, value_objects::SlackUserId};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::IdentityLinkRepository;
 use crate::domain::ports::resource_collection_access::ResourceCollectionAccessService;
