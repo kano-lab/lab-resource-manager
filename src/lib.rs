@@ -86,6 +86,7 @@
 pub mod application;
 pub mod domain;
 pub mod infrastructure;
+pub mod interface;
 
 /// Commonly used types for building resource management systems
 ///
@@ -107,7 +108,7 @@ pub mod prelude {
         entity::ResourceUsage,
         errors::ResourceUsageError,
         factory::{ResourceFactory, ResourceFactoryError},
-        value_objects::{Gpu, Resource, TimePeriod, UsageId, User, UserId},
+        value_objects::{Gpu, Resource, TimePeriod, UsageId},
     };
 
     // Ports (traits)

@@ -19,6 +19,11 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
+    // rustls暗号化プロバイダの初期化 https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
+
     let args = Args::parse();
     // .envファイルを読み込み、そのパスからプロジェクトルートを特定
     let dotenv_path = dotenv::dotenv().ok();
