@@ -33,7 +33,7 @@ impl NotificationRouter {
 
         let resources = format_resources(usage.resources());
         let time_period = format_time_period(usage.time_period());
-        let user_name = usage.user().name();
+        let user_display = usage.owner_email().as_str();
 
         match event {
             NotificationEvent::ResourceUsageCreated(_) => {
@@ -44,19 +44,19 @@ impl NotificationRouter {
 
                 format!(
                     "✨ [新規使用予定] {}\n⏰ 期間: {}\n🖥️ 資源:\n{}{}",
-                    user_name, time_period, resources, notes
+                    user_display, time_period, resources, notes
                 )
             }
             NotificationEvent::ResourceUsageUpdated(_) => {
                 format!(
                     "♻️ [使用予定更新] {}\n⏰ 期間: {}\n🖥️ 資源:\n{}",
-                    user_name, time_period, resources
+                    user_display, time_period, resources
                 )
             }
             NotificationEvent::ResourceUsageDeleted(_) => {
                 format!(
                     "🗑️ [使用予定削除] {}\n⏰ 期間: {}\n🖥️ 資源:\n{}",
-                    user_name, time_period, resources
+                    user_display, time_period, resources
                 )
             }
         }
