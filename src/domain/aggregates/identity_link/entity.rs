@@ -1,5 +1,6 @@
 use super::errors::IdentityLinkError;
-use super::value_objects::{EmailAddress, SlackUserId};
+use super::value_objects::SlackUserId;
+use crate::domain::common::EmailAddress;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 

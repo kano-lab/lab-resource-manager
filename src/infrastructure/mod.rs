@@ -14,3 +14,4 @@
 pub mod config;
 pub mod notifier;
 pub mod repositories;
+pub mod resource_collection_access;

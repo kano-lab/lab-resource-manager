@@ -1,6 +1,6 @@
 use super::errors::ResourceUsageError;
 use super::value_objects::*;
-use crate::domain::aggregates::identity_link::value_objects::EmailAddress; // TODO: 別の集約ルートからのインポートを許容するのか検討
+use crate::domain::common::EmailAddress;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResourceUsage {

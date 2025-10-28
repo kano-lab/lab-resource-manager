@@ -1,7 +1,8 @@
+use crate::domain::common::EmailAddress;
 use crate::domain::aggregates::resource_usage::{
     entity::ResourceUsage,
     factory::ResourceFactory,
-    value_objects::{Resource, TimePeriod, UsageId, User, UserId},
+    value_objects::{Resource, TimePeriod, UsageId},
 };
 use crate::domain::ports::repositories::{RepositoryError, ResourceUsageRepository};
 use crate::infrastructure::config::ResourceConfig;
@@ -125,14 +126,10 @@ impl GoogleCalendarUsageRepository {
             .map_err(|e| RepositoryError::Unknown(format!("ResourceUsage作成エラー: {}", e)))
     }
 
-    /// メールアドレスからUserを作成
-    fn parse_user(&self, email: &str) -> Result<User, RepositoryError> {
-        let user_id = email.split('@').next().unwrap_or(email);
-
-        Ok(User::new(
-            UserId::new(user_id.to_string()),
-            user_id.to_string(),
-        ))
+    /// メールアドレスからEmailAddressを作成
+    fn parse_user(&self, email: &str) -> Result<EmailAddress, RepositoryError> {
+        EmailAddress::new(email.to_string())
+            .map_err(|e| RepositoryError::Unknown(format!("Invalid email: {}", e)))
     }
 
     /// タイトルから資源をパース

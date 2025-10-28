@@ -1,4 +1,4 @@
-use crate::domain::aggregates::identity_link::value_objects::EmailAddress;
+use crate::domain::common::EmailAddress;
 use crate::domain::ports::resource_collection_access::{
     ResourceCollectionAccessError, ResourceCollectionAccessService,
 };

@@ -1,7 +1,8 @@
 use crate::domain::aggregates::identity_link::{
     entity::IdentityLink,
-    value_objects::{EmailAddress, SlackUserId},
+    value_objects::SlackUserId,
 };
+use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::RepositoryError;
 use async_trait::async_trait;
 

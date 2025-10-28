@@ -1,4 +1,4 @@
-use crate::domain::aggregates::identity_link::value_objects::EmailAddress;
+use crate::domain::common::EmailAddress;
 use async_trait::async_trait;
 use std::fmt;
 
