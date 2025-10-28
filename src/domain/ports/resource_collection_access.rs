@@ -20,11 +20,11 @@ pub enum ResourceCollectionAccessError {
 impl fmt::Display for ResourceCollectionAccessError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::AuthenticationError(msg) => write!(f, "Authentication error: {}", msg),
-            Self::ApiError(msg) => write!(f, "API error: {}", msg),
-            Self::CollectionNotFound(id) => write!(f, "Resource collection not found: {}", id),
-            Self::PermissionDenied(msg) => write!(f, "Permission denied: {}", msg),
-            Self::Unknown(msg) => write!(f, "Unknown error: {}", msg),
+            Self::AuthenticationError(msg) => write!(f, "認証エラー: {}", msg),
+            Self::ApiError(msg) => write!(f, "APIエラー: {}", msg),
+            Self::CollectionNotFound(id) => write!(f, "リソースコレクションが見つかりません: {}", id),
+            Self::PermissionDenied(msg) => write!(f, "権限が拒否されました: {}", msg),
+            Self::Unknown(msg) => write!(f, "不明なエラー: {}", msg),
         }
     }
 }

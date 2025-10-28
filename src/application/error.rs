@@ -27,15 +27,15 @@ pub enum ApplicationError {
 impl fmt::Display for ApplicationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ApplicationError::Repository(e) => write!(f, "Repository error: {}", e),
-            ApplicationError::Notification(e) => write!(f, "Notification error: {}", e),
+            ApplicationError::Repository(e) => write!(f, "リポジトリエラー: {}", e),
+            ApplicationError::Notification(e) => write!(f, "通知エラー: {}", e),
             ApplicationError::ResourceCollectionAccess(e) => {
-                write!(f, "Resource collection access error: {}", e)
+                write!(f, "リソースコレクションアクセスエラー: {}", e)
             }
-            ApplicationError::ResourceUsage(e) => write!(f, "Resource usage error: {}", e),
-            ApplicationError::IdentityLink(e) => write!(f, "Identity link error: {}", e),
+            ApplicationError::ResourceUsage(e) => write!(f, "リソース使用エラー: {}", e),
+            ApplicationError::IdentityLink(e) => write!(f, "ID紐付けエラー: {}", e),
             ApplicationError::EmailAlreadyLinkedToAnotherUser { email } => {
-                write!(f, "Email {} is already linked to another Slack user", email)
+                write!(f, "メールアドレス {} は既に別のSlackユーザーに紐付けられています", email)
             }
         }
     }

@@ -13,10 +13,10 @@ impl fmt::Display for IdentityLinkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidEmailFormat(email) => {
-                write!(f, "Invalid email format: {}", email)
+                write!(f, "無効なメールアドレス形式: {}", email)
             }
             Self::AlreadyLinked => {
-                write!(f, "This identity is already linked to Slack")
+                write!(f, "このIDは既にSlackと紐付けられています")
             }
         }
     }

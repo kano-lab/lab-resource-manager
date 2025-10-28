@@ -10,7 +10,7 @@ pub enum EmailAddressError {
 impl fmt::Display for EmailAddressError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingAtSign => write!(f, "Invalid email format: missing '@'"),
+            Self::MissingAtSign => write!(f, "無効なメールアドレス形式: '@'が含まれていません"),
         }
     }
 }

@@ -73,7 +73,7 @@ impl ResourceCollectionAccessService for GoogleCalendarAccessService {
             .await
             .map_err(|e| {
                 ResourceCollectionAccessError::ApiError(format!(
-                    "Failed to share calendar '{}' with {}: {}",
+                    "カレンダー '{}' を {} と共有できませんでした: {}",
                     calendar_id,
                     email.as_str(),
                     e
@@ -88,10 +88,10 @@ impl ResourceCollectionAccessService for GoogleCalendarAccessService {
         calendar_id: &str,
         email: &EmailAddress,
     ) -> Result<(), ResourceCollectionAccessError> {
-        // First, find the ACL rule ID for this email
+        // まず、このメールアドレスに対応するACLルールIDを検索
         let acl_list = self.hub.acl().list(calendar_id).doit().await.map_err(|e| {
             ResourceCollectionAccessError::ApiError(format!(
-                "Failed to list ACL for calendar '{}': {}",
+                "カレンダー '{}' のACL一覧取得に失敗: {}",
                 calendar_id, e
             ))
         })?;
@@ -111,13 +111,13 @@ impl ResourceCollectionAccessService for GoogleCalendarAccessService {
             .and_then(|rule| rule.id)
             .ok_or_else(|| {
                 ResourceCollectionAccessError::Unknown(format!(
-                    "No ACL rule found for {} on calendar '{}'",
-                    email.as_str(),
-                    calendar_id
+                    "カレンダー '{}' で {} に対するACLルールが見つかりませんでした",
+                    calendar_id,
+                    email.as_str()
                 ))
             })?;
 
-        // Delete the ACL rule
+        // ACLルールを削除
         self.hub
             .acl()
             .delete(calendar_id, &rule_id)
@@ -125,9 +125,9 @@ impl ResourceCollectionAccessService for GoogleCalendarAccessService {
             .await
             .map_err(|e| {
                 ResourceCollectionAccessError::ApiError(format!(
-                    "Failed to revoke access for {} on calendar '{}': {}",
-                    email.as_str(),
+                    "カレンダー '{}' での {} のアクセス権削除に失敗: {}",
                     calendar_id,
+                    email.as_str(),
                     e
                 ))
             })?;

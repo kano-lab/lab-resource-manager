@@ -45,7 +45,7 @@ impl IdentityLinkDto {
 
     fn to_entity(&self) -> Result<IdentityLink, RepositoryError> {
         let email = EmailAddress::new(self.email.clone())
-            .map_err(|e| RepositoryError::Unknown(format!("Invalid email: {}", e)))?;
+            .map_err(|e| RepositoryError::Unknown(format!("無効なメールアドレス: {}", e)))?;
 
         let slack_user_id = self
             .slack_user_id
@@ -74,10 +74,10 @@ impl JsonFileIdentityLinkRepository {
 
         let content = tokio::fs::read_to_string(&self.file_path)
             .await
-            .map_err(|e| RepositoryError::Unknown(format!("Failed to read file: {}", e)))?;
+            .map_err(|e| RepositoryError::Unknown(format!("ファイルの読み込みに失敗: {}", e)))?;
 
         let data: HashMap<String, IdentityLinkDto> = serde_json::from_str(&content)
-            .map_err(|e| RepositoryError::Unknown(format!("Failed to parse JSON: {}", e)))?;
+            .map_err(|e| RepositoryError::Unknown(format!("JSONのパースに失敗: {}", e)))?;
 
         let mut cache = self.cache.write().await;
         *cache = data;
@@ -89,18 +89,18 @@ impl JsonFileIdentityLinkRepository {
         let cache = self.cache.read().await;
 
         let content = serde_json::to_string_pretty(&*cache)
-            .map_err(|e| RepositoryError::Unknown(format!("Failed to serialize JSON: {}", e)))?;
+            .map_err(|e| RepositoryError::Unknown(format!("JSONのシリアライズに失敗: {}", e)))?;
 
-        // Create parent directory if it doesn't exist
+        // 親ディレクトリが存在しない場合は作成
         if let Some(parent) = self.file_path.parent() {
             tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                RepositoryError::Unknown(format!("Failed to create directory: {}", e))
+                RepositoryError::Unknown(format!("ディレクトリの作成に失敗: {}", e))
             })?;
         }
 
         tokio::fs::write(&self.file_path, content)
             .await
-            .map_err(|e| RepositoryError::Unknown(format!("Failed to write file: {}", e)))?;
+            .map_err(|e| RepositoryError::Unknown(format!("ファイルの書き込みに失敗: {}", e)))?;
 
         Ok(())
     }
