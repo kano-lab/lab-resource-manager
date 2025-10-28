@@ -35,7 +35,11 @@ impl fmt::Display for ApplicationError {
             ApplicationError::ResourceUsage(e) => write!(f, "リソース使用エラー: {}", e),
             ApplicationError::IdentityLink(e) => write!(f, "ID紐付けエラー: {}", e),
             ApplicationError::EmailAlreadyLinkedToAnotherUser { email } => {
-                write!(f, "メールアドレス {} は既に別のSlackユーザーに紐付けられています", email)
+                write!(
+                    f,
+                    "メールアドレス {} は既に別のSlackユーザーに紐付けられています",
+                    email
+                )
             }
         }
     }

@@ -22,7 +22,9 @@ impl fmt::Display for ResourceCollectionAccessError {
         match self {
             Self::AuthenticationError(msg) => write!(f, "認証エラー: {}", msg),
             Self::ApiError(msg) => write!(f, "APIエラー: {}", msg),
-            Self::CollectionNotFound(id) => write!(f, "リソースコレクションが見つかりません: {}", id),
+            Self::CollectionNotFound(id) => {
+                write!(f, "リソースコレクションが見つかりません: {}", id)
+            }
             Self::PermissionDenied(msg) => write!(f, "権限が拒否されました: {}", msg),
             Self::Unknown(msg) => write!(f, "不明なエラー: {}", msg),
         }
