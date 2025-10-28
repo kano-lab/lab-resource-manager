@@ -54,6 +54,37 @@ impl IdentityLink {
         }
     }
 
+    /// 永続化層からの復元
+    ///
+    /// **Repository実装専用**。保存されていた状態をそのまま復元する。
+    /// ビジネスロジックは適用されない（時刻は指定された値がそのまま使われる）。
+    ///
+    /// 通常のビジネスロジックでEntityを生成する場合は、
+    /// [`create_from_email`](Self::create_from_email) または
+    /// [`create_with_slack`](Self::create_with_slack) を使用すること。
+    ///
+    /// # 引数
+    /// * `email` - メールアドレス
+    /// * `slack_user_id` - Slackユーザーid（Noneの場合はUnlinked状態）
+    /// * `created_at` - 作成日時
+    /// * `slack_linked_at` - Slack紐付け日時（Linkedの場合は必須）
+    pub(crate) fn reconstitute(
+        email: EmailAddress,
+        slack_user_id: Option<SlackUserId>,
+        created_at: DateTime<Utc>,
+        slack_linked_at: Option<DateTime<Utc>>,
+    ) -> Self {
+        match (slack_user_id, slack_linked_at) {
+            (Some(sid), Some(sat)) => Self::Linked {
+                email,
+                slack_user_id: sid,
+                created_at,
+                slack_linked_at: sat,
+            },
+            _ => Self::Unlinked { email, created_at },
+        }
+    }
+
     /// Slackユーザーを紐付け（状態遷移）
     ///
     /// Unlinked → Linked への状態遷移を行う。
