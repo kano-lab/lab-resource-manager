@@ -85,9 +85,28 @@ impl SlackCommandHandler {
         }
 
         let grant_access_usecase = self.grant_access_usecase.clone();
-        let target_slack_user_id = parts[0]
+
+        // Slackメンション形式のバリデーション
+        let slack_mention = parts[0].trim();
+        if !slack_mention.starts_with("<@") || !slack_mention.ends_with(">") {
+            return Ok(SlackCommandEventResponse::new(
+                SlackMessageContent::new()
+                    .with_text("❌ Slackユーザーの形式が不正です。`<@USER_ID>` の形式で指定してください。".to_string()),
+            ));
+        }
+
+        let target_slack_user_id = slack_mention
             .trim_matches(|c| c == '<' || c == '>' || c == '@')
             .to_string();
+
+        // ユーザーIDが空でないことを確認
+        if target_slack_user_id.is_empty() {
+            return Ok(SlackCommandEventResponse::new(
+                SlackMessageContent::new()
+                    .with_text("❌ SlackユーザーIDが空です。".to_string()),
+            ));
+        }
+
         let email_str = parts[1].to_string();
 
         self.execute_with_background_response(response_url, || async move {
