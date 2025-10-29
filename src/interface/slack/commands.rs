@@ -3,18 +3,29 @@ use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
 use slack_morphism::prelude::*;
 use std::sync::Arc;
+use tokio_util::task::TaskTracker;
 use tracing::{error, info};
 
 /// Slackコマンドハンドラ
 pub struct SlackCommandHandler {
     grant_access_usecase: Arc<GrantUserResourceAccessUseCase>,
+    task_tracker: TaskTracker,
 }
 
 impl SlackCommandHandler {
     pub fn new(grant_access_usecase: Arc<GrantUserResourceAccessUseCase>) -> Self {
         Self {
             grant_access_usecase,
+            task_tracker: TaskTracker::new(),
         }
+    }
+
+    /// バックグラウンドタスクの完了を待機
+    ///
+    /// シャットダウン時に呼び出して、全てのバックグラウンドタスクの完了を待つ
+    pub async fn shutdown(&self) {
+        self.task_tracker.close();
+        self.task_tracker.wait().await;
     }
 
     /// Slashコマンドをルーティング
@@ -130,6 +141,8 @@ impl SlackCommandHandler {
     }
 
     /// バックグラウンドで処理を実行し、結果をSlackに送信する共通ヘルパー
+    ///
+    /// TaskTrackerを使用してタスクを追跡し、シャットダウン時のグレースフル終了を可能にする
     async fn execute_with_background_response<F, Fut>(
         &self,
         response_url: SlackResponseUrl,
@@ -139,7 +152,7 @@ impl SlackCommandHandler {
         F: FnOnce() -> Fut + Send + 'static,
         Fut: std::future::Future<Output = Result<String, String>> + Send + 'static,
     {
-        tokio::spawn(async move {
+        self.task_tracker.spawn(async move {
             let message = match operation().await {
                 Ok(msg) => msg,
                 Err(err) => err,
