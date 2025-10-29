@@ -124,8 +124,11 @@ pub mod prelude {
             router::NotificationRouter,
             senders::{MockSender, SlackSender},
         },
-        repositories::resource_usage::{
-            google_calendar::GoogleCalendarUsageRepository, mock::MockUsageRepository,
+        repositories::{
+            identity_link::JsonFileIdentityLinkRepository,
+            resource_usage::{
+                google_calendar::GoogleCalendarUsageRepository, mock::MockUsageRepository,
+            },
         },
     };
 }
@@ -142,7 +145,10 @@ pub use infrastructure::{
         router::NotificationRouter,
         senders::{MockSender, SlackSender},
     },
-    repositories::resource_usage::{
-        google_calendar::GoogleCalendarUsageRepository, mock::MockUsageRepository,
+    repositories::{
+        identity_link::JsonFileIdentityLinkRepository,
+        resource_usage::{
+            google_calendar::GoogleCalendarUsageRepository, mock::MockUsageRepository,
+        },
     },
 };
