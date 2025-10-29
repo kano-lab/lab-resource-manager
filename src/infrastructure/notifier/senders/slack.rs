@@ -10,6 +10,12 @@ pub struct SlackSender {
     client: Client,
 }
 
+impl Default for SlackSender {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SlackSender {
     pub fn new() -> Self {
         Self {

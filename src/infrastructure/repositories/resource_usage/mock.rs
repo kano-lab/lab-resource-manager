@@ -14,6 +14,12 @@ pub struct MockUsageRepository {
     storage: Arc<Mutex<HashMap<String, ResourceUsage>>>,
 }
 
+impl Default for MockUsageRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockUsageRepository {
     pub fn new() -> Self {
         Self {
