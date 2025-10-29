@@ -13,6 +13,8 @@ pub enum ResourceCollectionAccessError {
     CollectionNotFound(String),
     /// 権限エラー
     PermissionDenied(String),
+    /// 既にアクセス権が付与されている
+    AlreadyGranted(String),
     /// その他のエラー
     Unknown(String),
 }
@@ -26,6 +28,7 @@ impl fmt::Display for ResourceCollectionAccessError {
                 write!(f, "リソースコレクションが見つかりません: {}", id)
             }
             Self::PermissionDenied(msg) => write!(f, "権限が拒否されました: {}", msg),
+            Self::AlreadyGranted(msg) => write!(f, "既にアクセス権が付与されています: {}", msg),
             Self::Unknown(msg) => write!(f, "不明なエラー: {}", msg),
         }
     }

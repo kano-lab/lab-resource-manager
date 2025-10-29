@@ -55,6 +55,33 @@ impl ResourceCollectionAccessService for GoogleCalendarAccessService {
         calendar_id: &str,
         email: &EmailAddress,
     ) -> Result<(), ResourceCollectionAccessError> {
+        // まず既存のACLをチェック
+        let acl_list = self.hub.acl().list(calendar_id).doit().await.map_err(|e| {
+            ResourceCollectionAccessError::ApiError(format!(
+                "カレンダー '{}' のACL一覧取得に失敗: {}",
+                calendar_id, e
+            ))
+        })?;
+
+        // 既にアクセス権があるかチェック
+        if let Some(items) = acl_list.1.items {
+            if items.iter().any(|rule| {
+                rule.scope
+                    .as_ref()
+                    .and_then(|scope| scope.value.as_ref())
+                    .map(|value| value == email.as_str())
+                    .unwrap_or(false)
+            }) {
+                // 既にアクセス権がある場合はエラーを返す
+                return Err(ResourceCollectionAccessError::AlreadyGranted(format!(
+                    "カレンダー '{}' に {} は既にアクセス権を持っています",
+                    calendar_id,
+                    email.as_str()
+                )));
+            }
+        }
+
+        // 既存のアクセス権がない場合のみ追加
         let scope = AclRuleScope {
             type_: Some("user".to_string()),
             value: Some(email.as_str().to_string()),
