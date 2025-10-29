@@ -23,10 +23,6 @@ pub enum ApplicationError {
         email: String,
         external_system: String,
     },
-    /// 一部のリソースコレクションへのアクセス権付与に失敗
-    PartialAccessGrantFailure {
-        failed: Vec<(String, ResourceCollectionAccessError)>,
-    },
 }
 
 impl fmt::Display for ApplicationError {
@@ -46,20 +42,6 @@ impl fmt::Display for ApplicationError {
                     email, external_system
                 )
             }
-            ApplicationError::PartialAccessGrantFailure { failed } => {
-                write!(
-                    f,
-                    "以下の{}個のリソースコレクションへのアクセス権付与に失敗しました: ",
-                    failed.len()
-                )?;
-                for (i, (collection_id, error)) in failed.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{} ({})", collection_id, error)?;
-                }
-                Ok(())
-            }
         }
     }
 }
@@ -73,7 +55,6 @@ impl std::error::Error for ApplicationError {
             ApplicationError::ResourceUsage(e) => Some(e),
             ApplicationError::IdentityLink(e) => Some(e),
             ApplicationError::ExternalSystemAlreadyLinked { .. } => None,
-            ApplicationError::PartialAccessGrantFailure { .. } => None,
         }
     }
 }

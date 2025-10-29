@@ -83,8 +83,6 @@ impl GrantUserResourceAccessUseCase {
         &self,
         email: &EmailAddress,
     ) -> Result<(), ApplicationError> {
-        let mut failed_collections = Vec::new();
-
         for collection_id in &self.collection_ids {
             match self
                 .collection_access
@@ -99,23 +97,15 @@ impl GrantUserResourceAccessUseCase {
                     continue;
                 }
                 Err(e) => {
-                    // その他のエラーは記録して処理を継続
+                    // その他のエラーは警告を出すが処理は継続（ベストエフォート）
                     tracing::warn!(
                         "Failed to grant access to collection '{}' for {}: {}",
                         collection_id,
                         email.as_str(),
                         e
                     );
-                    failed_collections.push((collection_id.clone(), e));
                 }
             }
-        }
-
-        // 失敗したコレクションがある場合はエラーを返す
-        if !failed_collections.is_empty() {
-            return Err(ApplicationError::PartialAccessGrantFailure {
-                failed: failed_collections,
-            });
         }
 
         Ok(())
