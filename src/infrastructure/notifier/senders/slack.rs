@@ -24,8 +24,7 @@ impl SlackSender {
 
         // IdentityLinkがあり、Slack IDが取得できる場合のみメンション化
         if let Some(identity) = context.identity_link {
-            if let Some(slack_identity) = identity.get_identity_for_system(&ExternalSystem::Slack)
-            {
+            if let Some(slack_identity) = identity.get_identity_for_system(&ExternalSystem::Slack) {
                 // メールアドレスをSlackメンション形式に置き換え
                 let email = context.user_email.as_str();
                 return message.replace(email, &format!("<@{}>", slack_identity.user_id()));

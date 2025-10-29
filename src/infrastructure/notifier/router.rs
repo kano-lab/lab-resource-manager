@@ -7,8 +7,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::senders::{
-    sender::{NotificationContext, Sender},
     MockSender, SlackSender,
+    sender::{NotificationContext, Sender},
 };
 
 /// 複数の通知手段をオーケストレートし、リソースに基づいて適切な通知先にルーティングする
@@ -115,9 +115,7 @@ impl NotificationRouter {
 
         match config {
             NotificationConfig::Slack { webhook_url } => {
-                self.slack_sender
-                    .send(webhook_url.as_str(), context)
-                    .await
+                self.slack_sender.send(webhook_url.as_str(), context).await
             }
             NotificationConfig::Mock {} => self.mock_sender.send(&(), context).await,
         }
