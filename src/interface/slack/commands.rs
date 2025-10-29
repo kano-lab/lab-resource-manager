@@ -10,6 +10,7 @@ use tracing::{error, info};
 pub struct SlackCommandHandler {
     grant_access_usecase: Arc<GrantUserResourceAccessUseCase>,
     task_tracker: TaskTracker,
+    http_client: reqwest::Client,
 }
 
 impl SlackCommandHandler {
@@ -17,6 +18,7 @@ impl SlackCommandHandler {
         Self {
             grant_access_usecase,
             task_tracker: TaskTracker::new(),
+            http_client: reqwest::Client::new(),
         }
     }
 
@@ -152,13 +154,14 @@ impl SlackCommandHandler {
         F: FnOnce() -> Fut + Send + 'static,
         Fut: std::future::Future<Output = Result<String, String>> + Send + 'static,
     {
+        let http_client = self.http_client.clone();
         self.task_tracker.spawn(async move {
             let message = match operation().await {
                 Ok(msg) => msg,
                 Err(err) => err,
             };
 
-            Self::send_followup_message(&response_url, message).await;
+            Self::send_followup_message_static(&http_client, &response_url, message).await;
         });
 
         Ok(SlackCommandEventResponse::new(
@@ -167,14 +170,19 @@ impl SlackCommandHandler {
     }
 
     /// Slackにフォローアップメッセージを送信
-    async fn send_followup_message(response_url: &SlackResponseUrl, message: String) {
+    ///
+    /// バックグラウンドタスクから呼び出すための静的メソッド
+    async fn send_followup_message_static(
+        http_client: &reqwest::Client,
+        response_url: &SlackResponseUrl,
+        message: String,
+    ) {
         let payload = serde_json::json!({
             "text": message,
             "response_type": "in_channel"
         });
 
-        let client = reqwest::Client::new();
-        match client
+        match http_client
             .post(response_url.0.as_str())
             .json(&payload)
             .send()
