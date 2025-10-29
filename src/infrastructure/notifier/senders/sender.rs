@@ -1,12 +1,10 @@
 use crate::domain::aggregates::identity_link::entity::IdentityLink;
-use crate::domain::common::EmailAddress;
-use crate::domain::ports::notifier::NotificationError;
+use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
 use async_trait::async_trait;
 
 /// 通知送信に必要なコンテキスト情報
 pub struct NotificationContext<'a> {
-    pub message: &'a str,
-    pub user_email: &'a EmailAddress,
+    pub event: &'a NotificationEvent,
     pub identity_link: Option<&'a IdentityLink>,
 }
 
@@ -23,9 +21,11 @@ pub trait Sender: Send + Sync {
 
     /// 指定された設定を使ってメッセージを送信
     ///
+    /// 各Senderは受け取ったイベントを自身のフォーマットでメッセージ化し、送信する
+    ///
     /// # Arguments
     /// * `config` - 送信先の設定
-    /// * `context` - 送信コンテキスト（メッセージ、ユーザー情報等）
+    /// * `context` - 送信コンテキスト（イベント、ユーザー識別情報等）
     async fn send(
         &self,
         config: &Self::Config,

@@ -1,4 +1,3 @@
-use crate::domain::aggregates::resource_usage::service::{format_resources, format_time_period};
 use crate::domain::ports::notifier::{NotificationError, NotificationEvent, Notifier};
 use crate::domain::ports::repositories::IdentityLinkRepository;
 use crate::infrastructure::config::{NotificationConfig, ResourceConfig};
@@ -32,44 +31,6 @@ impl NotificationRouter {
         }
     }
 
-    fn format_message(&self, event: &NotificationEvent) -> String {
-        let usage = match event {
-            NotificationEvent::ResourceUsageCreated(u) => u,
-            NotificationEvent::ResourceUsageUpdated(u) => u,
-            NotificationEvent::ResourceUsageDeleted(u) => u,
-        };
-
-        let resources = format_resources(usage.resources());
-        let time_period = format_time_period(usage.time_period());
-        let user_display = usage.owner_email().as_str();
-
-        match event {
-            NotificationEvent::ResourceUsageCreated(_) => {
-                let notes = usage
-                    .notes()
-                    .map(|n| format!(" ({})", n))
-                    .unwrap_or_default();
-
-                format!(
-                    "✨ [新規使用予定] {}\n⏰ 期間: {}\n🖥️ 資源:\n{}{}",
-                    user_display, time_period, resources, notes
-                )
-            }
-            NotificationEvent::ResourceUsageUpdated(_) => {
-                format!(
-                    "♻️ [使用予定更新] {}\n⏰ 期間: {}\n🖥️ 資源:\n{}",
-                    user_display, time_period, resources
-                )
-            }
-            NotificationEvent::ResourceUsageDeleted(_) => {
-                format!(
-                    "🗑️ [使用予定削除] {}\n⏰ 期間: {}\n🖥️ 資源:\n{}",
-                    user_display, time_period, resources
-                )
-            }
-        }
-    }
-
     fn collect_notification_configs(&self, event: &NotificationEvent) -> Vec<NotificationConfig> {
         let resources = match event {
             NotificationEvent::ResourceUsageCreated(usage) => usage.resources(),
@@ -97,7 +58,6 @@ impl NotificationRouter {
             NotificationEvent::ResourceUsageDeleted(u) => u,
         };
 
-        let message = self.format_message(event);
         let user_email = usage.owner_email();
 
         // IdentityLinkを取得
@@ -114,8 +74,7 @@ impl NotificationRouter {
         };
 
         let context = NotificationContext {
-            message: &message,
-            user_email,
+            event,
             identity_link: identity_link.as_ref(),
         };
 
