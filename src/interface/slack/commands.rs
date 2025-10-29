@@ -3,6 +3,7 @@ use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
 use slack_morphism::prelude::*;
 use std::sync::Arc;
+use tracing::{error, info};
 
 /// Slackコマンドハンドラ
 pub struct SlackCommandHandler {
@@ -169,8 +170,8 @@ impl SlackCommandHandler {
             .send()
             .await
         {
-            Ok(_) => println!("✅ フォローアップメッセージを送信しました"),
-            Err(e) => eprintln!("フォローアップメッセージの送信に失敗: {}", e),
+            Ok(_) => info!("✅ フォローアップメッセージを送信しました"),
+            Err(e) => error!("フォローアップメッセージの送信に失敗: {}", e),
         }
     }
 }
