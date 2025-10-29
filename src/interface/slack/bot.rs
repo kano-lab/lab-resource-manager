@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 /// Slack Socket Mode Bot
 ///
-/// This is a simplified wrapper that will be used with Socket Mode.
-/// The actual Socket Mode server setup should be done in the binary
-/// (main.rs or bin file) using slack-morphism's Socket Mode facilities.
+/// Socket Modeで使用される簡易ラッパー。
+/// 実際のSocket Modeサーバーのセットアップはバイナリ（main.rsまたはbinファイル）で
+/// slack-morphismのSocket Mode機能を使用して行う必要がある。
 pub struct SlackBot {
     command_handler: Arc<SlackCommandHandler>,
     client: Arc<SlackHyperClient>,
