@@ -113,7 +113,7 @@ impl JsonFileIdentityLinkRepository {
                 return Err(RepositoryError::Unknown(format!(
                     "ファイルの読み込みに失敗: {}",
                     e
-                )))
+                )));
             }
         };
 

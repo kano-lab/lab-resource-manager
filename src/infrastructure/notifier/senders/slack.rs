@@ -60,8 +60,7 @@ impl SlackSender {
         identity_link: Option<&crate::domain::aggregates::identity_link::entity::IdentityLink>,
     ) -> String {
         if let Some(identity) = identity_link {
-            if let Some(slack_identity) = identity.get_identity_for_system(&ExternalSystem::Slack)
-            {
+            if let Some(slack_identity) = identity.get_identity_for_system(&ExternalSystem::Slack) {
                 return format!("<@{}>", slack_identity.user_id());
             }
         }

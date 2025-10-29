@@ -35,7 +35,10 @@ impl fmt::Display for ApplicationError {
             }
             ApplicationError::ResourceUsage(e) => write!(f, "リソース使用エラー: {}", e),
             ApplicationError::IdentityLink(e) => write!(f, "ID紐付けエラー: {}", e),
-            ApplicationError::ExternalSystemAlreadyLinked { email, external_system } => {
+            ApplicationError::ExternalSystemAlreadyLinked {
+                email,
+                external_system,
+            } => {
                 write!(
                     f,
                     "メールアドレス {} は既に {} に紐付けられています",
