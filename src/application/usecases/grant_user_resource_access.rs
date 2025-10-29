@@ -41,7 +41,11 @@ impl GrantUserResourceAccessUseCase {
     ) -> Result<(), ApplicationError> {
         let mut identity = self.resolve_or_create_identity_link(&email).await?;
         self.link_external_identity(&mut identity, external_system, external_user_id)?;
+
+        // アクセス権付与を先に実行（全て成功した場合のみIdentityLinkを保存）
         self.grant_access_to_all_resources(&email).await?;
+
+        // 成功した場合のみIdentityLinkを保存
         self.save_identity_link(identity).await?;
         Ok(())
     }
@@ -79,19 +83,39 @@ impl GrantUserResourceAccessUseCase {
         &self,
         email: &EmailAddress,
     ) -> Result<(), ApplicationError> {
+        let mut failed_collections = Vec::new();
+
         for collection_id in &self.collection_ids {
             match self
                 .collection_access
                 .grant_access(collection_id, email)
                 .await
             {
-                Ok(_) => {}
+                Ok(_) => {
+                    // 成功した場合は次へ
+                }
                 Err(ResourceCollectionAccessError::AlreadyGranted(_)) => {
-                    // 既にアクセス権がある場合は処理を継続
+                    // 既にアクセス権がある場合は成功とみなす（べき等性）
                     continue;
                 }
-                Err(e) => return Err(e.into()),
+                Err(e) => {
+                    // その他のエラーは記録して処理を継続
+                    tracing::warn!(
+                        "Failed to grant access to collection '{}' for {}: {}",
+                        collection_id,
+                        email.as_str(),
+                        e
+                    );
+                    failed_collections.push((collection_id.clone(), e));
+                }
             }
+        }
+
+        // 失敗したコレクションがある場合はエラーを返す
+        if !failed_collections.is_empty() {
+            return Err(ApplicationError::PartialAccessGrantFailure {
+                failed: failed_collections,
+            });
         }
 
         Ok(())
