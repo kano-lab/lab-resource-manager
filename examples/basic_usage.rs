@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| project_root.join("data/identity_links.json"));
     let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new(identity_links_path));
 
-    // Create notification router (uses configured notification destinations)
+    // Create notification router (uses configured notification destinations and identity_repo)
     let notifier = NotificationRouter::new(config, identity_repo);
     println!("✅ Notification router initialized (using configured destinations)");
 
