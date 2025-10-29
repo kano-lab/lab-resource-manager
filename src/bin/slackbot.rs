@@ -9,7 +9,6 @@
 //! # 環境変数を指定して実行
 //! SLACK_BOT_TOKEN=xoxb-... \
 //! GOOGLE_SERVICE_ACCOUNT_KEY=/path/to/key.json \
-//! IDENTITY_LINKS_FILE=/path/to/identity_links.json \
 //! cargo run --bin slackbot
 //! ```
 //!
@@ -19,7 +18,6 @@
 //! - `SLACK_APP_TOKEN`: Socket Mode用のSlack App-Level Token (必須, xapp-...)
 //! - `GOOGLE_SERVICE_ACCOUNT_KEY`: Google サービスアカウントJSONキーのパス (必須)
 //! - `RESOURCE_CONFIG`: リソース設定ファイルのパス (デフォルト: config/resources.toml)
-//! - `IDENTITY_LINKS_FILE`: ID紐付けJSONファイルのパス (デフォルト: data/identity_links.json)
 use lab_resource_manager::{
     application::usecases::grant_user_resource_access::GrantUserResourceAccessUseCase,
     infrastructure::{

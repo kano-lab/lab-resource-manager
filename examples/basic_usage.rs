@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
 
     let config_path =
-        std::env::var("CONFIG_PATH").unwrap_or_else(|_| "config/resources.toml".to_string());
+        std::env::var("RESOURCE_CONFIG").unwrap_or_else(|_| "config/resources.toml".to_string());
     let absolute_config_path = project_root.join(&config_path);
 
     let config = load_config(

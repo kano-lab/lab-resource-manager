@@ -41,7 +41,7 @@ async fn main() {
     println!("📋 Repository: {}", args.repository);
     println!("📋 Interval: {}秒", args.interval);
 
-    let config_path = std::env::var("CONFIG_PATH").expect("❌ CONFIG_PATH must be set");
+    let config_path = std::env::var("RESOURCE_CONFIG").expect("❌ RESOURCE_CONFIG must be set");
     let absolute_config_path = project_root.join(&config_path);
     let config = load_config(absolute_config_path.to_str().expect("❌ パスの変換に失敗"))
         .expect("❌ 設定ファイルの読み込みに失敗");
