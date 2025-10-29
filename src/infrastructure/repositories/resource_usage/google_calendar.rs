@@ -122,14 +122,12 @@ impl GoogleCalendarUsageRepository {
 
         let notes = event.description.clone();
 
-        ResourceUsage::new(id, user, time_period, items, notes)
-            .map_err(|e| RepositoryError::Unknown(format!("ResourceUsage作成エラー: {}", e)))
+        ResourceUsage::new(id, user, time_period, items, notes).map_err(RepositoryError::from)
     }
 
     /// メールアドレスからEmailAddressを作成
     fn parse_user(&self, email: &str) -> Result<EmailAddress, RepositoryError> {
-        EmailAddress::new(email.to_string())
-            .map_err(|e| RepositoryError::Unknown(format!("Invalid email: {}", e)))
+        EmailAddress::new(email.to_string()).map_err(RepositoryError::from)
     }
 
     /// タイトルから資源をパース
