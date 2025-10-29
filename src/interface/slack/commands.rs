@@ -99,10 +99,8 @@ impl SlackCommandHandler {
             Some(id) => id,
             None => {
                 return Ok(SlackCommandEventResponse::new(
-                    SlackMessageContent::new().with_text(
-                        "❌ Slackユーザーの形式が不正です。`<@USER_ID>` の形式で指定してください。"
-                            .to_string(),
-                    ),
+                    SlackMessageContent::new()
+                        .with_text("❌ Slackユーザーの形式が不正です。".to_string()),
                 ));
             }
         };
