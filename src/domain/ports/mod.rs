@@ -21,6 +21,10 @@
 pub mod error;
 pub mod notifier;
 pub mod repositories;
+pub mod resource_collection_access;
 
 pub use error::PortError;
 pub use notifier::{NotificationError, NotificationEvent, Notifier};
+pub use resource_collection_access::{
+    ResourceCollectionAccessError, ResourceCollectionAccessService,
+};

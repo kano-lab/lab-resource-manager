@@ -9,8 +9,10 @@
 //! ```
 
 use lab_resource_manager::{
-    MockUsageRepository, NotificationRouter, NotifyResourceUsageChangesUseCase, load_config,
+    JsonFileIdentityLinkRepository, MockUsageRepository, NotificationRouter,
+    NotifyResourceUsageChangesUseCase, load_config,
 };
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,9 +22,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration
     let config = load_config("config/resources.toml")?;
 
+    // Create identity link repository
+    let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new(
+        "data/identity_links.json".into(),
+    ));
+
     // Create mock repository and notification router
     let repository = MockUsageRepository::new();
-    let notifier = NotificationRouter::new(config);
+    let notifier = NotificationRouter::new(config, identity_repo);
 
     println!("✅ Mock repository and notification router initialized");
 

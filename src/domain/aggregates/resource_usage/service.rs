@@ -35,7 +35,7 @@ impl UsageConflictChecker {
                     if new_resource.conflicts_with(existing_resource) {
                         return Err(ResourceUsageError::UsageConflict {
                             resource: format_resource_item(new_resource),
-                            conflicting_user: existing.user().name().to_string(),
+                            conflicting_user: existing.owner_email().as_str().to_string(),
                         });
                     }
                 }
