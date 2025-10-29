@@ -10,9 +10,7 @@ pub struct SlackCommandHandler {
 }
 
 impl SlackCommandHandler {
-    pub fn new(
-        grant_access_usecase: Arc<GrantUserResourceAccessUseCase>,
-    ) -> Self {
+    pub fn new(grant_access_usecase: Arc<GrantUserResourceAccessUseCase>) -> Self {
         Self {
             grant_access_usecase,
         }
