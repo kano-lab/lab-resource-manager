@@ -9,9 +9,10 @@
 //! ```
 
 use lab_resource_manager::{
-    GoogleCalendarUsageRepository, NotificationRouter, NotifyResourceUsageChangesUseCase,
-    load_config,
+    GoogleCalendarUsageRepository, JsonFileIdentityLinkRepository, NotificationRouter,
+    NotifyResourceUsageChangesUseCase, load_config,
 };
+use std::sync::Arc;
 use std::time::Duration;
 
 #[tokio::main]
@@ -49,8 +50,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     println!("✅ Google Calendar repository initialized");
 
+    // Create identity link repository
+    let identity_links_path = std::env::var("IDENTITY_LINKS_FILE")
+        .map(|p| project_root.join(p))
+        .unwrap_or_else(|_| project_root.join("data/identity_links.json"));
+    let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new(identity_links_path));
+
     // Create notification router (uses configured notification destinations)
-    let notifier = NotificationRouter::new(config);
+    let notifier = NotificationRouter::new(config, identity_repo);
     println!("✅ Notification router initialized (using configured destinations)");
 
     // Create use case

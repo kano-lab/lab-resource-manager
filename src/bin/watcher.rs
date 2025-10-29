@@ -1,5 +1,6 @@
 use clap::Parser;
 use lab_resource_manager::*;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Parser, Debug)]
@@ -46,6 +47,12 @@ async fn main() {
     let config = load_config(absolute_config_path.to_str().expect("❌ パスの変換に失敗"))
         .expect("❌ 設定ファイルの読み込みに失敗");
 
+    // IdentityLinkRepositoryのセットアップ
+    let identity_links_path = std::env::var("IDENTITY_LINKS_FILE")
+        .map(|p| project_root.join(p))
+        .unwrap_or_else(|_| project_root.join("data/identity_links.json"));
+    let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new(identity_links_path));
+
     match args.repository.as_str() {
         "google_calendar" => {
             let service_account_key_path = std::env::var("GOOGLE_SERVICE_ACCOUNT_KEY")
@@ -59,12 +66,12 @@ async fn main() {
             .await
             .expect("❌ Google Calendar接続に失敗");
 
-            let notifier = NotificationRouter::new(config);
+            let notifier = NotificationRouter::new(config, identity_repo);
             run_watcher(repository, notifier, args.interval).await;
         }
         "mock" => {
             let repository = MockUsageRepository::new();
-            let notifier = NotificationRouter::new(config);
+            let notifier = NotificationRouter::new(config, identity_repo);
             run_watcher(repository, notifier, args.interval).await;
         }
         _ => {
