@@ -87,26 +87,25 @@ impl SlackCommandHandler {
 
         let grant_access_usecase = self.grant_access_usecase.clone();
 
-        // Slackメンション形式のバリデーション
+        // Slackメンション形式のバリデーションとパース
         let slack_mention = parts[0].trim();
-        if !slack_mention.starts_with("<@") || !slack_mention.ends_with(">") {
-            return Ok(SlackCommandEventResponse::new(
-                SlackMessageContent::new()
-                    .with_text("❌ Slackユーザーの形式が不正です。`<@USER_ID>` の形式で指定してください。".to_string()),
-            ));
-        }
-
         let target_slack_user_id = slack_mention
-            .trim_matches(|c| c == '<' || c == '>' || c == '@')
-            .to_string();
+            .strip_prefix("<@")
+            .and_then(|s| s.strip_suffix(">"))
+            .filter(|id| !id.is_empty())
+            .map(|id| id.to_string());
 
-        // ユーザーIDが空でないことを確認
-        if target_slack_user_id.is_empty() {
-            return Ok(SlackCommandEventResponse::new(
-                SlackMessageContent::new()
-                    .with_text("❌ SlackユーザーIDが空です。".to_string()),
-            ));
-        }
+        let target_slack_user_id = match target_slack_user_id {
+            Some(id) => id,
+            None => {
+                return Ok(SlackCommandEventResponse::new(
+                    SlackMessageContent::new().with_text(
+                        "❌ Slackユーザーの形式が不正です。`<@USER_ID>` の形式で指定してください。"
+                            .to_string(),
+                    ),
+                ));
+            }
+        };
 
         let email_str = parts[1].to_string();
 
