@@ -103,13 +103,19 @@ impl JsonFileIdentityLinkRepository {
     }
 
     async fn load(&self) -> Result<(), RepositoryError> {
-        if !self.file_path.exists() {
-            return Ok(());
-        }
-
-        let content = tokio::fs::read_to_string(&self.file_path)
-            .await
-            .map_err(|e| RepositoryError::Unknown(format!("ファイルの読み込みに失敗: {}", e)))?;
+        let content = match tokio::fs::read_to_string(&self.file_path).await {
+            Ok(content) => content,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // ファイルが存在しない場合は空の状態として扱う
+                return Ok(());
+            }
+            Err(e) => {
+                return Err(RepositoryError::Unknown(format!(
+                    "ファイルの読み込みに失敗: {}",
+                    e
+                )))
+            }
+        };
 
         let data: HashMap<String, IdentityLinkDto> = serde_json::from_str(&content)
             .map_err(|e| RepositoryError::Unknown(format!("JSONのパースに失敗: {}", e)))?;
