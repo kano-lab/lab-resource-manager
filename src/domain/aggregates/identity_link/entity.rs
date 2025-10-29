@@ -1,57 +1,46 @@
 use super::errors::IdentityLinkError;
-use super::value_objects::SlackUserId;
+use super::value_objects::{ExternalIdentity, ExternalSystem};
 use crate::domain::common::EmailAddress;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// メールアドレスと Slack の紐付け情報を管理する集約ルート
+/// 外部システムとの識別情報の紐付けを管理する集約ルート
 ///
-/// この集約は以下の責務を持つ:
-/// - メールアドレスをシステム内のユーザー識別子として管理
-/// - Slackユーザーとの紐付け状態を管理
+/// メールアドレスを主キーとして、複数の外部システム（Slack等）での
+/// ユーザー識別情報との紐付けを管理する。
+///
+/// この集約は通知送信、コマンド実行時のユーザー特定など、
+/// 外部システムとの連携が必要な場面で使用される。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum IdentityLink {
-    /// 未リンク状態：メールアドレスのみが登録された状態
-    ///
-    /// Googleカレンダーからイベント作成者情報を取得した際にこの状態で作成される
-    Unlinked {
-        email: EmailAddress,
-        created_at: DateTime<Utc>,
-    },
-    /// リンク済み状態：Slackユーザーと紐付け済みの状態
-    ///
-    /// ユーザーが/register-calendarコマンドを実行するか、
-    /// 管理者が/link-userコマンドを実行した際にこの状態になる
-    Linked {
-        email: EmailAddress,
-        slack_user_id: SlackUserId,
-        created_at: DateTime<Utc>,
-        slack_linked_at: DateTime<Utc>,
-    },
+pub struct IdentityLink {
+    /// 主識別子（このシステム内での一意なユーザー識別子）
+    email: EmailAddress,
+    /// 外部システムでの識別情報
+    external_identities: Vec<ExternalIdentity>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
 }
 
 impl IdentityLink {
-    /// メールアドレス情報のみで新規作成（未リンク状態）
-    ///
-    /// Googleカレンダーからイベント作成者情報を取得した際に使用
-    pub fn create_from_email(email: EmailAddress) -> Self {
-        Self::Unlinked {
+    /// メールアドレスのみで新規作成
+    pub fn new(email: EmailAddress) -> Self {
+        let now = Utc::now();
+        Self {
             email,
-            created_at: Utc::now(),
+            external_identities: Vec::new(),
+            created_at: now,
+            updated_at: now,
         }
     }
 
-    /// Slackユーザー登録時の作成（リンク済み状態）
-    ///
-    /// ユーザー登録時に直接Linked状態で作成する
-    pub fn create_with_slack(email: EmailAddress, slack_user_id: SlackUserId) -> Self {
+    /// 外部システムの識別情報付きで作成
+    pub fn with_external_identity(email: EmailAddress, identity: ExternalIdentity) -> Self {
         let now = Utc::now();
-        Self::Linked {
+        Self {
             email,
-            slack_user_id,
+            external_identities: vec![identity],
             created_at: now,
-            slack_linked_at: now,
+            updated_at: now,
         }
     }
 
@@ -59,85 +48,87 @@ impl IdentityLink {
     ///
     /// **Repository実装専用**。保存されていた状態をそのまま復元する。
     /// ビジネスロジックは適用されない（時刻は指定された値がそのまま使われる）。
-    ///
-    /// 通常のビジネスロジックでEntityを生成する場合は、
-    /// [`create_from_email`](Self::create_from_email) または
-    /// [`create_with_slack`](Self::create_with_slack) を使用すること。
-    ///
-    /// # 引数
-    /// * `email` - メールアドレス
-    /// * `slack_user_id` - Slackユーザーid（Noneの場合はUnlinked状態）
-    /// * `created_at` - 作成日時
-    /// * `slack_linked_at` - Slack紐付け日時（Linkedの場合は必須）
     pub(crate) fn reconstitute(
         email: EmailAddress,
-        slack_user_id: Option<SlackUserId>,
+        external_identities: Vec<ExternalIdentity>,
         created_at: DateTime<Utc>,
-        slack_linked_at: Option<DateTime<Utc>>,
+        updated_at: DateTime<Utc>,
     ) -> Self {
-        match (slack_user_id, slack_linked_at) {
-            (Some(sid), Some(sat)) => Self::Linked {
-                email,
-                slack_user_id: sid,
-                created_at,
-                slack_linked_at: sat,
-            },
-            _ => Self::Unlinked { email, created_at },
+        Self {
+            email,
+            external_identities,
+            created_at,
+            updated_at,
         }
     }
 
-    /// Slackユーザーを紐付け（状態遷移）
-    ///
-    /// Unlinked → Linked への状態遷移を行う。
-    /// 新しいインスタンスを返すため、元のインスタンスは消費される。
-    ///
-    /// # エラー
-    /// - 既にSlackと紐付け済みの場合
-    pub fn link_slack(self, slack_user_id: SlackUserId) -> Result<Self, IdentityLinkError> {
-        match self {
-            Self::Unlinked { email, created_at } => Ok(Self::Linked {
-                email,
-                slack_user_id,
-                created_at,
-                slack_linked_at: Utc::now(),
-            }),
-            Self::Linked { .. } => Err(IdentityLinkError::AlreadyLinked),
+    /// 外部システムの識別情報を追加
+    pub fn link_external_identity(
+        &mut self,
+        identity: ExternalIdentity,
+    ) -> Result<(), IdentityLinkError> {
+        if self.has_identity_for_system(identity.system()) {
+            return Err(IdentityLinkError::IdentityAlreadyExists {
+                system: identity.system().clone(),
+            });
         }
+
+        self.external_identities.push(identity);
+        self.updated_at = Utc::now();
+        Ok(())
     }
 
-    /// Slack登録済みか判定
-    pub fn is_slack_linked(&self) -> bool {
-        matches!(self, Self::Linked { .. })
+    /// 外部システムの識別情報を削除
+    pub fn unlink_external_identity(
+        &mut self,
+        system: &ExternalSystem,
+    ) -> Result<(), IdentityLinkError> {
+        let initial_len = self.external_identities.len();
+        self.external_identities.retain(|id| id.system() != system);
+
+        if self.external_identities.len() == initial_len {
+            return Err(IdentityLinkError::IdentityNotFound {
+                system: system.clone(),
+            });
+        }
+
+        self.updated_at = Utc::now();
+        Ok(())
+    }
+
+    /// 特定の外部システムでの識別情報を取得
+    pub fn get_identity_for_system(&self, system: &ExternalSystem) -> Option<&ExternalIdentity> {
+        self.external_identities
+            .iter()
+            .find(|id| id.system() == system)
+    }
+
+    /// 特定の外部システムと紐付けられているか
+    pub fn has_identity_for_system(&self, system: &ExternalSystem) -> bool {
+        self.external_identities
+            .iter()
+            .any(|id| id.system() == system)
+    }
+
+    /// いずれかの外部システムと紐付けられているか
+    pub fn is_linked_to_any_system(&self) -> bool {
+        !self.external_identities.is_empty()
     }
 
     pub fn email(&self) -> &EmailAddress {
-        match self {
-            Self::Unlinked { email, .. } => email,
-            Self::Linked { email, .. } => email,
-        }
+        &self.email
     }
 
-    pub fn slack_user_id(&self) -> Option<&SlackUserId> {
-        match self {
-            Self::Unlinked { .. } => None,
-            Self::Linked { slack_user_id, .. } => Some(slack_user_id),
-        }
+    pub fn external_identities(&self) -> &[ExternalIdentity] {
+        &self.external_identities
     }
 
     pub fn created_at(&self) -> DateTime<Utc> {
-        match self {
-            Self::Unlinked { created_at, .. } => *created_at,
-            Self::Linked { created_at, .. } => *created_at,
-        }
+        self.created_at
     }
 
-    pub fn slack_linked_at(&self) -> Option<DateTime<Utc>> {
-        match self {
-            Self::Unlinked { .. } => None,
-            Self::Linked {
-                slack_linked_at, ..
-            } => Some(*slack_linked_at),
-        }
+    pub fn updated_at(&self) -> DateTime<Utc> {
+        self.updated_at
     }
 }
 
@@ -146,50 +137,72 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_create_from_email() {
+    fn test_create_identity_link() {
         let email = EmailAddress::new("user@example.com".to_string()).unwrap();
-        let identity = IdentityLink::create_from_email(email.clone());
+        let identity = IdentityLink::new(email.clone());
 
         assert_eq!(identity.email(), &email);
-        assert!(!identity.is_slack_linked());
-        assert!(identity.slack_user_id().is_none());
+        assert!(!identity.is_linked_to_any_system());
+        assert_eq!(identity.external_identities().len(), 0);
     }
 
     #[test]
-    fn test_create_with_slack() {
+    fn test_link_external_identity() {
         let email = EmailAddress::new("user@example.com".to_string()).unwrap();
-        let slack_id = SlackUserId::new("U12345678".to_string());
-        let identity = IdentityLink::create_with_slack(email.clone(), slack_id.clone());
+        let mut identity = IdentityLink::new(email);
 
-        assert_eq!(identity.email(), &email);
-        assert!(identity.is_slack_linked());
-        assert_eq!(identity.slack_user_id(), Some(&slack_id));
-    }
-
-    #[test]
-    fn test_link_slack() {
-        let email = EmailAddress::new("user@example.com".to_string()).unwrap();
-        let identity = IdentityLink::create_from_email(email);
-
-        let slack_id = SlackUserId::new("U12345678".to_string());
-        let result = identity.link_slack(slack_id.clone());
+        let external_id = ExternalIdentity::new(ExternalSystem::Slack, "U12345678".to_string());
+        let result = identity.link_external_identity(external_id);
 
         assert!(result.is_ok());
-        let linked_identity = result.unwrap();
-        assert!(linked_identity.is_slack_linked());
-        assert_eq!(linked_identity.slack_user_id(), Some(&slack_id));
+        assert!(identity.is_linked_to_any_system());
+        assert!(identity.has_identity_for_system(&ExternalSystem::Slack));
     }
 
     #[test]
-    fn test_link_slack_already_linked() {
+    fn test_link_duplicate_system() {
         let email = EmailAddress::new("user@example.com".to_string()).unwrap();
-        let slack_id = SlackUserId::new("U12345678".to_string());
-        let identity = IdentityLink::create_with_slack(email, slack_id);
+        let mut identity = IdentityLink::new(email);
 
-        let new_slack_id = SlackUserId::new("U87654321".to_string());
-        let result = identity.link_slack(new_slack_id);
+        let external_id1 = ExternalIdentity::new(ExternalSystem::Slack, "U12345678".to_string());
+        identity.link_external_identity(external_id1).unwrap();
+
+        let external_id2 = ExternalIdentity::new(ExternalSystem::Slack, "U87654321".to_string());
+        let result = identity.link_external_identity(external_id2);
 
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), IdentityLinkError::AlreadyLinked);
+        assert_eq!(
+            result.unwrap_err(),
+            IdentityLinkError::IdentityAlreadyExists {
+                system: ExternalSystem::Slack
+            }
+        );
+    }
+
+    #[test]
+    fn test_unlink_external_identity() {
+        let email = EmailAddress::new("user@example.com".to_string()).unwrap();
+        let mut identity = IdentityLink::new(email);
+
+        let external_id = ExternalIdentity::new(ExternalSystem::Slack, "U12345678".to_string());
+        identity.link_external_identity(external_id).unwrap();
+
+        let result = identity.unlink_external_identity(&ExternalSystem::Slack);
+        assert!(result.is_ok());
+        assert!(!identity.has_identity_for_system(&ExternalSystem::Slack));
+    }
+
+    #[test]
+    fn test_get_identity_for_system() {
+        let email = EmailAddress::new("user@example.com".to_string()).unwrap();
+        let mut identity = IdentityLink::new(email);
+
+        let slack_id = "U12345678".to_string();
+        let external_id = ExternalIdentity::new(ExternalSystem::Slack, slack_id.clone());
+        identity.link_external_identity(external_id).unwrap();
+
+        let found = identity.get_identity_for_system(&ExternalSystem::Slack);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().user_id(), slack_id);
     }
 }

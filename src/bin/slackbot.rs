@@ -73,10 +73,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Google Calendar サービスを初期化しました");
 
     // ユースケースの作成
+    // すべてのリソースコレクションIDを収集
+    let collection_ids: Vec<String> = config
+        .servers
+        .iter()
+        .map(|s| s.calendar_id.clone())
+        .chain(config.rooms.iter().map(|r| r.calendar_id.clone()))
+        .collect();
+
     let grant_access_usecase = Arc::new(GrantUserResourceAccessUseCase::new(
         identity_repo.clone(),
         calendar_service,
-        config,
+        collection_ids,
     ));
 
     // コマンドハンドラとBotの作成

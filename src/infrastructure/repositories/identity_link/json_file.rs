@@ -1,4 +1,7 @@
-use crate::domain::aggregates::identity_link::{entity::IdentityLink, value_objects::SlackUserId};
+use crate::domain::aggregates::identity_link::{
+    entity::IdentityLink,
+    value_objects::{ExternalIdentity, ExternalSystem},
+};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{IdentityLinkRepository, RepositoryError};
 use async_trait::async_trait;
@@ -14,9 +17,15 @@ use tokio::sync::RwLock;
 /// {
 ///   "user@example.com": {
 ///     "email": "user@example.com",
-///     "slack_user_id": "U12345678",
+///     "external_identities": [
+///       {
+///         "system": "slack",
+///         "user_id": "U12345678",
+///         "linked_at": "2024-01-01T00:00:00Z"
+///       }
+///     ],
 ///     "created_at": "2024-01-01T00:00:00Z",
-///     "slack_linked_at": "2024-01-01T00:00:00Z"
+///     "updated_at": "2024-01-01T00:00:00Z"
 ///   }
 /// }
 /// ```
@@ -28,32 +37,64 @@ pub struct JsonFileIdentityLinkRepository {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct IdentityLinkDto {
     email: String,
-    slack_user_id: Option<String>,
+    external_identities: Vec<ExternalIdentityDto>,
     created_at: chrono::DateTime<chrono::Utc>,
-    slack_linked_at: Option<chrono::DateTime<chrono::Utc>>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ExternalIdentityDto {
+    system: String,
+    user_id: String,
+    linked_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl IdentityLinkDto {
     fn from_entity(entity: &IdentityLink) -> Self {
+        let external_identities = entity
+            .external_identities()
+            .iter()
+            .map(|id| ExternalIdentityDto {
+                system: id.system().as_str().to_string(),
+                user_id: id.user_id().to_string(),
+                linked_at: id.linked_at(),
+            })
+            .collect();
+
         Self {
             email: entity.email().as_str().to_string(),
-            slack_user_id: entity.slack_user_id().map(|id| id.as_str().to_string()),
+            external_identities,
             created_at: entity.created_at(),
-            slack_linked_at: entity.slack_linked_at(),
+            updated_at: entity.updated_at(),
         }
     }
 
     fn to_entity(&self) -> Result<IdentityLink, RepositoryError> {
-        let email = EmailAddress::new(self.email.clone())
-            .map_err(|e| RepositoryError::Unknown(format!("無効なメールアドレス: {}", e)))?;
+        let email = EmailAddress::new(self.email.clone())?;
 
-        let slack_user_id = self
-            .slack_user_id
-            .as_ref()
-            .map(|id| SlackUserId::new(id.clone()));
+        let external_identities: Vec<ExternalIdentity> = self
+            .external_identities
+            .iter()
+            .filter_map(|dto| {
+                // 現在サポートしているシステムのみ復元
+                if dto.system == "slack" {
+                    Some(ExternalIdentity::reconstitute(
+                        ExternalSystem::Slack,
+                        dto.user_id.clone(),
+                        dto.linked_at,
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-        let identity =
-            IdentityLink::reconstitute(email, slack_user_id, self.created_at, self.slack_linked_at);
+        let identity = IdentityLink::reconstitute(
+            email,
+            external_identities,
+            self.created_at,
+            self.updated_at,
+        );
 
         Ok(identity)
     }
@@ -123,9 +164,10 @@ impl IdentityLinkRepository for JsonFileIdentityLinkRepository {
         }
     }
 
-    async fn find_by_slack_user_id(
+    async fn find_by_external_user_id(
         &self,
-        slack_user_id: &SlackUserId,
+        system: &ExternalSystem,
+        user_id: &str,
     ) -> Result<Option<IdentityLink>, RepositoryError> {
         // Load from file if cache is empty
         if self.cache.read().await.is_empty() {
@@ -134,8 +176,8 @@ impl IdentityLinkRepository for JsonFileIdentityLinkRepository {
 
         let cache = self.cache.read().await;
         for dto in cache.values() {
-            if let Some(id) = &dto.slack_user_id {
-                if id == slack_user_id.as_str() {
+            for external_id in &dto.external_identities {
+                if external_id.system == system.as_str() && external_id.user_id == user_id {
                     return Ok(Some(dto.to_entity()?));
                 }
             }

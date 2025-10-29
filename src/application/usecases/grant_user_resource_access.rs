@@ -1,41 +1,46 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::identity_link::{entity::IdentityLink, value_objects::SlackUserId};
+use crate::domain::aggregates::identity_link::{
+    entity::IdentityLink,
+    value_objects::{ExternalIdentity, ExternalSystem},
+};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::IdentityLinkRepository;
-use crate::domain::ports::resource_collection_access::ResourceCollectionAccessService;
-use crate::infrastructure::config::ResourceConfig;
+use crate::domain::ports::resource_collection_access::{
+    ResourceCollectionAccessError, ResourceCollectionAccessService,
+};
 use std::sync::Arc;
 
 /// ユーザーにリソースアクセス権を付与するUseCase
 ///
-/// Slackユーザーとmailアドレスを紐付け、すべてのリソースコレクションへのアクセス権を付与する。
+/// 外部システムのユーザーとメールアドレスを紐付け、すべてのリソースコレクションへのアクセス権を付与する。
 pub struct GrantUserResourceAccessUseCase {
     identity_repo: Arc<dyn IdentityLinkRepository>,
     collection_access: Arc<dyn ResourceCollectionAccessService>,
-    config: ResourceConfig,
+    /// アクセス権を付与するコレクションIDのリスト
+    collection_ids: Vec<String>,
 }
 
 impl GrantUserResourceAccessUseCase {
     pub fn new(
         identity_repo: Arc<dyn IdentityLinkRepository>,
         collection_access: Arc<dyn ResourceCollectionAccessService>,
-        config: ResourceConfig,
+        collection_ids: Vec<String>,
     ) -> Self {
         Self {
             identity_repo,
             collection_access,
-            config,
+            collection_ids,
         }
     }
 
     pub async fn execute(
         &self,
-        slack_user_id: SlackUserId,
+        external_system: ExternalSystem,
+        external_user_id: String,
         email: EmailAddress,
     ) -> Result<(), ApplicationError> {
-        let identity = self
-            .resolve_or_create_identity_link(slack_user_id, &email)
-            .await?;
+        let mut identity = self.resolve_or_create_identity_link(&email).await?;
+        self.link_external_identity(&mut identity, external_system, external_user_id)?;
         self.grant_access_to_all_resources(&email).await?;
         self.save_identity_link(identity).await?;
         Ok(())
@@ -43,39 +48,49 @@ impl GrantUserResourceAccessUseCase {
 
     async fn resolve_or_create_identity_link(
         &self,
-        slack_user_id: SlackUserId,
         email: &EmailAddress,
     ) -> Result<IdentityLink, ApplicationError> {
         match self.identity_repo.find_by_email(email).await? {
-            Some(existing) => {
-                if existing.is_slack_linked() {
-                    return Err(ApplicationError::EmailAlreadyLinkedToAnotherUser {
-                        email: email.as_str().to_string(),
-                    });
-                }
-                Ok(existing.link_slack(slack_user_id)?)
-            }
-            None => Ok(IdentityLink::create_with_slack(
-                email.clone(),
-                slack_user_id,
-            )),
+            Some(existing) => Ok(existing),
+            None => Ok(IdentityLink::new(email.clone())),
         }
+    }
+
+    fn link_external_identity(
+        &self,
+        identity: &mut IdentityLink,
+        external_system: ExternalSystem,
+        external_user_id: String,
+    ) -> Result<(), ApplicationError> {
+        // 既に指定された外部システムと紐付いているかチェック
+        if identity.has_identity_for_system(&external_system) {
+            return Err(ApplicationError::EmailAlreadyLinkedToAnotherUser {
+                email: identity.email().as_str().to_string(),
+            });
+        }
+
+        let external_identity = ExternalIdentity::new(external_system, external_user_id);
+        identity.link_external_identity(external_identity)?;
+        Ok(())
     }
 
     async fn grant_access_to_all_resources(
         &self,
         email: &EmailAddress,
     ) -> Result<(), ApplicationError> {
-        for server in &self.config.servers {
-            self.collection_access
-                .grant_access(&server.calendar_id, email)
-                .await?;
-        }
-
-        for room in &self.config.rooms {
-            self.collection_access
-                .grant_access(&room.calendar_id, email)
-                .await?;
+        for collection_id in &self.collection_ids {
+            match self
+                .collection_access
+                .grant_access(collection_id, email)
+                .await
+            {
+                Ok(_) => {}
+                Err(ResourceCollectionAccessError::AlreadyGranted(_)) => {
+                    // 既にアクセス権がある場合は処理を継続
+                    continue;
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
 
         Ok(())

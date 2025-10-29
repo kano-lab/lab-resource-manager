@@ -1,4 +1,6 @@
-use crate::domain::aggregates::identity_link::{entity::IdentityLink, value_objects::SlackUserId};
+use crate::domain::aggregates::identity_link::{
+    entity::IdentityLink, value_objects::ExternalSystem,
+};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::RepositoryError;
 use async_trait::async_trait;
@@ -10,9 +12,10 @@ pub trait IdentityLinkRepository: Send + Sync {
         email: &EmailAddress,
     ) -> Result<Option<IdentityLink>, RepositoryError>;
 
-    async fn find_by_slack_user_id(
+    async fn find_by_external_user_id(
         &self,
-        slack_user_id: &SlackUserId,
+        system: &ExternalSystem,
+        user_id: &str,
     ) -> Result<Option<IdentityLink>, RepositoryError>;
 
     async fn save(&self, identity_link: IdentityLink) -> Result<(), RepositoryError>;

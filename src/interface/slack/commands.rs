@@ -1,5 +1,5 @@
 use crate::application::usecases::grant_user_resource_access::GrantUserResourceAccessUseCase;
-use crate::domain::aggregates::identity_link::value_objects::SlackUserId;
+use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
 use slack_morphism::prelude::*;
 use std::sync::Arc;
@@ -23,7 +23,7 @@ impl SlackCommandHandler {
     ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
         let command = event.command.0.as_str();
         let text = event.text.as_ref().map(|s| s.as_str()).unwrap_or("");
-        let user_id = SlackUserId::new(event.user_id.to_string());
+        let slack_user_id = event.user_id.to_string();
         let response_url = event.response_url.clone();
 
         match command {
@@ -48,7 +48,7 @@ impl SlackCommandHandler {
                 tokio::spawn(async move {
                     let result = match EmailAddress::new(email_str.trim().to_string()) {
                         Ok(email) => grant_access_usecase
-                            .execute(user_id.clone(), email.clone())
+                            .execute(ExternalSystem::Slack, slack_user_id.clone(), email.clone())
                             .await
                             .map(|_| {
                                 format!(
@@ -105,21 +105,21 @@ impl SlackCommandHandler {
 
                 // バックグラウンドで処理
                 let grant_access_usecase = self.grant_access_usecase.clone();
-                let target_user_str = parts[0]
+                let target_slack_user_id = parts[0]
                     .trim_matches(|c| c == '<' || c == '>' || c == '@')
                     .to_string();
                 let email_str = parts[1].to_string();
 
                 tokio::spawn(async move {
-                    let target_user_id = SlackUserId::new(target_user_str.clone());
+                    let display_user_id = target_slack_user_id.clone();
                     let result = match EmailAddress::new(email_str.trim().to_string()) {
                         Ok(email) => grant_access_usecase
-                            .execute(target_user_id.clone(), email.clone())
+                            .execute(ExternalSystem::Slack, target_slack_user_id.clone(), email.clone())
                             .await
                             .map(|_| {
                                 format!(
                                     "✅ 紐付け完了！<@{}> に {} のカレンダーアクセス権を付与しました。",
-                                    target_user_str,
+                                    display_user_id,
                                     email.as_str()
                                 )
                             })

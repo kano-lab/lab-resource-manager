@@ -11,4 +11,3 @@ pub mod value_objects;
 
 pub use entity::IdentityLink;
 pub use errors::IdentityLinkError;
-pub use value_objects::SlackUserId;
