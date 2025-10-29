@@ -93,11 +93,10 @@ impl GrantUserResourceAccessUseCase {
                     // 成功した場合は次へ
                 }
                 Err(ResourceCollectionAccessError::AlreadyGranted(_)) => {
-                    // 既にアクセス権がある場合は成功とみなす（べき等性）
-                    continue;
+                    // 既にアクセス権がある場合は成功とみなす
                 }
                 Err(e) => {
-                    // その他のエラーは警告を出すが処理は継続（ベストエフォート）
+                    // その他のエラーは警告を出すが処理は継続
                     tracing::warn!(
                         "Failed to grant access to collection '{}' for {}: {}",
                         collection_id,
