@@ -28,136 +28,130 @@ impl SlackCommandHandler {
 
         match command {
             "/register-calendar" => {
-                if text.is_empty() {
-                    return Ok(SlackCommandEventResponse::new(
-                        SlackMessageContent::new().with_text(
-                            "使い方: `/register-calendar <your-email@gmail.com>`".to_string(),
-                        ),
-                    ));
-                }
-
-                // 即座に応答
-                let immediate_response = SlackCommandEventResponse::new(
-                    SlackMessageContent::new().with_text("⏳ 処理中...".to_string()),
-                );
-
-                // バックグラウンドで処理
-                let grant_access_usecase = self.grant_access_usecase.clone();
-                let email_str = text.to_string();
-
-                tokio::spawn(async move {
-                    let result = match EmailAddress::new(email_str.trim().to_string()) {
-                        Ok(email) => grant_access_usecase
-                            .execute(ExternalSystem::Slack, slack_user_id.clone(), email.clone())
-                            .await
-                            .map(|_| {
-                                format!(
-                                    "✅ 登録完了！カレンダーへのアクセス権を付与しました: {}",
-                                    email.as_str()
-                                )
-                            })
-                            .map_err(|e| format!("❌ カレンダー登録に失敗: {}", e)),
-                        Err(e) => Err(format!("❌ メールアドレスの形式が不正です: {}", e)),
-                    };
-
-                    // 結果をSlackに送信
-                    let message = match result {
-                        Ok(msg) => msg,
-                        Err(err) => err,
-                    };
-
-                    println!("response_url経由でフォローアップ送信");
-                    // response_urlを使ってメッセージを送信（Botがチャンネルに参加していなくてもOK）
-                    let payload = serde_json::json!({
-                        "text": message,
-                        "response_type": "in_channel"
-                    });
-
-                    let client = reqwest::Client::new();
-                    if let Err(e) = client
-                        .post(response_url.0.as_str())
-                        .json(&payload)
-                        .send()
-                        .await
-                    {
-                        eprintln!("フォローアップメッセージの送信に失敗: {}", e);
-                    } else {
-                        println!("✅ フォローアップメッセージを送信しました");
-                    }
-                });
-
-                Ok(immediate_response)
+                self.handle_register_calendar(text, slack_user_id, response_url)
+                    .await
             }
-            "/link-user" => {
-                let parts: Vec<&str> = text.split_whitespace().collect();
-                if parts.len() != 2 {
-                    return Ok(SlackCommandEventResponse::new(
-                        SlackMessageContent::new().with_text(
-                            "使い方: `/link-user <@slack_user> <email@gmail.com>`".to_string(),
-                        ),
-                    ));
-                }
-
-                // 即座に応答
-                let immediate_response = SlackCommandEventResponse::new(
-                    SlackMessageContent::new().with_text("⏳ 処理中...".to_string()),
-                );
-
-                // バックグラウンドで処理
-                let grant_access_usecase = self.grant_access_usecase.clone();
-                let target_slack_user_id = parts[0]
-                    .trim_matches(|c| c == '<' || c == '>' || c == '@')
-                    .to_string();
-                let email_str = parts[1].to_string();
-
-                tokio::spawn(async move {
-                    let display_user_id = target_slack_user_id.clone();
-                    let result = match EmailAddress::new(email_str.trim().to_string()) {
-                        Ok(email) => grant_access_usecase
-                            .execute(ExternalSystem::Slack, target_slack_user_id.clone(), email.clone())
-                            .await
-                            .map(|_| {
-                                format!(
-                                    "✅ 紐付け完了！<@{}> に {} のカレンダーアクセス権を付与しました。",
-                                    display_user_id,
-                                    email.as_str()
-                                )
-                            })
-                            .map_err(|e| format!("❌ ユーザー紐付けに失敗: {}", e)),
-                        Err(e) => Err(format!("❌ メールアドレスの形式が不正です: {}", e)),
-                    };
-
-                    // 結果をSlackに送信
-                    let message = match result {
-                        Ok(msg) => msg,
-                        Err(err) => err,
-                    };
-
-                    println!("response_url経由でフォローアップ送信");
-                    // response_urlを使ってメッセージを送信（Botがチャンネルに参加していなくてもOK）
-                    let payload = serde_json::json!({
-                        "text": message,
-                        "response_type": "in_channel"
-                    });
-
-                    let client = reqwest::Client::new();
-                    if let Err(e) = client
-                        .post(response_url.0.as_str())
-                        .json(&payload)
-                        .send()
-                        .await
-                    {
-                        eprintln!("フォローアップメッセージの送信に失敗: {}", e);
-                    } else {
-                        println!("✅ フォローアップメッセージを送信しました");
-                    }
-                });
-
-                Ok(immediate_response)
-            }
+            "/link-user" => self.handle_link_user(text, response_url).await,
             _ => Ok(SlackCommandEventResponse::new(
                 SlackMessageContent::new().with_text(format!("不明なコマンド: {}", command)),
             )),
+        }
+    }
+
+    async fn handle_register_calendar(
+        &self,
+        text: &str,
+        slack_user_id: String,
+        response_url: SlackResponseUrl,
+    ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
+        if text.is_empty() {
+            return Ok(SlackCommandEventResponse::new(
+                SlackMessageContent::new()
+                    .with_text("使い方: `/register-calendar <your-email@gmail.com>`".to_string()),
+            ));
+        }
+
+        let grant_access_usecase = self.grant_access_usecase.clone();
+        let email_str = text.to_string();
+
+        self.execute_with_background_response(response_url, || async move {
+            let email = EmailAddress::new(email_str.trim().to_string())
+                .map_err(|e| format!("❌ メールアドレスの形式が不正です: {}", e))?;
+
+            grant_access_usecase
+                .execute(ExternalSystem::Slack, slack_user_id, email.clone())
+                .await
+                .map_err(|e| format!("❌ カレンダー登録に失敗: {}", e))?;
+
+            Ok(format!(
+                "✅ 登録完了！カレンダーへのアクセス権を付与しました: {}",
+                email.as_str()
+            ))
+        })
+        .await
+    }
+
+    async fn handle_link_user(
+        &self,
+        text: &str,
+        response_url: SlackResponseUrl,
+    ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
+        let parts: Vec<&str> = text.split_whitespace().collect();
+        if parts.len() != 2 {
+            return Ok(SlackCommandEventResponse::new(
+                SlackMessageContent::new()
+                    .with_text("使い方: `/link-user <@slack_user> <email@gmail.com>`".to_string()),
+            ));
+        }
+
+        let grant_access_usecase = self.grant_access_usecase.clone();
+        let target_slack_user_id = parts[0]
+            .trim_matches(|c| c == '<' || c == '>' || c == '@')
+            .to_string();
+        let email_str = parts[1].to_string();
+
+        self.execute_with_background_response(response_url, || async move {
+            let email = EmailAddress::new(email_str.trim().to_string())
+                .map_err(|e| format!("❌ メールアドレスの形式が不正です: {}", e))?;
+
+            grant_access_usecase
+                .execute(
+                    ExternalSystem::Slack,
+                    target_slack_user_id.clone(),
+                    email.clone(),
+                )
+                .await
+                .map_err(|e| format!("❌ ユーザー紐付けに失敗: {}", e))?;
+
+            Ok(format!(
+                "✅ 紐付け完了！<@{}> に {} のカレンダーアクセス権を付与しました。",
+                target_slack_user_id,
+                email.as_str()
+            ))
+        })
+        .await
+    }
+
+    /// バックグラウンドで処理を実行し、結果をSlackに送信する共通ヘルパー
+    async fn execute_with_background_response<F, Fut>(
+        &self,
+        response_url: SlackResponseUrl,
+        operation: F,
+    ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>>
+    where
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<String, String>> + Send + 'static,
+    {
+        tokio::spawn(async move {
+            let message = match operation().await {
+                Ok(msg) => msg,
+                Err(err) => err,
+            };
+
+            Self::send_followup_message(&response_url, message).await;
+        });
+
+        Ok(SlackCommandEventResponse::new(
+            SlackMessageContent::new().with_text("⏳ 処理中...".to_string()),
+        ))
+    }
+
+    /// Slackにフォローアップメッセージを送信
+    async fn send_followup_message(response_url: &SlackResponseUrl, message: String) {
+        let payload = serde_json::json!({
+            "text": message,
+            "response_type": "in_channel"
+        });
+
+        let client = reqwest::Client::new();
+        match client
+            .post(response_url.0.as_str())
+            .json(&payload)
+            .send()
+            .await
+        {
+            Ok(_) => println!("✅ フォローアップメッセージを送信しました"),
+            Err(e) => eprintln!("フォローアップメッセージの送信に失敗: {}", e),
         }
     }
 }
