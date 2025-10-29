@@ -34,7 +34,11 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // rustls暗号化プロバイダの初期化
+    // NOTE: rustls暗号化プロバイダの初期化
+    // google-calendar3クレートが内部でhyper-rustlsを使用しており、
+    // rustls 0.23以降ではプロセスレベルでCryptoProviderを明示的に設定する必要がある。
+    // これを行わないと "no process-level CryptoProvider available" エラーが発生する。
+    // 詳細: https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html
     rustls::crypto::ring::default_provider()
         .install_default()
         .ok();
