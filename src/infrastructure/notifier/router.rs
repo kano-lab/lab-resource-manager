@@ -5,6 +5,7 @@ use crate::infrastructure::config::{NotificationConfig, ResourceConfig};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::sync::Arc;
+use tracing::warn;
 
 use super::senders::{
     MockSender, SlackSender,
@@ -99,13 +100,18 @@ impl NotificationRouter {
         let message = self.format_message(event);
         let user_email = usage.owner_email();
 
-        // IdentityLinkを取得（エラーは無視して None として扱う）
-        let identity_link = self
-            .identity_repo
-            .find_by_email(user_email)
-            .await
-            .ok()
-            .flatten();
+        // IdentityLinkを取得
+        let identity_link = match self.identity_repo.find_by_email(user_email).await {
+            Ok(link) => link,
+            Err(e) => {
+                warn!(
+                    "IdentityLinkの取得に失敗しました (email: {}): {}",
+                    user_email.as_str(),
+                    e
+                );
+                None
+            }
+        };
 
         let context = NotificationContext {
             message: &message,
