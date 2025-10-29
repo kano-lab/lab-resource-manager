@@ -22,3 +22,4 @@ Cargo.lock
 .env
 secrets/
 config/
+data/
