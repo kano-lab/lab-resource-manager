@@ -9,9 +9,10 @@
 //! ```
 
 use lab_resource_manager::{
-    GoogleCalendarUsageRepository, NotificationRouter, NotifyResourceUsageChangesUseCase,
-    load_config,
+    GoogleCalendarUsageRepository, JsonFileIdentityLinkRepository, NotificationRouter,
+    NotifyResourceUsageChangesUseCase, load_config,
 };
+use std::sync::Arc;
 use std::time::Duration;
 
 #[tokio::main]
@@ -27,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
 
     let config_path =
-        std::env::var("CONFIG_PATH").unwrap_or_else(|_| "config/resources.toml".to_string());
+        std::env::var("RESOURCE_CONFIG").unwrap_or_else(|_| "config/resources.toml".to_string());
     let absolute_config_path = project_root.join(&config_path);
 
     let config = load_config(
@@ -49,8 +50,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     println!("✅ Google Calendar repository initialized");
 
-    // Create notification router (uses configured notification destinations)
-    let notifier = NotificationRouter::new(config);
+    // Create identity link repository
+    let identity_links_path = std::env::var("IDENTITY_LINKS_FILE")
+        .map(|p| project_root.join(p))
+        .unwrap_or_else(|_| project_root.join("data/identity_links.json"));
+    let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new(identity_links_path));
+
+    // Create notification router (uses configured notification destinations and identity_repo)
+    let notifier = NotificationRouter::new(config, identity_repo);
     println!("✅ Notification router initialized (using configured destinations)");
 
     // Create use case

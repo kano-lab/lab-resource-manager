@@ -18,13 +18,21 @@ pub trait Notifier: Send + Sync {
 }
 
 #[derive(Debug)]
-pub struct NotificationError {
-    pub message: String,
+pub enum NotificationError {
+    /// 通知送信の失敗
+    SendFailure(String),
+    /// リポジトリエラー（IdentityLink取得失敗等）
+    RepositoryError(String),
 }
 
 impl fmt::Display for NotificationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "通知エラー: {}", self.message)
+        match self {
+            NotificationError::SendFailure(msg) => write!(f, "通知送信エラー: {}", msg),
+            NotificationError::RepositoryError(msg) => {
+                write!(f, "通知準備中のリポジトリエラー: {}", msg)
+            }
+        }
     }
 }
 

@@ -12,5 +12,6 @@
 //! Domain層は他のどの層にも依存しない。
 //! 外部ライブラリへの依存も最小限に抑える。
 pub mod aggregates;
+pub mod common;
 pub mod errors;
 pub mod ports;
