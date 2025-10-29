@@ -77,15 +77,9 @@ impl IdentityLinkDto {
             .iter()
             .filter_map(|dto| {
                 // 現在サポートしているシステムのみ復元
-                if dto.system == "slack" {
-                    Some(ExternalIdentity::reconstitute(
-                        ExternalSystem::Slack,
-                        dto.user_id.clone(),
-                        dto.linked_at,
-                    ))
-                } else {
-                    None
-                }
+                ExternalSystem::from_str(&dto.system).map(|system| {
+                    ExternalIdentity::reconstitute(system, dto.user_id.clone(), dto.linked_at)
+                })
             })
             .collect();
 
