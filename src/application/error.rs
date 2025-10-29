@@ -18,9 +18,10 @@ pub enum ApplicationError {
     IdentityLink(IdentityLinkError),
 
     // UseCase固有のビジネスルール違反
-    /// メールアドレスが既に別のSlackユーザーに紐付けられている
-    EmailAlreadyLinkedToAnotherUser {
+    /// 外部システムが既に紐付けられている
+    ExternalSystemAlreadyLinked {
         email: String,
+        external_system: String,
     },
 }
 
@@ -34,11 +35,11 @@ impl fmt::Display for ApplicationError {
             }
             ApplicationError::ResourceUsage(e) => write!(f, "リソース使用エラー: {}", e),
             ApplicationError::IdentityLink(e) => write!(f, "ID紐付けエラー: {}", e),
-            ApplicationError::EmailAlreadyLinkedToAnotherUser { email } => {
+            ApplicationError::ExternalSystemAlreadyLinked { email, external_system } => {
                 write!(
                     f,
-                    "メールアドレス {} は既に別のSlackユーザーに紐付けられています",
-                    email
+                    "メールアドレス {} は既に {} に紐付けられています",
+                    email, external_system
                 )
             }
         }
@@ -53,7 +54,7 @@ impl std::error::Error for ApplicationError {
             ApplicationError::ResourceCollectionAccess(e) => Some(e),
             ApplicationError::ResourceUsage(e) => Some(e),
             ApplicationError::IdentityLink(e) => Some(e),
-            ApplicationError::EmailAlreadyLinkedToAnotherUser { .. } => None,
+            ApplicationError::ExternalSystemAlreadyLinked { .. } => None,
         }
     }
 }

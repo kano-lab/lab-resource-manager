@@ -64,8 +64,9 @@ impl GrantUserResourceAccessUseCase {
     ) -> Result<(), ApplicationError> {
         // 既に指定された外部システムと紐付いているかチェック
         if identity.has_identity_for_system(&external_system) {
-            return Err(ApplicationError::EmailAlreadyLinkedToAnotherUser {
+            return Err(ApplicationError::ExternalSystemAlreadyLinked {
                 email: identity.email().as_str().to_string(),
+                external_system: external_system.as_str().to_string(),
             });
         }
 
