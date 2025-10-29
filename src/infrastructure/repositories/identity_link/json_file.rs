@@ -126,6 +126,14 @@ impl JsonFileIdentityLinkRepository {
         Ok(())
     }
 
+    /// キャッシュが空の場合、ファイルから読み込む
+    async fn ensure_loaded(&self) -> Result<(), RepositoryError> {
+        if self.cache.read().await.is_empty() {
+            self.load().await?;
+        }
+        Ok(())
+    }
+
     async fn save_to_file(&self) -> Result<(), RepositoryError> {
         let cache = self.cache.read().await;
 
@@ -153,9 +161,7 @@ impl IdentityLinkRepository for JsonFileIdentityLinkRepository {
         &self,
         email: &EmailAddress,
     ) -> Result<Option<IdentityLink>, RepositoryError> {
-        if self.cache.read().await.is_empty() {
-            self.load().await?;
-        }
+        self.ensure_loaded().await?;
 
         let cache = self.cache.read().await;
         match cache.get(email.as_str()) {
@@ -169,10 +175,7 @@ impl IdentityLinkRepository for JsonFileIdentityLinkRepository {
         system: &ExternalSystem,
         user_id: &str,
     ) -> Result<Option<IdentityLink>, RepositoryError> {
-        // Load from file if cache is empty
-        if self.cache.read().await.is_empty() {
-            self.load().await?;
-        }
+        self.ensure_loaded().await?;
 
         let cache = self.cache.read().await;
         for dto in cache.values() {
@@ -187,9 +190,7 @@ impl IdentityLinkRepository for JsonFileIdentityLinkRepository {
     }
 
     async fn save(&self, identity: IdentityLink) -> Result<(), RepositoryError> {
-        if self.cache.read().await.is_empty() {
-            self.load().await?;
-        }
+        self.ensure_loaded().await?;
 
         let dto = IdentityLinkDto::from_entity(&identity);
         let email_key = identity.email().as_str().to_string();
@@ -205,9 +206,7 @@ impl IdentityLinkRepository for JsonFileIdentityLinkRepository {
     }
 
     async fn find_all(&self) -> Result<Vec<IdentityLink>, RepositoryError> {
-        if self.cache.read().await.is_empty() {
-            self.load().await?;
-        }
+        self.ensure_loaded().await?;
 
         let cache = self.cache.read().await;
         let mut result = Vec::new();
@@ -220,9 +219,7 @@ impl IdentityLinkRepository for JsonFileIdentityLinkRepository {
     }
 
     async fn delete(&self, email: &EmailAddress) -> Result<(), RepositoryError> {
-        if self.cache.read().await.is_empty() {
-            self.load().await?;
-        }
+        self.ensure_loaded().await?;
 
         {
             let mut cache = self.cache.write().await;
