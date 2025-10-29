@@ -89,9 +89,7 @@ impl Sender for SlackSender {
             .json(&payload)
             .send()
             .await
-            .map_err(|e| NotificationError {
-                message: format!("Slack送信失敗: {}", e),
-            })?;
+            .map_err(|e| NotificationError::SendFailure(format!("Slack送信失敗: {}", e)))?;
 
         Ok(())
     }

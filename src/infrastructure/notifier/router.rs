@@ -4,7 +4,6 @@ use crate::infrastructure::config::{NotificationConfig, ResourceConfig};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::sync::Arc;
-use tracing::warn;
 
 use super::senders::{
     MockSender, SlackSender,
@@ -61,17 +60,20 @@ impl NotificationRouter {
         let user_email = usage.owner_email();
 
         // IdentityLinkを取得
-        let identity_link = match self.identity_repo.find_by_email(user_email).await {
-            Ok(link) => link,
-            Err(e) => {
-                warn!(
-                    "IdentityLinkの取得に失敗しました (email: {}): {}",
+        // Ok(None) = IdentityLinkが未登録（正常ケース）
+        // Ok(Some(_)) = IdentityLinkが存在
+        // Err(_) = リポジトリエラー（DB接続障害等の異常ケース）
+        let identity_link = self
+            .identity_repo
+            .find_by_email(user_email)
+            .await
+            .map_err(|e| {
+                NotificationError::RepositoryError(format!(
+                    "IdentityLink取得失敗 (email: {}): {}",
                     user_email.as_str(),
                     e
-                );
-                None
-            }
-        };
+                ))
+            })?;
 
         let context = NotificationContext {
             event,
