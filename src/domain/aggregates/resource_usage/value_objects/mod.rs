@@ -11,11 +11,7 @@
 pub mod resource;
 pub mod time_period;
 pub mod usage_id;
-pub mod user;
-pub mod user_id;
 
 pub use resource::{Gpu, Resource};
 pub use time_period::TimePeriod;
 pub use usage_id::UsageId;
-pub use user::User;
-pub use user_id::UserId;

@@ -31,7 +31,9 @@
 //! Repositoryは**集約ルート**に対して1つ定義する。
 //! 集約内部の値オブジェクトには個別のRepositoryを作らない。
 pub mod errors;
+pub mod identity_link;
 pub mod resource_usage;
 
 pub use errors::RepositoryError;
+pub use identity_link::IdentityLinkRepository;
 pub use resource_usage::ResourceUsageRepository;

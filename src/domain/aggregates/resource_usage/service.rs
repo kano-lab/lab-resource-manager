@@ -5,6 +5,12 @@ use super::value_objects::Resource;
 pub struct UsageConflictChecker;
 
 // TODO@KinjiKawaguchi: もう少し自明なコードを書いてインラインコメントを減らす
+impl Default for UsageConflictChecker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UsageConflictChecker {
     pub fn new() -> Self {
         Self
@@ -35,7 +41,7 @@ impl UsageConflictChecker {
                     if new_resource.conflicts_with(existing_resource) {
                         return Err(ResourceUsageError::UsageConflict {
                             resource: format_resource_item(new_resource),
-                            conflicting_user: existing.user().name().to_string(),
+                            conflicting_user: existing.owner_email().as_str().to_string(),
                         });
                     }
                 }

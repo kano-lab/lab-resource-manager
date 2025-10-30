@@ -4,42 +4,49 @@
 [![Documentation](https://docs.rs/lab-resource-manager/badge.svg)](https://docs.rs/lab-resource-manager)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue)](README.md#license)
 
-GPU and room resource management system with Google Calendar and Slack integration.
+GPU and room resource usage management and notification system.
 
 [日本語 README](README_ja.md)
 
 ## Features
 
-- **Google Calendar Integration**: Manage GPU server and room reservations via calendar
-- **Multi-Destination Notifications**: Configure different notification destinations per resource (Slack, Mock, etc.)
+- **Resource Usage Management**: Manage GPU server and room usage schedules (default implementation: Google Calendar)
+- **Slack Bot for Access Control**: Users can register their email addresses and get resource access via Slack commands
+  - Support for DMs and private channels via response_url
+  - Automatic user mentions in notifications
+- **Identity Linking**: Map email addresses to chat user IDs for enhanced notifications
+- **Multi-Destination Notifications**: Configure different notification destinations
+  per resource (default implementations: Slack, Mock)
 - **Flexible Device Specification**: Support for multi-device notation like `0-2,5,7-9`
-- **Clean Architecture**: Designed with DDD + Hexagonal Architecture
-- **Mock Implementations**: Built-in mock repository and notifier for testing
+- **Clean Architecture**: Designed with DDD + Hexagonal Architecture with Shared Kernel pattern
+- **Extensible Design**: Repositories, notifiers, and access control services abstracted as ports
 
 ## Architecture
 
 This project follows Clean Architecture principles:
 
-```
+```text
 src/
-├── domain/           # Domain layer (business logic)
-│   ├── aggregates/   # Aggregates (ResourceUsage)
-│   ├── ports/        # Ports (Repository, Notifier traits)
-│   └── errors.rs     # Domain errors
-├── application/      # Application layer (use cases)
-│   └── usecases/     # NotifyResourceUsageChangesUseCase
-├── infrastructure/   # Infrastructure layer (external integrations)
-│   ├── repositories/ # Google Calendar implementation
-│   ├── notifier/     # Slack implementation
-│   └── config/       # Configuration management
-└── bin/              # Entry points
-    └── watcher.rs    # Main watcher binary
+├── domain/                  # Domain layer (business logic)
+│   ├── aggregates/          # Aggregates (ResourceUsage, IdentityLink)
+│   ├── common/              # Shared Kernel (EmailAddress, etc.)
+│   ├── ports/               # Ports (Repository, Notifier, ResourceCollectionAccess traits)
+│   └── errors.rs            # Domain errors
+├── application/             # Application layer (use cases)
+│   └── usecases/            # Notify, GrantAccess use cases
+├── infrastructure/          # Infrastructure layer (external integrations)
+│   ├── repositories/        # Repository implementations (Google Calendar, JSON file, etc.)
+│   │   ├── resource_usage/  # ResourceUsage repository implementations
+│   │   └── identity_link/   # IdentityLink repository implementations
+│   ├── notifier/            # Notifier implementations (Slack, Mock, etc.)
+│   ├── resource_collection_access/ # Access control service implementations (Google Calendar, etc.)
+│   └── config/              # Configuration management
+├── interface/               # Interface layer (adapters)
+│   └── slack/               # Slack bot (Socket Mode + command handlers)
+└── bin/                     # Entry points
+    ├── watcher.rs           # Resource usage watcher
+    └── slackbot.rs          # Slack bot for resource access management
 ```
-
-**Key Design Patterns:**
-- **DDD Factory Pattern**: Device specification parsing (`ResourceFactory`)
-- **Repository Pattern**: Abstract data access via traits
-- **Hexagonal Architecture**: Ports and Adapters for external dependencies
 
 ## Setup
 
@@ -52,13 +59,22 @@ cp .env.example .env
 Edit `.env` to configure:
 
 ```env
+# Repository Configuration (default implementation: Google Calendar)
 GOOGLE_SERVICE_ACCOUNT_KEY=secrets/service-account.json
-CONFIG_PATH=config/resources.toml
+
+# Resource Configuration
+RESOURCE_CONFIG=config/resources.toml
+
+# Slack Bot Configuration (for slackbot binary)
+SLACK_BOT_TOKEN=xoxb-your-bot-token-here
+SLACK_APP_TOKEN=xapp-your-app-token-here
 ```
 
-**Note**: Notification settings (Slack webhook URLs, etc.) are configured in `config/resources.toml` per resource.
+**Note**: Notification settings are configured in `config/resources.toml` per resource.
 
-### 2. Google Calendar API Setup
+### 2. Repository Implementation Setup (Default: Google Calendar)
+
+If using the Google Calendar repository:
 
 1. Create a project in [Google Cloud Console](https://console.cloud.google.com/)
 2. Enable Google Calendar API
@@ -73,11 +89,11 @@ Define GPU servers and rooms in `config/resources.toml`:
 ```toml
 [[servers]]
 name = "Thalys"
-calendar_id = "your-calendar-id@group.calendar.google.com"
+calendar_id = "your-calendar-id@group.calendar.google.com"  # Repository implementation-specific ID
 
 # Configure notification destinations per resource
 [[servers.notifications]]
-type = "slack"
+type = "slack"  # Notifier implementation selection
 webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
 
 # Optional: Add mock notifications for testing
@@ -101,14 +117,15 @@ type = "slack"
 webhook_url = "https://hooks.slack.com/services/YOUR/ROOM/WEBHOOK"
 ```
 
-Each resource can have multiple notification destinations, and different resources can notify different channels.
+Each resource can have multiple notifier implementations configured, and different
+resources can specify different notification destinations.
 
 ## Usage
 
 ### Running the Watcher
 
 ```bash
-# Default (Google Calendar + configured notifications)
+# Default (repository implementation + configured notifications)
 cargo run --bin watcher
 
 # Use mock repository (for testing)
@@ -120,10 +137,24 @@ cargo run --bin watcher --interval 30
 
 ### CLI Options
 
-- `--repository <google_calendar|mock>`: Select data source
+- `--repository <google_calendar|mock>`: Select repository implementation
 - `--interval <seconds>`: Set polling interval
 
-Notification destinations are configured per resource in `config/resources.toml`.
+Notifier implementations are configured per resource in `config/resources.toml`.
+
+### Running the Slack Bot
+
+The Slack bot allows users to register their email addresses and get access to all resource collections:
+
+```bash
+# Run the bot
+cargo run --bin slackbot
+```
+
+**Slack Commands:**
+
+- `/register-calendar <your-email@example.com>` - Register your own email address and link to your Slack account
+- `/link-user <@slack_user> <email@example.com>` - Link another user's email address to their Slack account
 
 ### Using as a Library
 
@@ -134,7 +165,7 @@ Add to your `Cargo.toml`:
 lab-resource-manager = "0.1"
 ```
 
-Example code:
+Example code (using Google Calendar implementation):
 
 ```rust
 use lab_resource_manager::prelude::*;
@@ -144,13 +175,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration
     let config = load_config("config/resources.toml")?;
 
-    // Create repository and notifier
+    // Create repository implementation (using Google Calendar here)
     let repository = GoogleCalendarUsageRepository::new(
         "secrets/service-account.json",
         config.clone(),
     ).await?;
 
-    // NotificationRouter automatically handles all configured notification types
+    // Create notification router (automatically handles all configured notifier implementations)
     let notifier = NotificationRouter::new(config);
 
     // Create and run use case
@@ -198,7 +229,7 @@ cargo fmt
 
 ## Device Specification Format
 
-In calendar event titles, you can specify devices using the following formats:
+In resource usage titles, you can specify devices using the following formats:
 
 - Single: `0` → Device 0
 - Range: `0-2` → Devices 0, 1, 2
@@ -212,19 +243,23 @@ The `ResourceFactory` in the domain layer handles parsing these specifications.
 ### Implemented ✅
 
 - [x] Resource-based notification routing
+- [x] Identity Linking (chat user mapping)
+- [x] Slack bot for resource collection access management
 
 ### Roadmap
 
-- [ ] Slack command for creating calendar reservations
-- [ ] Slack user mapping
+- [ ] Slack command for creating resource usage reservations
 - [ ] Natural language resource management (LLM agent)
+- [ ] Web UI for resource management
 
 ## License
 
 Licensed under either of
 
- * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
+  <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or
+  <http://opensource.org/licenses/MIT>)
 
 at your option.
 

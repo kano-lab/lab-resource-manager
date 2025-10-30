@@ -1,5 +1,6 @@
 use clap::Parser;
 use lab_resource_manager::*;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Parser, Debug)]
@@ -19,6 +20,15 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
+    // NOTE: rustls暗号化プロバイダの初期化
+    // google-calendar3クレートが内部でhyper-rustlsを使用しており、
+    // rustls 0.23以降ではプロセスレベルでCryptoProviderを明示的に設定する必要がある。
+    // これを行わないと "no process-level CryptoProvider available" エラーが発生する。
+    // 詳細: https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
+
     let args = Args::parse();
     // .envファイルを読み込み、そのパスからプロジェクトルートを特定
     let dotenv_path = dotenv::dotenv().ok();
@@ -32,10 +42,16 @@ async fn main() {
     println!("📋 Repository: {}", args.repository);
     println!("📋 Interval: {}秒", args.interval);
 
-    let config_path = std::env::var("CONFIG_PATH").expect("❌ CONFIG_PATH must be set");
+    let config_path = std::env::var("RESOURCE_CONFIG").expect("❌ RESOURCE_CONFIG must be set");
     let absolute_config_path = project_root.join(&config_path);
     let config = load_config(absolute_config_path.to_str().expect("❌ パスの変換に失敗"))
         .expect("❌ 設定ファイルの読み込みに失敗");
+
+    // IdentityLinkRepositoryのセットアップ
+    let identity_links_path = std::env::var("IDENTITY_LINKS_FILE")
+        .map(|p| project_root.join(p))
+        .unwrap_or_else(|_| project_root.join("data/identity_links.json"));
+    let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new(identity_links_path));
 
     match args.repository.as_str() {
         "google_calendar" => {
@@ -50,12 +66,12 @@ async fn main() {
             .await
             .expect("❌ Google Calendar接続に失敗");
 
-            let notifier = NotificationRouter::new(config);
+            let notifier = NotificationRouter::new(config, identity_repo);
             run_watcher(repository, notifier, args.interval).await;
         }
         "mock" => {
             let repository = MockUsageRepository::new();
-            let notifier = NotificationRouter::new(config);
+            let notifier = NotificationRouter::new(config, identity_repo);
             run_watcher(repository, notifier, args.interval).await;
         }
         _ => {

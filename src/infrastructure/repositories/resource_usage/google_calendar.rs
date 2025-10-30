@@ -1,8 +1,9 @@
 use crate::domain::aggregates::resource_usage::{
     entity::ResourceUsage,
     factory::ResourceFactory,
-    value_objects::{Resource, TimePeriod, UsageId, User, UserId},
+    value_objects::{Resource, TimePeriod, UsageId},
 };
+use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{RepositoryError, ResourceUsageRepository};
 use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;
@@ -111,7 +112,7 @@ impl GoogleCalendarUsageRepository {
             .and_then(|e| e.date_time.as_ref())
             .ok_or_else(|| RepositoryError::Unknown("終了時刻がありません".to_string()))?;
 
-        let time_period = TimePeriod::new(start.clone(), end.clone())
+        let time_period = TimePeriod::new(*start, *end)
             .map_err(|e| RepositoryError::Unknown(format!("時間枠エラー: {}", e)))?;
 
         // タイトルから資源をパース
@@ -121,18 +122,12 @@ impl GoogleCalendarUsageRepository {
 
         let notes = event.description.clone();
 
-        ResourceUsage::new(id, user, time_period, items, notes)
-            .map_err(|e| RepositoryError::Unknown(format!("ResourceUsage作成エラー: {}", e)))
+        ResourceUsage::new(id, user, time_period, items, notes).map_err(RepositoryError::from)
     }
 
-    /// メールアドレスからUserを作成
-    fn parse_user(&self, email: &str) -> Result<User, RepositoryError> {
-        let user_id = email.split('@').next().unwrap_or(email);
-
-        Ok(User::new(
-            UserId::new(user_id.to_string()),
-            user_id.to_string(),
-        ))
+    /// メールアドレスからEmailAddressを作成
+    fn parse_user(&self, email: &str) -> Result<EmailAddress, RepositoryError> {
+        EmailAddress::new(email.to_string()).map_err(RepositoryError::from)
     }
 
     /// タイトルから資源をパース
