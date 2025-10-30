@@ -18,7 +18,7 @@
 
 このプロジェクトはClean Architectureの原則に従っています:
 
-```
+```text
 src/
 ├── domain/                  # ドメイン層（ビジネスロジック）
 │   ├── aggregates/          # 集約（ResourceUsage, IdentityLink）
@@ -144,6 +144,7 @@ cargo run --bin slackbot
 ```
 
 **Slackコマンド:**
+
 - `/register-calendar <your-email@example.com>` - 自分のメールアドレスを登録し、Slackアカウントと連携
 - `/link-user <@slack_user> <email@example.com>` - 他のユーザーのメールアドレスをSlackアカウントと連携
 
@@ -243,8 +244,8 @@ cargo fmt
 
 このプロジェクトは以下のいずれかのライセンスで利用できます:
 
- * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) または http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license ([LICENSE-MIT](LICENSE-MIT) または http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) または <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) または <http://opensource.org/licenses/MIT>)
 
 どちらか好きな方を選択してください。
 
