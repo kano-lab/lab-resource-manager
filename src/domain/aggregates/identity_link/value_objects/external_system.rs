@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 /// 外部システムの種類
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -13,11 +14,15 @@ impl ExternalSystem {
             ExternalSystem::Slack => "slack",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for ExternalSystem {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "slack" => Some(ExternalSystem::Slack),
-            _ => None,
+            "slack" => Ok(ExternalSystem::Slack),
+            _ => Err(format!("Unknown external system: {}", s)),
         }
     }
 }

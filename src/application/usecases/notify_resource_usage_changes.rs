@@ -77,10 +77,10 @@ where
         current: &HashMap<String, ResourceUsage>,
     ) -> Result<(), ApplicationError> {
         for (id, current_usage) in current {
-            if let Some(previous_usage) = previous.get(id) {
-                if previous_usage != current_usage {
-                    self.notify_updated(current_usage.clone()).await?;
-                }
+            if let Some(previous_usage) = previous.get(id)
+                && previous_usage != current_usage
+            {
+                self.notify_updated(current_usage.clone()).await?;
             }
         }
         Ok(())

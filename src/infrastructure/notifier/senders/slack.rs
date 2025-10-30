@@ -12,6 +12,12 @@ pub struct SlackSender {
     client: Client,
 }
 
+impl Default for SlackSender {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SlackSender {
     pub fn new() -> Self {
         Self {
@@ -59,10 +65,10 @@ impl SlackSender {
         email: &crate::domain::common::EmailAddress,
         identity_link: Option<&crate::domain::aggregates::identity_link::entity::IdentityLink>,
     ) -> String {
-        if let Some(identity) = identity_link {
-            if let Some(slack_identity) = identity.get_identity_for_system(&ExternalSystem::Slack) {
-                return format!("<@{}>", slack_identity.user_id());
-            }
+        if let Some(identity) = identity_link
+            && let Some(slack_identity) = identity.get_identity_for_system(&ExternalSystem::Slack)
+        {
+            return format!("<@{}>", slack_identity.user_id());
         }
         email.as_str().to_string()
     }

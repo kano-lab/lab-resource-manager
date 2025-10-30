@@ -112,7 +112,7 @@ impl GoogleCalendarUsageRepository {
             .and_then(|e| e.date_time.as_ref())
             .ok_or_else(|| RepositoryError::Unknown("終了時刻がありません".to_string()))?;
 
-        let time_period = TimePeriod::new(start.clone(), end.clone())
+        let time_period = TimePeriod::new(*start, *end)
             .map_err(|e| RepositoryError::Unknown(format!("時間枠エラー: {}", e)))?;
 
         // タイトルから資源をパース
