@@ -15,7 +15,8 @@ GPU and room resource usage management and notification system.
   - Support for DMs and private channels via response_url
   - Automatic user mentions in notifications
 - **Identity Linking**: Map email addresses to chat user IDs for enhanced notifications
-- **Multi-Destination Notifications**: Configure different notification destinations per resource (default implementations: Slack, Mock)
+- **Multi-Destination Notifications**: Configure different notification destinations
+  per resource (default implementations: Slack, Mock)
 - **Flexible Device Specification**: Support for multi-device notation like `0-2,5,7-9`
 - **Clean Architecture**: Designed with DDD + Hexagonal Architecture with Shared Kernel pattern
 - **Extensible Design**: Repositories, notifiers, and access control services abstracted as ports
@@ -24,7 +25,7 @@ GPU and room resource usage management and notification system.
 
 This project follows Clean Architecture principles:
 
-```
+```text
 src/
 ├── domain/                  # Domain layer (business logic)
 │   ├── aggregates/          # Aggregates (ResourceUsage, IdentityLink)
@@ -116,7 +117,8 @@ type = "slack"
 webhook_url = "https://hooks.slack.com/services/YOUR/ROOM/WEBHOOK"
 ```
 
-Each resource can have multiple notifier implementations configured, and different resources can specify different notification destinations.
+Each resource can have multiple notifier implementations configured, and different
+resources can specify different notification destinations.
 
 ## Usage
 
@@ -150,6 +152,7 @@ cargo run --bin slackbot
 ```
 
 **Slack Commands:**
+
 - `/register-calendar <your-email@example.com>` - Register your own email address and link to your Slack account
 - `/link-user <@slack_user> <email@example.com>` - Link another user's email address to their Slack account
 
@@ -253,8 +256,10 @@ The `ResourceFactory` in the domain layer handles parsing these specifications.
 
 Licensed under either of
 
- * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
+  <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or
+  <http://opensource.org/licenses/MIT>)
 
 at your option.
 
