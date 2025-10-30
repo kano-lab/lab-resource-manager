@@ -5,6 +5,12 @@ use super::value_objects::Resource;
 pub struct UsageConflictChecker;
 
 // TODO@KinjiKawaguchi: もう少し自明なコードを書いてインラインコメントを減らす
+impl Default for UsageConflictChecker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UsageConflictChecker {
     pub fn new() -> Self {
         Self

@@ -7,6 +7,12 @@ use super::sender::{NotificationContext, Sender};
 /// 標準出力にメッセージを送信するテスト用実装
 pub struct MockSender;
 
+impl Default for MockSender {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockSender {
     pub fn new() -> Self {
         Self

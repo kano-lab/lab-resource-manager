@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::str::FromStr;
 use tokio::sync::RwLock;
 
 /// JSON file storage for IdentityLink
@@ -77,7 +78,7 @@ impl IdentityLinkDto {
             .iter()
             .filter_map(|dto| {
                 // 現在サポートしているシステムのみ復元
-                ExternalSystem::from_str(&dto.system).map(|system| {
+                ExternalSystem::from_str(&dto.system).ok().map(|system| {
                     ExternalIdentity::reconstitute(system, dto.user_id.clone(), dto.linked_at)
                 })
             })

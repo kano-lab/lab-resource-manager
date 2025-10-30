@@ -36,7 +36,7 @@ impl SlackCommandHandler {
         event: SlackCommandEvent,
     ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
         let command = event.command.0.as_str();
-        let text = event.text.as_ref().map(|s| s.as_str()).unwrap_or("");
+        let text = event.text.as_deref().unwrap_or("");
         let slack_user_id = event.user_id.to_string();
         let response_url = event.response_url.clone();
 
