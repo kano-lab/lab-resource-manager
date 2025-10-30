@@ -1,0 +1,11 @@
+target/
+Dockerfile
+.dockerignore
+.git/
+.gitignore
+*.md
+LICENSE
+.env
+data/
+config/
+service-account.json

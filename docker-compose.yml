@@ -1,0 +1,26 @@
+services:
+  watcher:
+    build: .
+    command: watcher
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
+      - ./secrets:/app/secrets:ro
+    environment:
+      - RUST_LOG=info
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  slackbot:
+    build: .
+    command: slackbot
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
+      - ./secrets:/app/secrets:ro
+    environment:
+      - RUST_LOG=info
+    env_file:
+      - .env
+    restart: unless-stopped
