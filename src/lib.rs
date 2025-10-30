@@ -38,8 +38,10 @@
 //!     NotifyResourceUsageChangesUseCase,
 //!     GoogleCalendarUsageRepository,
 //!     NotificationRouter,
+//!     JsonFileIdentityLinkRepository,
 //!     load_config,
 //! };
+//! use std::sync::Arc;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Load configuration
@@ -50,9 +52,11 @@
 //!     "secrets/service-account.json",
 //!     config.clone(),
 //! ).await?;
+//! // Create identity link repository for Slack user mapping
+//! let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new("data/identity_links.json".into()));
 //! // NotificationRouter automatically supports all configured notification types
 //! // (Slack, Mock, etc.) based on config/resources.toml
-//! let notifier = NotificationRouter::new(config);
+//! let notifier = NotificationRouter::new(config, identity_repo);
 //!
 //! // Create and run use case
 //! let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier).await?;
