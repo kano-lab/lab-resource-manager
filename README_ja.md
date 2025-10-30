@@ -88,10 +88,14 @@ calendar_id = "your-calendar-id@group.calendar.google.com"  # リポジトリ実
 [[servers.notifications]]
 type = "slack"  # 通知実装の選択
 webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+# オプション: 通知のタイムゾーンを設定（IANA形式）
+# 指定しない場合はUTCで表示されます
+# timezone = "Asia/Tokyo"
 
 # オプション: テスト用にMock通知を追加
 # [[servers.notifications]]
 # type = "mock"
+# timezone = "America/New_York"
 
 [[servers.devices]]
 id = 0
@@ -108,9 +112,16 @@ calendar_id = "room-calendar-id@group.calendar.google.com"
 [[rooms.notifications]]
 type = "slack"
 webhook_url = "https://hooks.slack.com/services/YOUR/ROOM/WEBHOOK"
+# timezone = "Europe/London"
 ```
 
 各リソースに複数の通知実装を設定でき、異なるリソースで異なる通知先を指定できます。
+
+**タイムゾーン設定**: 各通知先にIANA形式のタイムゾーン名（例: `Asia/Tokyo`、
+`America/New_York`、`Europe/London`）を指定できます。指定しない場合は、全ての
+時刻がUTCで表示され、`(UTC)` という接尾辞が付きます。タイムゾーンを設定すると、
+時刻がそのタイムゾーンに変換され、タイムゾーン名と共に表示されるため、ローカル
+時刻が分かりやすくなります。
 
 ## Usage
 

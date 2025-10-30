@@ -95,10 +95,14 @@ calendar_id = "your-calendar-id@group.calendar.google.com"  # Repository impleme
 [[servers.notifications]]
 type = "slack"  # Notifier implementation selection
 webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+# Optional: Configure timezone for notifications (IANA format)
+# If not specified, notifications will show times in UTC
+# timezone = "Asia/Tokyo"
 
 # Optional: Add mock notifications for testing
 # [[servers.notifications]]
 # type = "mock"
+# timezone = "America/New_York"
 
 [[servers.devices]]
 id = 0
@@ -115,10 +119,17 @@ calendar_id = "room-calendar-id@group.calendar.google.com"
 [[rooms.notifications]]
 type = "slack"
 webhook_url = "https://hooks.slack.com/services/YOUR/ROOM/WEBHOOK"
+# timezone = "Europe/London"
 ```
 
 Each resource can have multiple notifier implementations configured, and different
 resources can specify different notification destinations.
+
+**Timezone Configuration**: You can optionally specify a timezone for each notification
+destination using IANA timezone names (e.g., `Asia/Tokyo`, `America/New_York`,
+`Europe/London`). If not specified, all times will be displayed in UTC with a `(UTC)`
+suffix. When a timezone is configured, times will be converted to that timezone and
+displayed with the timezone name, making it easier to understand local times.
 
 ## Usage
 
