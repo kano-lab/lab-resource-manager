@@ -78,13 +78,14 @@ impl NotificationRouter {
         let context = NotificationContext {
             event,
             identity_link: identity_link.as_ref(),
+            timezone: config.timezone(),
         };
 
         match config {
-            NotificationConfig::Slack { webhook_url } => {
+            NotificationConfig::Slack { webhook_url, .. } => {
                 self.slack_sender.send(webhook_url.as_str(), context).await
             }
-            NotificationConfig::Mock {} => self.mock_sender.send(&(), context).await,
+            NotificationConfig::Mock { .. } => self.mock_sender.send(&(), context).await,
         }
     }
 }
