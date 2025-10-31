@@ -104,6 +104,21 @@ Slackボットを使うと、ユーザーがメールアドレスを登録して
 cargo run --bin slackbot
 ```
 
+### 管理者用コマンド
+
+管理者は、他のユーザーのメールアドレスを代わりに登録できます:
+
+```
+/link-user <@slack_user> <email@example.com>
+```
+
+**例:**
+```
+/link-user @bob bob@example.com
+```
+
+このコマンドは、指定したSlackユーザーとメールアドレスを連携し、Google Calendarへのアクセス権を付与します。
+
 ## ビルド
 
 ### 開発ビルド
@@ -124,22 +139,3 @@ cargo build --release
 
 - `target/release/watcher` - リソース監視プログラム
 - `target/release/slackbot` - Slackボット
-
-## トラブルシューティング
-
-### Google Calendar API のエラー
-
-- サービスアカウントのJSONキーが正しく配置されているか確認
-- カレンダーがサービスアカウントに共有されているか確認
-- Google Calendar APIが有効化されているか確認
-
-### Slackボットが応答しない
-
-- `SLACK_BOT_TOKEN` と `SLACK_APP_TOKEN` が正しく設定されているか確認
-- Slack AppがSocket Modeで有効化されているか確認
-- 必要な権限（`chat:write`, `commands`, `users:read`, `users:read.email`）が付与されているか確認
-
-### 通知が送信されない
-
-- `config/resources.toml` でWebhook URLが正しく設定されているか確認
-- Slack Webhook URLが有効であるか確認

@@ -4,33 +4,22 @@ This guide is for users of the deployed lab-resource-manager system.
 
 ## Slack Commands
 
-To use the system, you first need to register your email address.
-
 ### Register Your Email Address
 
 ```
 /register-calendar <your-email@example.com>
 ```
 
-Register your email address and link it to your Slack account. This grants you access to all resource collections
-(GPU servers, meeting rooms, etc.).
+This command links your Slack user with the default implementation (Google Calendar) and grants access to Google Calendar resources.
+We recommend registering the Gmail address you regularly use with Google Calendar.
+
+**Benefits of registration:**
+- Automatically grants edit permissions to Google Calendar resources (GPU servers, meeting rooms, etc.)
+- Enables Slack mentions in reservation notifications
 
 **Example:**
 ```
 /register-calendar alice@example.com
-```
-
-### Register Another User (Administrators)
-
-Administrators can register other users' email addresses:
-
-```
-/link-user <@slack_user> <email@example.com>
-```
-
-**Example:**
-```
-/link-user @bob bob@example.com
 ```
 
 ## Resource Reservation Syntax
@@ -48,23 +37,23 @@ When reserving resources like GPU servers, you can specify which devices to use 
 
 #### Reservation Examples
 
-In the calendar event title, write as follows:
+In the Google Calendar event title, write as follows:
 
 ```
 [GPU 0-2] Machine Learning Model Training
 ```
 
-This reserves devices 0, 1, and 2.
+This indicates devices 0, 1, and 2 are in use.
 
 ```
 [GPU 0,3,5] Data Processing
 ```
 
-This reserves devices 0, 3, and 5.
+This indicates devices 0, 3, and 5 are in use.
 
 ### Meeting Room Reservations
 
-For meeting room reservations, device specification is not needed. Simply create a calendar event as usual.
+For meeting room reservations, device specification is not needed. Simply create a Google Calendar event as usual.
 
 ```
 Lab Meeting
@@ -72,36 +61,16 @@ Lab Meeting
 
 ## Notifications
 
-### Reservation Start Notifications
+The system periodically monitors Google Calendar resource usage and sends notifications to the configured Slack channels when changes are detected.
 
-When your reservation time arrives, a notification is sent to Slack. The notification includes:
+### Notification Content
 
-- Reserving user's name (with mention if linked to an email address)
+Notifications include the following information:
+
+- User's name (with Slack mention if email address is registered)
 - Resource name (GPU server name, meeting room name, etc.)
 - Devices in use (for GPUs)
-- Reservation period
+- Usage period
 
-### Mention Feature
-
-When you register your email address with the `/register-calendar` command, you will be automatically mentioned in
-reservation notifications. This allows you to quickly confirm when your reservation starts.
-
-## Frequently Asked Questions
-
-### Q: Is email address registration required?
-
-A: Not required, but registering provides these benefits:
-- Automatic access to resource collections (like Google Calendar)
-- Automatic mentions in reservation notifications
-
-### Q: Can I register multiple email addresses?
-
-A: Only one email address can be registered per Slack account.
-
-### Q: Is device specification case-sensitive?
-
-A: No, `[GPU 0-2]` and `[gpu 0-2]` are interpreted the same way.
-
-### Q: How do I cancel a reservation?
-
-A: Delete or cancel the event directly from the calendar. The system will automatically detect the change.
+When you register your email address with the `/register-calendar` command, you will be automatically mentioned in Slack
+for your reservations, making it easier to notice notifications.

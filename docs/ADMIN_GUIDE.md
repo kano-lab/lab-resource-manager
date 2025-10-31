@@ -105,6 +105,21 @@ The Slack bot allows users to register their email addresses and get access to a
 cargo run --bin slackbot
 ```
 
+### Administrator Commands
+
+Administrators can register other users' email addresses:
+
+```
+/link-user <@slack_user> <email@example.com>
+```
+
+**Example:**
+```
+/link-user @bob bob@example.com
+```
+
+This command links the specified Slack user with an email address and grants access to Google Calendar resources.
+
 ## Building
 
 ### Development Build
@@ -125,22 +140,3 @@ After a release build, binaries are generated in `target/release/`:
 
 - `target/release/watcher` - Resource monitoring program
 - `target/release/slackbot` - Slack bot
-
-## Troubleshooting
-
-### Google Calendar API Errors
-
-- Verify the service account JSON key is correctly placed
-- Ensure the calendar is shared with the service account
-- Confirm Google Calendar API is enabled
-
-### Slack Bot Not Responding
-
-- Verify `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` are correctly configured
-- Ensure the Slack App has Socket Mode enabled
-- Check required permissions are granted (`chat:write`, `commands`, `users:read`, `users:read.email`)
-
-### Notifications Not Sent
-
-- Verify Webhook URL is correctly configured in `config/resources.toml`
-- Ensure the Slack Webhook URL is valid
