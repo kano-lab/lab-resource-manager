@@ -127,9 +127,10 @@ resources can specify different notification destinations.
 
 **Timezone Configuration**: You can optionally specify a timezone for each notification
 destination using IANA timezone names (e.g., `Asia/Tokyo`, `America/New_York`,
-`Europe/London`). If not specified, all times will be displayed in UTC with a `(UTC)`
-suffix. When a timezone is configured, times will be converted to that timezone and
-displayed with the timezone name, making it easier to understand local times.
+`Europe/London`). If not specified, times will be displayed in the system's local
+timezone (where the bot is running). When a timezone is configured, times will be
+converted to that timezone and displayed with the timezone name, making it easier to
+understand local times.
 
 ## Usage
 

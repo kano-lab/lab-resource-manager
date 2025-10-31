@@ -10,7 +10,7 @@ calendar_id = "hoge@group.calendar.google.com"
 type = "slack"
 webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
 # タイムゾーンを指定（オプション）
-# 指定しない場合はUTCで表示されます
+# 指定しない場合はシステムのローカルタイムゾーン（ボットが動作しているコンピュータの時間）で表示されます
 # IANA形式のタイムゾーン名を使用（例: "Asia/Tokyo", "America/New_York", "Europe/London"）
 # timezone = "Asia/Tokyo"
 

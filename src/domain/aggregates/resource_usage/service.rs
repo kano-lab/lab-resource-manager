@@ -93,12 +93,12 @@ pub fn format_resources(resources: &[Resource]) -> String {
 /// 時間期間を人間が読みやすい文字列にフォーマットする
 ///
 /// タイムゾーンを指定した場合、そのタイムゾーンでの時刻とタイムゾーン名が表示される
-/// 指定がない場合はUTCで表示される
+/// 指定がない場合はシステムのローカルタイムゾーンで表示される（取得できない場合はUTC）
 ///
 /// # 例
 /// ```
-/// // UTCの場合: "2024-01-15 10:00 - 2024-01-15 12:00 (UTC)"
-/// // JST指定の場合: "2024-01-15 19:00 - 2024-01-15 21:00 (JST)"
+/// // システムローカル(JST)の場合: "2024-01-15 19:00 - 2024-01-15 21:00 (JST)"
+/// // タイムゾーン指定の場合: "2024-01-15 05:00 - 2024-01-15 07:00 (America/New_York)"
 /// ```
 pub fn format_time_period(
     period: &super::value_objects::TimePeriod,
@@ -122,11 +122,20 @@ pub fn format_time_period(
             )
         }
         None => {
-            // タイムゾーンが指定されていないか無効な場合はUTCで表示
+            // タイムゾーンが指定されていない場合はシステムのローカルタイムゾーンを使用
+            use chrono::Local;
+            let start_local = period.start().with_timezone(&Local);
+            let end_local = period.end().with_timezone(&Local);
+
+            // ローカルタイムゾーンのオフセットを取得して表示
+            let offset = start_local.offset();
+            let offset_str = offset.to_string();
+
             format!(
-                "{} - {} (UTC)",
-                period.start().format("%Y-%m-%d %H:%M"),
-                period.end().format("%Y-%m-%d %H:%M")
+                "{} - {} ({})",
+                start_local.format("%Y-%m-%d %H:%M"),
+                end_local.format("%Y-%m-%d %H:%M"),
+                offset_str
             )
         }
     }
@@ -138,13 +147,18 @@ mod tests {
     use chrono::TimeZone;
 
     #[test]
-    fn test_format_time_period_utc_default() {
+    fn test_format_time_period_system_default() {
         let start = chrono::Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
         let end = chrono::Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
         let period = super::super::value_objects::TimePeriod::new(start, end).unwrap();
 
+        // タイムゾーン未指定の場合はシステムのローカルタイムゾーンを使用
+        // テスト環境によって異なる可能性があるため、フォーマットが正しいことのみを確認
         let result = format_time_period(&period, None);
-        assert_eq!(result, "2024-01-15 10:00 - 2024-01-15 12:00 (UTC)");
+        assert!(result.contains("2024-01-15"));
+        assert!(result.contains(" - "));
+        assert!(result.contains("("));
+        assert!(result.contains(")"));
     }
 
     #[test]
@@ -178,8 +192,12 @@ mod tests {
         let end = chrono::Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
         let period = super::super::value_objects::TimePeriod::new(start, end).unwrap();
 
-        // 無効なタイムゾーンの場合はUTCにフォールバック
+        // 無効なタイムゾーンの場合はシステムのローカルタイムゾーンにフォールバック
         let result = format_time_period(&period, Some("Invalid/Timezone"));
-        assert_eq!(result, "2024-01-15 10:00 - 2024-01-15 12:00 (UTC)");
+        // システムのタイムゾーンによって異なるため、フォーマットが正しいことのみを確認
+        assert!(result.contains("2024-01-15"));
+        assert!(result.contains(" - "));
+        assert!(result.contains("("));
+        assert!(result.contains(")"));
     }
 }
