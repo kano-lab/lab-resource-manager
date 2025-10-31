@@ -6,8 +6,25 @@ use std::fs;
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq, Hash)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum NotificationConfig {
-    Slack { webhook_url: String },
-    Mock {},
+    Slack {
+        webhook_url: String,
+        #[serde(default)]
+        timezone: Option<String>,
+    },
+    Mock {
+        #[serde(default)]
+        timezone: Option<String>,
+    },
+}
+
+impl NotificationConfig {
+    /// Get the timezone string for this notification config, if any
+    pub fn timezone(&self) -> Option<&str> {
+        match self {
+            NotificationConfig::Slack { timezone, .. } => timezone.as_deref(),
+            NotificationConfig::Mock { timezone } => timezone.as_deref(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]

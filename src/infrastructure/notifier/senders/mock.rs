@@ -28,7 +28,7 @@ impl MockSender {
 
         let user = usage.owner_email().as_str();
         let resources = format_resources(usage.resources());
-        let time_period = format_time_period(usage.time_period());
+        let time_period = format_time_period(usage.time_period(), context.timezone);
 
         match context.event {
             NotificationEvent::ResourceUsageCreated(_) => {
