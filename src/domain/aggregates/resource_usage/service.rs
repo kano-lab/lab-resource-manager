@@ -59,13 +59,13 @@ pub fn format_resource_item(item: &Resource) -> String {
     match item {
         Resource::Gpu(spec) => {
             format!(
-                "🖥️ サーバー: {}, モデル: {}, デバイスID: {}",
+                "{} / {} / GPU:{}",
                 spec.server(),
                 spec.model(),
                 spec.device_number()
             )
         }
-        Resource::Room { name } => format!("🚪 {}", name),
+        Resource::Room { name } => name.clone(),
     }
 }
 
@@ -75,8 +75,8 @@ pub fn format_resource_item(item: &Resource) -> String {
 ///
 /// # 出力例
 /// ```text
-///   - 🖥️ サーバー: Thalys, モデル: A100 80GB PCIe, デバイスID: 1
-///   - 🖥️ サーバー: Thalys, モデル: A100 80GB PCIe, デバイスID: 2
+/// Thalys / A100 80GB PCIe / GPU:1
+/// Thalys / A100 80GB PCIe / GPU:2
 /// ```
 pub fn format_resources(resources: &[Resource]) -> String {
     if resources.is_empty() {
@@ -85,7 +85,7 @@ pub fn format_resources(resources: &[Resource]) -> String {
 
     resources
         .iter()
-        .map(|r| format!("  - {}", format_resource_item(r)))
+        .map(format_resource_item)
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -112,10 +112,7 @@ mod tests {
         let resource = Resource::Gpu(gpu);
         let formatted = format_resource_item(&resource);
 
-        assert!(formatted.contains("🖥️"));
-        assert!(formatted.contains("Thalys"));
-        assert!(formatted.contains("A100 80GB PCIe"));
-        assert!(formatted.contains("0"));
+        assert_eq!(formatted, "Thalys / A100 80GB PCIe / GPU:0");
     }
 
     #[test]
@@ -125,8 +122,7 @@ mod tests {
         };
         let formatted = format_resource_item(&resource);
 
-        assert!(formatted.contains("🚪"));
-        assert!(formatted.contains("会議室A"));
+        assert_eq!(formatted, "会議室A");
     }
 
     #[test]
@@ -137,12 +133,7 @@ mod tests {
 
         let formatted = format_resources(&resources);
 
-        // 各行に絵文字が含まれることを確認
-        assert!(formatted.contains("🖥️"));
-        // 改行で区切られていることを確認
-        assert!(formatted.contains('\n'));
-        // インデントが含まれることを確認
-        assert!(formatted.contains("  - "));
+        assert_eq!(formatted, "Thalys / A100 / GPU:0\nThalys / A100 / GPU:1");
     }
 
     #[test]

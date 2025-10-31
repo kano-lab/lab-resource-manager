@@ -40,20 +40,20 @@ impl SlackSender {
         match context.event {
             NotificationEvent::ResourceUsageCreated(_) => {
                 format!(
-                    "🔔 *新規予約*\n👤 ユーザー: {}\n📋 資源:\n{}\n⏰ 期間: {}",
-                    user_display, resources, time_period
+                    "🔔 新規予約\n👤 {}\n\n📅 期間\n{}\n\n💻 予約GPU\n{}",
+                    user_display, time_period, resources
                 )
             }
             NotificationEvent::ResourceUsageUpdated(_) => {
                 format!(
-                    "🔄 *予約更新*\n👤 ユーザー: {}\n📋 資源:\n{}\n⏰ 期間: {}",
-                    user_display, resources, time_period
+                    "🔄 予約更新\n👤 {}\n\n📅 期間\n{}\n\n💻 予約GPU\n{}",
+                    user_display, time_period, resources
                 )
             }
             NotificationEvent::ResourceUsageDeleted(_) => {
                 format!(
-                    "🗑️ *予約削除*\n👤 ユーザー: {}\n📋 資源:\n{}\n⏰ 期間: {}",
-                    user_display, resources, time_period
+                    "🗑️ 予約削除\n👤 {}\n\n📅 期間\n{}\n\n💻 予約GPU\n{}",
+                    user_display, time_period, resources
                 )
             }
         }
@@ -139,14 +139,13 @@ mod tests {
         // メッセージに絵文字が含まれることを確認
         assert!(message.contains("🔔"));
         assert!(message.contains("👤"));
-        assert!(message.contains("📋"));
-        assert!(message.contains("⏰"));
-        assert!(message.contains("🖥️"));
+        assert!(message.contains("📅"));
+        assert!(message.contains("💻"));
         // メッセージが構造化されていることを確認
-        assert!(message.contains("*新規予約*"));
-        assert!(message.contains("ユーザー:"));
-        assert!(message.contains("資源:"));
-        assert!(message.contains("期間:"));
+        assert!(message.contains("新規予約"));
+        assert!(message.contains("期間"));
+        assert!(message.contains("予約GPU"));
+        assert!(message.contains("Thalys / A100 / GPU:0"));
     }
 
     #[test]
@@ -178,9 +177,11 @@ mod tests {
 
         // メッセージに絵文字が含まれることを確認
         assert!(message.contains("🔄"));
-        assert!(message.contains("🚪"));
+        assert!(message.contains("📅"));
+        assert!(message.contains("💻"));
         // メッセージが構造化されていることを確認
-        assert!(message.contains("*予約更新*"));
+        assert!(message.contains("予約更新"));
+        assert!(message.contains("会議室A"));
     }
 
     #[test]
@@ -211,7 +212,9 @@ mod tests {
 
         // メッセージに絵文字が含まれることを確認
         assert!(message.contains("🗑️"));
+        assert!(message.contains("📅"));
+        assert!(message.contains("💻"));
         // メッセージが構造化されていることを確認
-        assert!(message.contains("*予約削除*"));
+        assert!(message.contains("予約削除"));
     }
 }
