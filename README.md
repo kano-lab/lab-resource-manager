@@ -96,7 +96,7 @@ calendar_id = "your-calendar-id@group.calendar.google.com"  # Repository impleme
 type = "slack"  # Notifier implementation selection
 webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
 # Optional: Configure timezone for notifications (IANA format)
-# If not specified, notifications will show times in UTC
+# If not specified, notifications will show times in the system's local timezone
 # timezone = "Asia/Tokyo"
 
 # Optional: Add mock notifications for testing
