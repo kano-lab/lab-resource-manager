@@ -59,7 +59,7 @@ pub fn format_resource_item(item: &Resource) -> String {
     match item {
         Resource::Gpu(spec) => {
             format!(
-                "サーバー: {}, モデル: {}, デバイスID: {}",
+                "{} / {} / GPU:{}",
                 spec.server(),
                 spec.model(),
                 spec.device_number()
@@ -75,8 +75,8 @@ pub fn format_resource_item(item: &Resource) -> String {
 ///
 /// # 出力例
 /// ```text
-///   - サーバー: Thalys, モデル: A100 80GB PCIe, デバイスID: 1
-///   - サーバー: Thalys, モデル: A100 80GB PCIe, デバイスID: 2
+/// Thalys / A100 80GB PCIe / GPU:1
+/// Thalys / A100 80GB PCIe / GPU:2
 /// ```
 pub fn format_resources(resources: &[Resource]) -> String {
     if resources.is_empty() {
@@ -85,7 +85,7 @@ pub fn format_resources(resources: &[Resource]) -> String {
 
     resources
         .iter()
-        .map(|r| format!("  - {}", format_resource_item(r)))
+        .map(format_resource_item)
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -99,4 +99,48 @@ pub fn format_time_period(period: &super::value_objects::TimePeriod) -> String {
         period.start().format("%Y-%m-%d %H:%M"),
         period.end().format("%Y-%m-%d %H:%M")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::value_objects::Gpu;
+    use super::*;
+
+    #[test]
+    fn test_format_gpu_resource() {
+        let gpu = Gpu::new("Thalys".to_string(), 0, "A100 80GB PCIe".to_string());
+        let resource = Resource::Gpu(gpu);
+        let formatted = format_resource_item(&resource);
+
+        assert_eq!(formatted, "Thalys / A100 80GB PCIe / GPU:0");
+    }
+
+    #[test]
+    fn test_format_room_resource() {
+        let resource = Resource::Room {
+            name: "会議室A".to_string(),
+        };
+        let formatted = format_resource_item(&resource);
+
+        assert_eq!(formatted, "会議室A");
+    }
+
+    #[test]
+    fn test_format_multiple_resources() {
+        let gpu1 = Gpu::new("Thalys".to_string(), 0, "A100".to_string());
+        let gpu2 = Gpu::new("Thalys".to_string(), 1, "A100".to_string());
+        let resources = vec![Resource::Gpu(gpu1), Resource::Gpu(gpu2)];
+
+        let formatted = format_resources(&resources);
+
+        assert_eq!(formatted, "Thalys / A100 / GPU:0\nThalys / A100 / GPU:1");
+    }
+
+    #[test]
+    fn test_format_empty_resources() {
+        let resources: Vec<Resource> = vec![];
+        let formatted = format_resources(&resources);
+
+        assert_eq!(formatted, "");
+    }
 }
