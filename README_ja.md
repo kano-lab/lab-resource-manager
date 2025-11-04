@@ -89,7 +89,7 @@ calendar_id = "your-calendar-id@group.calendar.google.com"  # リポジトリ実
 type = "slack"  # 通知実装の選択
 webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
 # オプション: 通知のタイムゾーンを設定（IANA形式）
-# 指定しない場合はUTCで表示されます
+# 指定しない場合はシステムのローカルタイムゾーンで表示されます
 # timezone = "Asia/Tokyo"
 
 # オプション: テスト用にMock通知を追加
