@@ -37,19 +37,21 @@ When reserving resources like GPU servers, you can specify which devices to use 
 
 #### Reservation Examples
 
-In the Google Calendar event title, write as follows:
+In the Google Calendar event title, write the device specification:
 
 ```
-[GPU 0-2] Machine Learning Model Training
+0-2
 ```
 
 This indicates devices 0, 1, and 2 are in use.
 
 ```
-[GPU 0,3,5] Data Processing
+0,3,5
 ```
 
 This indicates devices 0, 3, and 5 are in use.
+
+**Note**: The event title should contain only the device specification. If you need to add a description, use the event's description field instead.
 
 ### Meeting Room Reservations
 
