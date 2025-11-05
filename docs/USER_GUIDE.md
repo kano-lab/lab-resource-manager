@@ -6,19 +6,22 @@ This guide is for users of the deployed lab-resource-manager system.
 
 ### Register Your Email Address
 
-```
+```text
 /register-calendar <your-email@example.com>
 ```
 
-This command links your Slack user with the default implementation (Google Calendar) and grants access to Google Calendar resources.
-We recommend registering the Gmail address you regularly use with Google Calendar.
+This command links your Slack user with the default implementation (Google Calendar) and grants
+access to Google Calendar resources. We recommend registering the Gmail address you regularly use
+with Google Calendar.
 
 **Benefits of registration:**
+
 - Automatically grants edit permissions to Google Calendar resources (GPU servers, meeting rooms, etc.)
 - Enables Slack mentions in reservation notifications
 
 **Example:**
-```
+
+```text
 /register-calendar alice@example.com
 ```
 
@@ -39,31 +42,34 @@ When reserving resources like GPU servers, you can specify which devices to use 
 
 In the Google Calendar event title, write the device specification:
 
-```
+```text
 0-2
 ```
 
 This indicates devices 0, 1, and 2 are in use.
 
-```
+```text
 0,3,5
 ```
 
 This indicates devices 0, 3, and 5 are in use.
 
-**Note**: The event title should contain only the device specification. If you need to add a description, use the event's description field instead.
+**Note**: The event title should contain only the device specification. If you need to add a
+description, use the event's description field instead.
 
 ### Meeting Room Reservations
 
-For meeting room reservations, device specification is not needed. Simply create a Google Calendar event as usual.
+For meeting room reservations, device specification is not needed. Simply create a Google Calendar
+event as usual.
 
-```
+```text
 Lab Meeting
 ```
 
 ## Notifications
 
-The system periodically monitors Google Calendar resource usage and sends notifications to the configured Slack channels when changes are detected.
+The system periodically monitors Google Calendar resource usage and sends notifications to the
+configured Slack channels when changes are detected.
 
 ### Notification Content
 

@@ -108,12 +108,13 @@ cargo run --bin slackbot
 
 管理者は、他のユーザーのメールアドレスを代わりに登録できます:
 
-```
+```text
 /link-user <@slack_user> <email@example.com>
 ```
 
 **例:**
-```
+
+```text
 /link-user @bob bob@example.com
 ```
 

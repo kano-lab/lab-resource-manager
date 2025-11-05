@@ -109,12 +109,13 @@ cargo run --bin slackbot
 
 Administrators can register other users' email addresses:
 
-```
+```text
 /link-user <@slack_user> <email@example.com>
 ```
 
 **Example:**
-```
+
+```text
 /link-user @bob bob@example.com
 ```
 

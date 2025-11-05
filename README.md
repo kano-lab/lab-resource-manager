@@ -130,8 +130,6 @@ cargo clippy
 cargo fmt
 ```
 
-
-
 ## Project Status
 
 ### Implemented ✅

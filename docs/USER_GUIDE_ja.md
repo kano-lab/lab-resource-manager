@@ -6,7 +6,7 @@
 
 ### 自分のメールアドレスを登録
 
-```
+```text
 /register-calendar <your-email@example.com>
 ```
 
@@ -14,11 +14,13 @@
 普段Google Calendarで使用しているGmailアドレスを登録することを推奨します。
 
 **登録すると:**
+
 - Google Calendarのリソース（GPUサーバー、会議室など）への編集権限が自動的に付与されます
 - 予約通知時にSlackでメンションされるようになります
 
 **例:**
-```
+
+```text
 /register-calendar alice@example.com
 ```
 
@@ -39,13 +41,13 @@ GPUサーバーなどのリソースを予約する際、カレンダーのイ�
 
 Google Calendarイベントのタイトルにデバイス指定を記載します:
 
-```
+```text
 0-2
 ```
 
 この場合、デバイス0, 1, 2が使用されます。
 
-```
+```text
 0,3,5
 ```
 
@@ -57,7 +59,7 @@ Google Calendarイベントのタイトルにデバイス指定を記載しま�
 
 会議室を予約する場合は、デバイス指定は不要です。通常通りGoogle Calendarにイベントを作成してください。
 
-```
+```text
 研究室ミーティング
 ```
 
