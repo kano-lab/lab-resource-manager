@@ -9,3 +9,4 @@ LICENSE
 data/
 config/
 service-account.json
+secrets/
