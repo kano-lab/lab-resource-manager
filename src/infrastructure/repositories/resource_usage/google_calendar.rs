@@ -188,11 +188,6 @@ impl GoogleCalendarUsageRepository {
 
 #[async_trait]
 impl ResourceUsageRepository for GoogleCalendarUsageRepository {
-    async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
-        let all = self.find_all().await?;
-        Ok(all.into_iter().find(|u| u.id().as_str() == id.as_str()))
-    }
-
     async fn find_all(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
         let events = self.fetch_all_events().await?;
 
@@ -207,26 +202,5 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         }
 
         Ok(usages)
-    }
-
-    async fn find_overlapping(
-        &self,
-        time_period: &TimePeriod,
-    ) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        let all = self.find_all().await?;
-        Ok(all
-            .into_iter()
-            .filter(|u| u.time_period().overlaps_with(time_period))
-            .collect())
-    }
-
-    async fn save(&self, _usage: &ResourceUsage) -> Result<(), RepositoryError> {
-        Err(RepositoryError::Unknown("save機能は未実装です".to_string()))
-    }
-
-    async fn delete(&self, _id: &UsageId) -> Result<(), RepositoryError> {
-        Err(RepositoryError::Unknown(
-            "delete機能は未実装です".to_string(),
-        ))
     }
 }
