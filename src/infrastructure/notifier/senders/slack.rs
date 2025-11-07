@@ -35,7 +35,7 @@ impl SlackSender {
 
         let user_display = self.format_user(usage.owner_email(), context.identity_link);
         let resources = format_resources(usage.resources());
-        let time_period = format_time_period(usage.time_period());
+        let time_period = format_time_period(usage.time_period(), context.timezone);
 
         match context.event {
             NotificationEvent::ResourceUsageCreated(_) => {
@@ -132,6 +132,7 @@ mod tests {
         let context = NotificationContext {
             event: &event,
             identity_link: None,
+            timezone: None,
         };
 
         let message = sender.format_message(&context);
@@ -171,6 +172,7 @@ mod tests {
         let context = NotificationContext {
             event: &event,
             identity_link: None,
+            timezone: None,
         };
 
         let message = sender.format_message(&context);
@@ -206,6 +208,7 @@ mod tests {
         let context = NotificationContext {
             event: &event,
             identity_link: None,
+            timezone: None,
         };
 
         let message = sender.format_message(&context);

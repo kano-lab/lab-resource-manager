@@ -6,6 +6,7 @@ use async_trait::async_trait;
 pub struct NotificationContext<'a> {
     pub event: &'a NotificationEvent,
     pub identity_link: Option<&'a IdentityLink>,
+    pub timezone: Option<&'a str>,
 }
 
 /// 通知メッセージを送信する機能を提供するtrait

@@ -92,19 +92,115 @@ pub fn format_resources(resources: &[Resource]) -> String {
 
 /// 時間期間を人間が読みやすい文字列にフォーマットする
 ///
-/// "YYYY-MM-DD HH:MM - YYYY-MM-DD HH:MM" の形式で返す
-pub fn format_time_period(period: &super::value_objects::TimePeriod) -> String {
-    format!(
-        "{} - {}",
-        period.start().format("%Y-%m-%d %H:%M"),
-        period.end().format("%Y-%m-%d %H:%M")
-    )
+/// タイムゾーンを指定した場合、そのタイムゾーンでの時刻とタイムゾーン名が表示される
+/// 指定がない場合はシステムのローカルタイムゾーンで表示される（取得できない場合はUTC）
+///
+/// # 例
+/// ```text
+/// システムローカル(JST)の場合: "2024-01-15 19:00 - 2024-01-15 21:00 (+09:00)"
+/// タイムゾーン指定の場合: "2024-01-15 05:00 - 2024-01-15 07:00 (America/New_York)"
+/// ```
+pub fn format_time_period(
+    period: &super::value_objects::TimePeriod,
+    timezone_str: Option<&str>,
+) -> String {
+    use chrono_tz::Tz;
+
+    // タイムゾーンのパースを試みる
+    let tz_result = timezone_str.and_then(|s| s.parse::<Tz>().ok());
+
+    match tz_result {
+        Some(tz) => {
+            // 指定されたタイムゾーンに変換して表示
+            let start = period.start().with_timezone(&tz);
+            let end = period.end().with_timezone(&tz);
+            format!(
+                "{} - {} ({})",
+                start.format("%Y-%m-%d %H:%M"),
+                end.format("%Y-%m-%d %H:%M"),
+                tz.name()
+            )
+        }
+        None => {
+            // タイムゾーンが指定されていない場合はシステムのローカルタイムゾーンを使用
+            use chrono::Local;
+            let start_local = period.start().with_timezone(&Local);
+            let end_local = period.end().with_timezone(&Local);
+
+            // ローカルタイムゾーンのオフセットを取得して表示
+            let offset = start_local.offset();
+            let offset_str = offset.to_string();
+
+            format!(
+                "{} - {} ({})",
+                start_local.format("%Y-%m-%d %H:%M"),
+                end_local.format("%Y-%m-%d %H:%M"),
+                offset_str
+            )
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::value_objects::Gpu;
     use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn test_format_time_period_system_default() {
+        let start = chrono::Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
+        let end = chrono::Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
+        let period = super::super::value_objects::TimePeriod::new(start, end).unwrap();
+
+        // タイムゾーン未指定の場合はシステムのローカルタイムゾーンを使用
+        // テスト環境によって異なる可能性があるため、フォーマットが正しいことのみを確認
+        let result = format_time_period(&period, None);
+        assert!(result.contains("2024-01-15"));
+        assert!(result.contains(" - "));
+        assert!(result.contains("("));
+        assert!(result.contains(")"));
+    }
+
+    #[test]
+    fn test_format_time_period_with_jst() {
+        let start = chrono::Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
+        let end = chrono::Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
+        let period = super::super::value_objects::TimePeriod::new(start, end).unwrap();
+
+        let result = format_time_period(&period, Some("Asia/Tokyo"));
+        // Timezone name returns the IANA name, not the abbreviation
+        assert_eq!(result, "2024-01-15 19:00 - 2024-01-15 21:00 (Asia/Tokyo)");
+    }
+
+    #[test]
+    fn test_format_time_period_with_est() {
+        let start = chrono::Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
+        let end = chrono::Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
+        let period = super::super::value_objects::TimePeriod::new(start, end).unwrap();
+
+        let result = format_time_period(&period, Some("America/New_York"));
+        // Timezone name returns the IANA name, not the abbreviation
+        assert_eq!(
+            result,
+            "2024-01-15 05:00 - 2024-01-15 07:00 (America/New_York)"
+        );
+    }
+
+    #[test]
+    fn test_format_time_period_invalid_timezone() {
+        let start = chrono::Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
+        let end = chrono::Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
+        let period = super::super::value_objects::TimePeriod::new(start, end).unwrap();
+
+        // 無効なタイムゾーンの場合はシステムのローカルタイムゾーンにフォールバック
+        let result = format_time_period(&period, Some("Invalid/Timezone"));
+        // システムのタイムゾーンによって異なるため、フォーマットが正しいことのみを確認
+        assert!(result.contains("2024-01-15"));
+        assert!(result.contains(" - "));
+        assert!(result.contains("("));
+        assert!(result.contains(")"));
+    }
 
     #[test]
     fn test_format_gpu_resource() {
