@@ -132,6 +132,7 @@ mod tests {
         let context = NotificationContext {
             event: &event,
             identity_link: None,
+            timezone: None,
         };
 
         let message = sender.format_message(&context);
@@ -171,6 +172,7 @@ mod tests {
         let context = NotificationContext {
             event: &event,
             identity_link: None,
+            timezone: None,
         };
 
         let message = sender.format_message(&context);
@@ -206,6 +208,7 @@ mod tests {
         let context = NotificationContext {
             event: &event,
             identity_link: None,
+            timezone: None,
         };
 
         let message = sender.format_message(&context);

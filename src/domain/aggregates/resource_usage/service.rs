@@ -143,6 +143,7 @@ pub fn format_time_period(
 
 #[cfg(test)]
 mod tests {
+    use super::super::value_objects::Gpu;
     use super::*;
     use chrono::TimeZone;
 
@@ -200,12 +201,6 @@ mod tests {
         assert!(result.contains("("));
         assert!(result.contains(")"));
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::super::value_objects::Gpu;
-    use super::*;
 
     #[test]
     fn test_format_gpu_resource() {
