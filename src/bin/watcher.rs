@@ -91,7 +91,7 @@ where
     let interval = Duration::from_secs(interval_secs);
 
     println!("🔍 初期状態を読み込んでいます...");
-    let usecase = match NotifyResourceUsageChangesUseCase::new(repository, notifier).await {
+    let usecase = match NotifyFutureResourceUsageChangesUseCase::new(repository, notifier).await {
         Ok(uc) => {
             println!("✅ 初期状態の読み込みが完了しました");
             uc

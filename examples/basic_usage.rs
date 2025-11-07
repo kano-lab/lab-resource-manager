@@ -10,7 +10,7 @@
 
 use lab_resource_manager::{
     GoogleCalendarUsageRepository, JsonFileIdentityLinkRepository, NotificationRouter,
-    NotifyResourceUsageChangesUseCase, load_config,
+    NotifyFutureResourceUsageChangesUseCase, load_config,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -61,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Notification router initialized (using configured destinations)");
 
     // Create use case
-    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier).await?;
+    let usecase = NotifyFutureResourceUsageChangesUseCase::new(repository, notifier).await?;
 
     // Run polling loop
     let interval = Duration::from_secs(60);

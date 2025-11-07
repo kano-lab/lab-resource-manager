@@ -50,75 +50,55 @@ src/
 
 ## Setup
 
-### 1. Environment Variables
+For detailed setup instructions, see the [Administrator Guide](docs/ADMIN_GUIDE.md).
+
+## Docker Deployment
+
+### Building and Running with Docker Compose
 
 ```bash
-cp .env.example .env
+# Build and start both services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
 ```
 
-Edit `.env` to configure:
+**Security Note**: Ensure proper file permissions for secrets before deployment:
 
-```env
-# Repository Configuration (default implementation: Google Calendar)
-GOOGLE_SERVICE_ACCOUNT_KEY=secrets/service-account.json
-
-# Resource Configuration
-RESOURCE_CONFIG=config/resources.toml
-
-# Slack Bot Configuration (for slackbot binary)
-SLACK_BOT_TOKEN=xoxb-your-bot-token-here
-SLACK_APP_TOKEN=xapp-your-app-token-here
+```bash
+chmod 600 secrets/service-account.json
+chmod 600 secrets/*
 ```
 
-**Note**: Notification settings are configured in `config/resources.toml` per resource.
+The Docker setup uses a multi-stage build with separate optimized images for each service:
 
-### 2. Repository Implementation Setup (Default: Google Calendar)
+- **Base image**: `ubuntu:24.04` (required for GLIBC 2.38 support)
+- **Service-specific stages**: Each service (watcher/slackbot) gets only its binary
+- **Shared builder**: Single build stage compiles both binaries efficiently
 
-If using the Google Calendar repository:
+### Standalone Docker Usage
 
-1. Create a project in [Google Cloud Console](https://console.cloud.google.com/)
-2. Enable Google Calendar API
-3. Create a service account and download JSON key
-4. Place the key as `secrets/service-account.json`
-5. Share your calendar with the service account email
+```bash
+# Build and run watcher
+docker build --target watcher -t lab-resource-manager:watcher .
+docker run -v ./config:/app/config:ro \
+           -v ./data:/app/data \
+           -v ./secrets:/app/secrets:ro \
+           --env-file .env \
+           lab-resource-manager:watcher
 
-### 3. Resource Configuration
-
-Define GPU servers and rooms in `config/resources.toml`:
-
-```toml
-[[servers]]
-name = "Thalys"
-calendar_id = "your-calendar-id@group.calendar.google.com"  # Repository implementation-specific ID
-
-# Configure notification destinations per resource
-[[servers.notifications]]
-type = "slack"  # Notifier implementation selection
-webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
-
-# Optional: Add mock notifications for testing
-# [[servers.notifications]]
-# type = "mock"
-
-[[servers.devices]]
-id = 0
-model = "A100 80GB PCIe"
-
-[[servers.devices]]
-id = 1
-model = "A100 80GB PCIe"
-
-[[rooms]]
-name = "Meeting Room A"
-calendar_id = "room-calendar-id@group.calendar.google.com"
-
-[[rooms.notifications]]
-type = "slack"
-webhook_url = "https://hooks.slack.com/services/YOUR/ROOM/WEBHOOK"
+# Build and run slackbot
+docker build --target slackbot -t lab-resource-manager:slackbot .
+docker run -v ./config:/app/config:ro \
+           -v ./data:/app/data \
+           -v ./secrets:/app/secrets:ro \
+           --env-file .env \
+           lab-resource-manager:slackbot
 ```
-
-Each resource can have multiple notifier implementations configured, and different
-resources can specify different notification destinations.
 
 ## Usage
 

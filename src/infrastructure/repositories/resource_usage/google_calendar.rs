@@ -7,7 +7,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{RepositoryError, ResourceUsageRepository};
 use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use google_calendar3::{
     CalendarHub,
     api::Event,
@@ -48,8 +48,8 @@ impl GoogleCalendarUsageRepository {
         Ok(Self { hub, config })
     }
 
-    /// すべてのカレンダーからイベントを取得
-    async fn fetch_all_events(&self) -> Result<Vec<(Event, String)>, RepositoryError> {
+    /// すべてのカレンダーから未来のイベントを取得
+    async fn fetch_future_events(&self) -> Result<Vec<(Event, String)>, RepositoryError> {
         let mut all_events = Vec::new();
 
         // 各サーバーカレンダーから取得
@@ -67,21 +67,43 @@ impl GoogleCalendarUsageRepository {
         Ok(all_events)
     }
 
-    /// 特定のカレンダーからイベントを取得
+    /// 特定のカレンダーから未来のイベント（進行中および今後予定されているもの）を取得
     async fn fetch_events_from_calendar(
         &self,
         calendar_id: &str,
     ) -> Result<Vec<Event>, RepositoryError> {
+        // 過去24時間分も取得して、終了時刻でフィルタリングする
+        // time_minを開始時刻で制限すると、現在進行中のイベント（開始時刻が過去）が除外されてしまう
+        let time_min = Utc::now() - Duration::hours(24);
+
         let result = self
             .hub
             .events()
             .list(calendar_id)
-            .time_min(Utc::now())
+            .time_min(time_min)
             .doit()
             .await
             .map_err(|e| RepositoryError::ConnectionError(format!("Calendar API error: {}", e)))?;
 
-        Ok(result.1.items.unwrap_or_default())
+        let now = Utc::now();
+        let events = result.1.items.unwrap_or_default();
+
+        // 終了時刻が現在時刻より後のイベントのみを返す
+        // これにより、進行中または未来のイベントのみが対象となり、
+        // 完了したイベントが誤って削除通知されるのを防ぐ
+        let filtered_events: Vec<Event> = events
+            .into_iter()
+            .filter(|event| {
+                event
+                    .end
+                    .as_ref()
+                    .and_then(|e| e.date_time.as_ref())
+                    .map(|end_time| *end_time > now)
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        Ok(filtered_events)
     }
 
     /// イベントをResourceUsageに変換
@@ -166,13 +188,20 @@ impl GoogleCalendarUsageRepository {
 
 #[async_trait]
 impl ResourceUsageRepository for GoogleCalendarUsageRepository {
-    async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
-        let all = self.find_all().await?;
-        Ok(all.into_iter().find(|u| u.id().as_str() == id.as_str()))
+    async fn find_by_id(&self, _id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
+        Err(RepositoryError::Unknown(
+            "find_by_id機能は未実装です".to_string(),
+        ))
     }
 
     async fn find_all(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        let events = self.fetch_all_events().await?;
+        Err(RepositoryError::Unknown(
+            "find_all機能は未実装です".to_string(),
+        ))
+    }
+
+    async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
+        let events = self.fetch_future_events().await?;
 
         let mut usages = Vec::new();
         for (event, context) in events {
@@ -189,13 +218,11 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
 
     async fn find_overlapping(
         &self,
-        time_period: &TimePeriod,
+        _time_period: &TimePeriod,
     ) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        let all = self.find_all().await?;
-        Ok(all
-            .into_iter()
-            .filter(|u| u.time_period().overlaps_with(time_period))
-            .collect())
+        Err(RepositoryError::Unknown(
+            "find_overlapping機能は未実装です".to_string(),
+        ))
     }
 
     async fn save(&self, _usage: &ResourceUsage) -> Result<(), RepositoryError> {

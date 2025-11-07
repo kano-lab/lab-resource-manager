@@ -43,74 +43,55 @@ src/
 
 ## Setup
 
-### 1. 環境変数の設定
+セットアップの詳細については、[管理者ガイド](docs/ADMIN_GUIDE_ja.md)を参照してください。
+
+## Dockerデプロイ
+
+### Docker Composeでのビルドと実行
 
 ```bash
-cp .env.example .env
+# 両方のサービスをビルドして起動
+docker-compose up -d
+
+# ログを表示
+docker-compose logs -f
+
+# サービスを停止
+docker-compose down
 ```
 
-`.env`を編集して以下を設定:
+**セキュリティ注意**: デプロイ前にsecretsの適切なパーミッション設定を確認してください:
 
-```env
-# リポジトリ設定（デフォルト実装: Google Calendar）
-GOOGLE_SERVICE_ACCOUNT_KEY=secrets/service-account.json
-
-# リソース設定
-RESOURCE_CONFIG=config/resources.toml
-
-# Slackボット設定（slackbotバイナリ用）
-SLACK_BOT_TOKEN=xoxb-your-bot-token-here
-SLACK_APP_TOKEN=xapp-your-app-token-here
+```bash
+chmod 600 secrets/service-account.json
+chmod 600 secrets/*
 ```
 
-**注意**: 通知設定は `config/resources.toml` でリソースごとに設定します。
+Dockerセットアップは、各サービスに最適化された個別のイメージを持つマルチステージビルドを使用:
 
-### 2. リポジトリ実装の設定（デフォルト: Google Calendar）
+- **ベースイメージ**: `ubuntu:24.04`（GLIBC 2.38サポートのため必須）
+- **サービス固有ステージ**: 各サービス（watcher/slackbot）は自身のバイナリのみを含む
+- **共有ビルダー**: 単一のビルドステージで両方のバイナリを効率的にコンパイル
 
-Google Calendarリポジトリを使用する場合:
+### スタンドアロンDocker使用
 
-1. [Google Cloud Console](https://console.cloud.google.com/)でプロジェクトを作成
-2. Google Calendar APIを有効化
-3. サービスアカウントを作成してJSONキーをダウンロード
-4. `secrets/service-account.json`として配置
-5. カレンダーにサービスアカウントを共有
+```bash
+# watcherをビルド・実行
+docker build --target watcher -t lab-resource-manager:watcher .
+docker run -v ./config:/app/config:ro \
+           -v ./data:/app/data \
+           -v ./secrets:/app/secrets:ro \
+           --env-file .env \
+           lab-resource-manager:watcher
 
-### 3. リソース設定
-
-`config/resources.toml`でGPUサーバーと部屋を定義:
-
-```toml
-[[servers]]
-name = "Thalys"
-calendar_id = "your-calendar-id@group.calendar.google.com"  # リポジトリ実装固有のID
-
-# リソースごとに通知先を設定
-[[servers.notifications]]
-type = "slack"  # 通知実装の選択
-webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
-
-# オプション: テスト用にMock通知を追加
-# [[servers.notifications]]
-# type = "mock"
-
-[[servers.devices]]
-id = 0
-model = "A100 80GB PCIe"
-
-[[servers.devices]]
-id = 1
-model = "A100 80GB PCIe"
-
-[[rooms]]
-name = "会議室A"
-calendar_id = "room-calendar-id@group.calendar.google.com"
-
-[[rooms.notifications]]
-type = "slack"
-webhook_url = "https://hooks.slack.com/services/YOUR/ROOM/WEBHOOK"
+# slackbotをビルド・実行
+docker build --target slackbot -t lab-resource-manager:slackbot .
+docker run -v ./config:/app/config:ro \
+           -v ./data:/app/data \
+           -v ./secrets:/app/secrets:ro \
+           --env-file .env \
+           lab-resource-manager:slackbot
 ```
-
-各リソースに複数の通知実装を設定でき、異なるリソースで異なる通知先を指定できます。
 
 ## Usage
 

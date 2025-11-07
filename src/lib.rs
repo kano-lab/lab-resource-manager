@@ -35,7 +35,7 @@
 //!
 //! ```rust,no_run
 //! use lab_resource_manager::{
-//!     NotifyResourceUsageChangesUseCase,
+//!     NotifyFutureResourceUsageChangesUseCase,
 //!     GoogleCalendarUsageRepository,
 //!     NotificationRouter,
 //!     JsonFileIdentityLinkRepository,
@@ -59,7 +59,7 @@
 //! let notifier = NotificationRouter::new(config, identity_repo);
 //!
 //! // Create and run use case
-//! let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier).await?;
+//! let usecase = NotifyFutureResourceUsageChangesUseCase::new(repository, notifier).await?;
 //! usecase.poll_once().await?;
 //! # Ok(())
 //! # }
@@ -102,7 +102,7 @@ pub mod interface;
 /// ```
 pub mod prelude {
     // Use cases
-    pub use crate::application::usecases::NotifyResourceUsageChangesUseCase;
+    pub use crate::application::usecases::NotifyFutureResourceUsageChangesUseCase;
 
     // Application errors
     pub use crate::application::error::ApplicationError;
@@ -138,7 +138,7 @@ pub mod prelude {
 }
 
 // Convenience re-exports at crate root
-pub use application::{error::ApplicationError, usecases::NotifyResourceUsageChangesUseCase};
+pub use application::{error::ApplicationError, usecases::NotifyFutureResourceUsageChangesUseCase};
 pub use domain::ports::{
     notifier::{NotificationError, NotificationEvent, Notifier},
     repositories::{RepositoryError, ResourceUsageRepository},

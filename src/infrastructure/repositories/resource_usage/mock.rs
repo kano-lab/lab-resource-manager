@@ -40,6 +40,11 @@ impl ResourceUsageRepository for MockUsageRepository {
         Ok(storage.values().cloned().collect())
     }
 
+    async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
+        let storage = self.storage.lock().unwrap();
+        Ok(storage.values().cloned().collect())
+    }
+
     async fn find_overlapping(
         &self,
         time_period: &TimePeriod,

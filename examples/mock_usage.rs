@@ -10,7 +10,7 @@
 
 use lab_resource_manager::{
     JsonFileIdentityLinkRepository, MockUsageRepository, NotificationRouter,
-    NotifyResourceUsageChangesUseCase, load_config,
+    NotifyFutureResourceUsageChangesUseCase, load_config,
 };
 use std::sync::Arc;
 
@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Mock repository and notification router initialized");
 
     // Create use case
-    let usecase = NotifyResourceUsageChangesUseCase::new(repository, notifier).await?;
+    let usecase = NotifyFutureResourceUsageChangesUseCase::new(repository, notifier).await?;
 
     // Poll once to demonstrate
     println!("📊 Polling for changes...\n");
