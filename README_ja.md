@@ -46,68 +46,9 @@ src/
     └── slackbot.rs          # リソースアクセス管理用Slackボット
 ```
 
-## クイックスタート
+## セットアップとデプロイ
 
-セットアップと導入の詳細については、[管理者ガイド](docs/ADMIN_GUIDE_ja.md)を参照してください。
-
-## Dockerデプロイ
-
-### 前提条件
-
-secretsファイルの適切なパーミッション設定:
-
-```bash
-# サービスアカウントキーに安全なパーミッションを設定
-chmod 600 secrets/service-account.json
-
-# 推奨: 全てのsecretsに適切なパーミッションを設定
-chmod 600 secrets/*
-```
-
-**セキュリティ注意事項**: `secrets/`ディレクトリはコンテナ内で読み取り専用でマウントされますが、Dockerボリュームマウントではホスト側のファイルパーミッションが保持されます。機密ファイルには常に適切なパーミッション（600または400）をホストシステム上で設定してください。
-
-### Docker Composeでのビルドと実行
-
-```bash
-# 両方のサービスをビルドして起動
-docker-compose up -d
-
-# ログを表示
-docker-compose logs -f
-
-# サービスを停止
-docker-compose down
-```
-
-Dockerセットアップは、各サービスに最適化された個別のイメージを持つマルチステージビルドを使用しています:
-
-- **ベースイメージ**: `debian:bookworm-slim`で攻撃面を最小化
-- **サービス固有ステージ**: 各サービス（watcher/slackbot）は自身のバイナリのみを含む
-- **共有ビルダー**: 単一のビルドステージで両方のバイナリを効率的にコンパイル
-
-### スタンドアロンDocker使用
-
-```bash
-# watcherイメージをビルド
-docker build --target watcher -t lab-resource-manager:watcher .
-
-# slackbotイメージをビルド
-docker build --target slackbot -t lab-resource-manager:slackbot .
-
-# watcherを実行
-docker run -v ./config:/app/config:ro \
-           -v ./data:/app/data \
-           -v ./secrets:/app/secrets:ro \
-           --env-file .env \
-           lab-resource-manager:watcher
-
-# slackbotを実行
-docker run -v ./config:/app/config:ro \
-           -v ./data:/app/data \
-           -v ./secrets:/app/secrets:ro \
-           --env-file .env \
-           lab-resource-manager:slackbot
-```
+セットアップとデプロイの手順については、[管理者ガイド](docs/ADMIN_GUIDE_ja.md)を参照してください。
 
 ## Usage
 
