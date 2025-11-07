@@ -27,7 +27,7 @@ impl MockUsageRepository {
 
 #[async_trait]
 impl ResourceUsageRepository for MockUsageRepository {
-    async fn find_active(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
+    async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
         let storage = self.storage.lock().unwrap();
         Ok(storage.values().cloned().collect())
     }

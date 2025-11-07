@@ -61,7 +61,7 @@ where
     async fn fetch_current_usages(
         &self,
     ) -> Result<HashMap<String, ResourceUsage>, ApplicationError> {
-        let usages = self.repository.find_active().await?;
+        let usages = self.repository.find_future().await?;
         Ok(usages
             .into_iter()
             .map(|usage| (usage.id().as_str().to_string(), usage))
@@ -103,13 +103,17 @@ where
     ) -> Result<(), ApplicationError> {
         let now = chrono::Utc::now();
 
-        for (id, usage) in previous {
+        // previousを現在時刻基準で「まだ未来」のものだけに絞る
+        // (currentと同じ時間軸に合わせることで、自然な期限切れを削除と誤検知しない)
+        let previous_still_future: HashMap<_, _> = previous
+            .iter()
+            .filter(|(_, usage)| usage.time_period().end() > now)
+            .collect();
+
+        // フィルタリング後のpreviousとcurrentを比較
+        for (id, usage) in previous_still_future {
             if !current.contains_key(id) {
-                // 予約期間がまだ終了していない場合のみ削除通知を送る
-                // (自然に期限切れになった場合は通知しない)
-                if usage.time_period().end() > now {
-                    self.notify_deleted(usage.clone()).await?;
-                }
+                self.notify_deleted(usage.clone()).await?;
             }
         }
         Ok(())

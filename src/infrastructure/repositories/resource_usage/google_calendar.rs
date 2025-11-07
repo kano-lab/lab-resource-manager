@@ -188,7 +188,7 @@ impl GoogleCalendarUsageRepository {
 
 #[async_trait]
 impl ResourceUsageRepository for GoogleCalendarUsageRepository {
-    async fn find_active(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
+    async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
         let events = self.fetch_all_events().await?;
 
         let mut usages = Vec::new();
