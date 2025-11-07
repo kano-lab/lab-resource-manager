@@ -7,7 +7,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{RepositoryError, ResourceUsageRepository};
 use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use google_calendar3::{
     CalendarHub,
     api::Event,
@@ -72,16 +72,38 @@ impl GoogleCalendarUsageRepository {
         &self,
         calendar_id: &str,
     ) -> Result<Vec<Event>, RepositoryError> {
+        // 過去24時間分も取得して、終了時刻でフィルタリングする
+        // time_minを開始時刻で制限すると、現在進行中のイベント（開始時刻が過去）が除外されてしまう
+        let time_min = Utc::now() - Duration::hours(24);
+
         let result = self
             .hub
             .events()
             .list(calendar_id)
-            .time_min(Utc::now())
+            .time_min(time_min)
             .doit()
             .await
             .map_err(|e| RepositoryError::ConnectionError(format!("Calendar API error: {}", e)))?;
 
-        Ok(result.1.items.unwrap_or_default())
+        let now = Utc::now();
+        let events = result.1.items.unwrap_or_default();
+
+        // 終了時刻が現在時刻より後のイベントのみを返す
+        // これにより、進行中または未来のイベントのみが対象となり、
+        // 完了したイベントが誤って削除通知されるのを防ぐ
+        let filtered_events: Vec<Event> = events
+            .into_iter()
+            .filter(|event| {
+                event
+                    .end
+                    .as_ref()
+                    .and_then(|e| e.date_time.as_ref())
+                    .map(|end_time| *end_time > now)
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        Ok(filtered_events)
     }
 
     /// イベントをResourceUsageに変換
