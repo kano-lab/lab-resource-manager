@@ -25,6 +25,27 @@ impl SlackSender {
         }
     }
 
+    /// リソースタイプに応じたラベルを生成
+    fn get_resource_label(
+        &self,
+        resources: &[crate::domain::aggregates::resource_usage::value_objects::Resource],
+    ) -> &'static str {
+        use crate::domain::aggregates::resource_usage::value_objects::Resource;
+
+        if resources.is_empty() {
+            return "📦 予約リソース";
+        }
+
+        let has_gpu = resources.iter().any(|r| matches!(r, Resource::Gpu(_)));
+        let has_room = resources.iter().any(|r| matches!(r, Resource::Room { .. }));
+
+        match (has_gpu, has_room) {
+            (true, false) => "💻 予約GPU",
+            (false, true) => "🏢 予約部屋",
+            _ => "📦 予約リソース", // 混在または不明
+        }
+    }
+
     /// イベントからSlack用のメッセージを構築
     fn format_message(&self, context: &NotificationContext) -> String {
         let usage = match context.event {
@@ -36,24 +57,25 @@ impl SlackSender {
         let user_display = self.format_user(usage.owner_email(), context.identity_link);
         let resources = format_resources(usage.resources());
         let time_period = format_time_period(usage.time_period(), context.timezone);
+        let resource_label = self.get_resource_label(usage.resources());
 
         match context.event {
             NotificationEvent::ResourceUsageCreated(_) => {
                 format!(
-                    "🔔 新規予約\n👤 {}\n\n📅 期間\n{}\n\n💻 予約GPU\n{}",
-                    user_display, time_period, resources
+                    "🔔 新規予約\n👤 {}\n\n📅 期間\n{}\n\n{}\n{}",
+                    user_display, time_period, resource_label, resources
                 )
             }
             NotificationEvent::ResourceUsageUpdated(_) => {
                 format!(
-                    "🔄 予約更新\n👤 {}\n\n📅 期間\n{}\n\n💻 予約GPU\n{}",
-                    user_display, time_period, resources
+                    "🔄 予約更新\n👤 {}\n\n📅 期間\n{}\n\n{}\n{}",
+                    user_display, time_period, resource_label, resources
                 )
             }
             NotificationEvent::ResourceUsageDeleted(_) => {
                 format!(
-                    "🗑️ 予約削除\n👤 {}\n\n📅 期間\n{}\n\n💻 予約GPU\n{}",
-                    user_display, time_period, resources
+                    "🗑️ 予約削除\n👤 {}\n\n📅 期間\n{}\n\n{}\n{}",
+                    user_display, time_period, resource_label, resources
                 )
             }
         }
@@ -180,9 +202,10 @@ mod tests {
         // メッセージに絵文字が含まれることを確認
         assert!(message.contains("🔄"));
         assert!(message.contains("📅"));
-        assert!(message.contains("💻"));
+        assert!(message.contains("🏢"));
         // メッセージが構造化されていることを確認
         assert!(message.contains("予約更新"));
+        assert!(message.contains("予約部屋"));
         assert!(message.contains("会議室A"));
     }
 
