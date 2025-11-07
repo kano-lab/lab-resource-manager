@@ -1,7 +1,8 @@
 services:
   watcher:
-    build: .
-    command: watcher
+    build:
+      context: .
+      target: watcher
     volumes:
       - ./config:/app/config:ro
       - ./data:/app/data
@@ -13,8 +14,9 @@ services:
     restart: unless-stopped
 
   slackbot:
-    build: .
-    command: slackbot
+    build:
+      context: .
+      target: slackbot
     volumes:
       - ./config:/app/config:ro
       - ./data:/app/data
