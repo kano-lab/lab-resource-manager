@@ -8,11 +8,6 @@ GPU and room resource usage management and notification system.
 
 [日本語 README](README_ja.md)
 
-## Documentation
-
-- **[Administrator Guide](docs/ADMIN_GUIDE.md)** - Setup and deployment instructions for lab administrators
-- **[User Guide](docs/USER_GUIDE.md)** - How to use the system for end users
-
 ## Features
 
 - **Resource Usage Management**: Manage GPU server and room usage schedules (default implementation: Google Calendar)
@@ -53,13 +48,93 @@ src/
     └── slackbot.rs          # Slack bot for resource access management
 ```
 
-## Setup and Deployment
+## Setup
 
-For setup and deployment instructions, see the [Administrator Guide](docs/ADMIN_GUIDE.md).
+For detailed setup instructions, see the [Administrator Guide](docs/ADMIN_GUIDE.md).
+
+## Docker Deployment
+
+### Building and Running with Docker Compose
+
+```bash
+# Build and start both services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
+**Security Note**: Ensure proper file permissions for secrets before deployment:
+
+```bash
+chmod 600 secrets/service-account.json
+chmod 600 secrets/*
+```
+
+The Docker setup uses a multi-stage build with separate optimized images for each service:
+
+- **Base image**: `ubuntu:24.04` (required for GLIBC 2.38 support)
+- **Service-specific stages**: Each service (watcher/slackbot) gets only its binary
+- **Shared builder**: Single build stage compiles both binaries efficiently
+
+### Standalone Docker Usage
+
+```bash
+# Build and run watcher
+docker build --target watcher -t lab-resource-manager:watcher .
+docker run -v ./config:/app/config:ro \
+           -v ./data:/app/data \
+           -v ./secrets:/app/secrets:ro \
+           --env-file .env \
+           lab-resource-manager:watcher
+
+# Build and run slackbot
+docker build --target slackbot -t lab-resource-manager:slackbot .
+docker run -v ./config:/app/config:ro \
+           -v ./data:/app/data \
+           -v ./secrets:/app/secrets:ro \
+           --env-file .env \
+           lab-resource-manager:slackbot
+```
 
 ## Usage
 
-For information on using the system, see the [User Guide](docs/USER_GUIDE.md).
+### Running the Watcher
+
+```bash
+# Default (repository implementation + configured notifications)
+cargo run --bin watcher
+
+# Use mock repository (for testing)
+cargo run --bin watcher --repository mock
+
+# Customize polling interval (default: 60 seconds)
+cargo run --bin watcher --interval 30
+```
+
+### CLI Options
+
+- `--repository <google_calendar|mock>`: Select repository implementation
+- `--interval <seconds>`: Set polling interval
+
+Notifier implementations are configured per resource in `config/resources.toml`.
+
+### Running the Slack Bot
+
+The Slack bot allows users to register their email addresses and get access to all resource collections:
+
+```bash
+# Run the bot
+cargo run --bin slackbot
+```
+
+**Slack Commands:**
+
+- `/register-calendar <your-email@example.com>` - Register your own email address and link to your Slack account
+- `/link-user <@slack_user> <email@example.com>` - Link another user's email address to their Slack account
 
 ### Using as a Library
 
@@ -131,6 +206,17 @@ cargo check
 cargo clippy
 cargo fmt
 ```
+
+## Device Specification Format
+
+In resource usage titles, you can specify devices using the following formats:
+
+- Single: `0` → Device 0
+- Range: `0-2` → Devices 0, 1, 2
+- Multiple: `0,2,5` → Devices 0, 2, 5
+- Mixed: `0-1,6-7` → Devices 0, 1, 6, 7
+
+The `ResourceFactory` in the domain layer handles parsing these specifications.
 
 ## Project Status
 

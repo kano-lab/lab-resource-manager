@@ -133,65 +133,6 @@ Administrators can register other users' email addresses:
 
 This command links the specified Slack user with an email address and grants access to Google Calendar resources.
 
-## Docker Deployment
-
-### Prerequisites
-
-Ensure proper file permissions for secrets:
-
-```bash
-# Set secure permissions for service account key
-chmod 600 secrets/service-account.json
-
-# Recommended: Set permissions for all secrets
-chmod 600 secrets/*
-```
-
-**Security Note**: The `secrets/` directory is mounted read-only in containers, but host file permissions are preserved through Docker volume mounts. Always ensure sensitive files have appropriate permissions (600 or 400) on the host system.
-
-### Building and Running with Docker Compose
-
-```bash
-# Build and start both services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
-```
-
-The Docker setup uses a multi-stage build with separate optimized images for each service:
-
-- **Base image**: `ubuntu:24.04` (required for GLIBC 2.38 support)
-- **Service-specific stages**: Each service (watcher/slackbot) gets only its binary
-- **Shared builder**: Single build stage compiles both binaries efficiently
-
-### Standalone Docker Usage
-
-```bash
-# Build watcher image
-docker build --target watcher -t lab-resource-manager:watcher .
-
-# Build slackbot image
-docker build --target slackbot -t lab-resource-manager:slackbot .
-
-# Run watcher
-docker run -v ./config:/app/config:ro \
-           -v ./data:/app/data \
-           -v ./secrets:/app/secrets:ro \
-           --env-file .env \
-           lab-resource-manager:watcher
-
-# Run slackbot
-docker run -v ./config:/app/config:ro \
-           -v ./data:/app/data \
-           -v ./secrets:/app/secrets:ro \
-           --env-file .env \
-           lab-resource-manager:slackbot
-```
-
 ## Building
 
 ### Development Build
