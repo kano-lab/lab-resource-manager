@@ -8,6 +8,11 @@ GPU and room resource usage management and notification system.
 
 [日本語 README](README_ja.md)
 
+## Documentation
+
+- **[Administrator Guide](docs/ADMIN_GUIDE.md)** - Setup and deployment instructions for lab administrators
+- **[User Guide](docs/USER_GUIDE.md)** - How to use the system for end users
+
 ## Features
 
 - **Resource Usage Management**: Manage GPU server and room usage schedules (default implementation: Google Calendar)
@@ -48,77 +53,9 @@ src/
     └── slackbot.rs          # Slack bot for resource access management
 ```
 
-## Setup
+## Quick Start
 
-### 1. Environment Variables
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` to configure:
-
-```env
-# Repository Configuration (default implementation: Google Calendar)
-GOOGLE_SERVICE_ACCOUNT_KEY=secrets/service-account.json
-
-# Resource Configuration
-RESOURCE_CONFIG=config/resources.toml
-
-# Slack Bot Configuration (for slackbot binary)
-SLACK_BOT_TOKEN=xoxb-your-bot-token-here
-SLACK_APP_TOKEN=xapp-your-app-token-here
-```
-
-**Note**: Notification settings are configured in `config/resources.toml` per resource.
-
-### 2. Repository Implementation Setup (Default: Google Calendar)
-
-If using the Google Calendar repository:
-
-1. Create a project in [Google Cloud Console](https://console.cloud.google.com/)
-2. Enable Google Calendar API
-3. Create a service account and download JSON key
-4. Place the key as `secrets/service-account.json`
-5. Share your calendar with the service account email
-
-### 3. Resource Configuration
-
-Define GPU servers and rooms in `config/resources.toml`:
-
-```toml
-[[servers]]
-name = "Thalys"
-calendar_id = "your-calendar-id@group.calendar.google.com"  # Repository implementation-specific ID
-
-# Configure notification destinations per resource
-[[servers.notifications]]
-type = "slack"  # Notifier implementation selection
-webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
-
-# Optional: Add mock notifications for testing
-# [[servers.notifications]]
-# type = "mock"
-
-[[servers.devices]]
-id = 0
-model = "A100 80GB PCIe"
-
-[[servers.devices]]
-id = 1
-model = "A100 80GB PCIe"
-
-[[rooms]]
-name = "Meeting Room A"
-calendar_id = "room-calendar-id@group.calendar.google.com"
-
-[[rooms.notifications]]
-type = "slack"
-webhook_url = "https://hooks.slack.com/services/YOUR/ROOM/WEBHOOK"
-```
-
-Each resource can have multiple notifier implementations configured, and different
-resources can specify different notification destinations.
+For detailed setup and deployment instructions, see the [Administrator Guide](docs/ADMIN_GUIDE.md).
 
 ## Docker Deployment
 
@@ -181,39 +118,7 @@ docker run -v ./config:/app/config:ro \
 
 ## Usage
 
-### Running the Watcher
-
-```bash
-# Default (repository implementation + configured notifications)
-cargo run --bin watcher
-
-# Use mock repository (for testing)
-cargo run --bin watcher --repository mock
-
-# Customize polling interval (default: 60 seconds)
-cargo run --bin watcher --interval 30
-```
-
-### CLI Options
-
-- `--repository <google_calendar|mock>`: Select repository implementation
-- `--interval <seconds>`: Set polling interval
-
-Notifier implementations are configured per resource in `config/resources.toml`.
-
-### Running the Slack Bot
-
-The Slack bot allows users to register their email addresses and get access to all resource collections:
-
-```bash
-# Run the bot
-cargo run --bin slackbot
-```
-
-**Slack Commands:**
-
-- `/register-calendar <your-email@example.com>` - Register your own email address and link to your Slack account
-- `/link-user <@slack_user> <email@example.com>` - Link another user's email address to their Slack account
+For information on using the system, see the [User Guide](docs/USER_GUIDE.md).
 
 ### Using as a Library
 
@@ -285,17 +190,6 @@ cargo check
 cargo clippy
 cargo fmt
 ```
-
-## Device Specification Format
-
-In resource usage titles, you can specify devices using the following formats:
-
-- Single: `0` → Device 0
-- Range: `0-2` → Devices 0, 1, 2
-- Multiple: `0,2,5` → Devices 0, 2, 5
-- Mixed: `0-1,6-7` → Devices 0, 1, 6, 7
-
-The `ResourceFactory` in the domain layer handles parsing these specifications.
 
 ## Project Status
 
