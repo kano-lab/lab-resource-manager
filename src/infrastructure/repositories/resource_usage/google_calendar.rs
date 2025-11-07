@@ -188,7 +188,7 @@ impl GoogleCalendarUsageRepository {
 
 #[async_trait]
 impl ResourceUsageRepository for GoogleCalendarUsageRepository {
-    async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
+    async fn find_by_id(&self, _id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
         Err(RepositoryError::Unknown(
             "find_by_id機能は未実装です".to_string(),
         ))
