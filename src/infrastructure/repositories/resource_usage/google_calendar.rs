@@ -189,11 +189,18 @@ impl GoogleCalendarUsageRepository {
 #[async_trait]
 impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
-        let all = self.find_all().await?;
-        Ok(all.into_iter().find(|u| u.id().as_str() == id.as_str()))
+        // Google Calendar APIの制約上、未来のイベントのみから検索
+        let future = self.find_future().await?;
+        Ok(future.into_iter().find(|u| u.id().as_str() == id.as_str()))
     }
 
     async fn find_all(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
+        Err(RepositoryError::Unknown(
+            "find_all機能は未実装です。Google Calendar APIの制約上、過去のイベントを全て取得することは現実的ではありません。find_future()を使用してください".to_string()
+        ))
+    }
+
+    async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
         let events = self.fetch_all_events().await?;
 
         let mut usages = Vec::new();
@@ -209,17 +216,13 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         Ok(usages)
     }
 
-    async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        // find_all()と同じ実装（fetch_all_eventsが既に終了時刻でフィルタリング済み）
-        self.find_all().await
-    }
-
     async fn find_overlapping(
         &self,
         time_period: &TimePeriod,
     ) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        let all = self.find_all().await?;
-        Ok(all
+        // Google Calendar APIの制約上、未来のイベントのみから検索
+        let future = self.find_future().await?;
+        Ok(future
             .into_iter()
             .filter(|u| u.time_period().overlaps_with(time_period))
             .collect())
