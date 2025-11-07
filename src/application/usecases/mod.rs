@@ -44,4 +44,4 @@ pub mod grant_user_resource_access;
 pub mod notify_resource_usage_changes;
 
 pub use grant_user_resource_access::GrantUserResourceAccessUseCase;
-pub use notify_resource_usage_changes::NotifyResourceUsageChangesUseCase;
+pub use notify_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase;

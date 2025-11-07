@@ -4,7 +4,17 @@ use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::ports::{NotificationEvent, Notifier};
 use std::collections::HashMap;
 
-pub struct NotifyResourceUsageChangesUseCase<R, N>
+/// 未来および進行中のリソース使用状況の変更を監視し、通知するユースケース
+///
+/// このユースケースは以下の変更を検知して通知します:
+/// - 新規作成: 新しいリソース使用予約が追加された
+/// - 更新: 既存の予約内容が変更された
+/// - 削除: **未来の予約**がキャンセル/削除された
+///
+/// # スコープ
+/// このユースケースは「未来および進行中」のリソース使用のみを監視対象とします。
+/// 予約期間が終了したリソースは自然に監視対象外となり、削除通知は送信されません。
+pub struct NotifyFutureResourceUsageChangesUseCase<R, N>
 where
     R: ResourceUsageRepository,
     N: Notifier,
@@ -14,7 +24,7 @@ where
     previous_state: tokio::sync::Mutex<HashMap<String, ResourceUsage>>,
 }
 
-impl<R, N> NotifyResourceUsageChangesUseCase<R, N>
+impl<R, N> NotifyFutureResourceUsageChangesUseCase<R, N>
 where
     R: ResourceUsageRepository,
     N: Notifier,
@@ -51,7 +61,7 @@ where
     async fn fetch_current_usages(
         &self,
     ) -> Result<HashMap<String, ResourceUsage>, ApplicationError> {
-        let usages = self.repository.find_all().await?;
+        let usages = self.repository.find_future().await?;
         Ok(usages
             .into_iter()
             .map(|usage| (usage.id().as_str().to_string(), usage))
@@ -91,7 +101,17 @@ where
         previous: &HashMap<String, ResourceUsage>,
         current: &HashMap<String, ResourceUsage>,
     ) -> Result<(), ApplicationError> {
-        for (id, usage) in previous {
+        let now = chrono::Utc::now();
+
+        // previousを現在時刻基準で「まだ未来」のものだけに絞る
+        // (currentと同じ時間軸に合わせることで、自然な期限切れを削除と誤検知しない)
+        let previous_still_future: HashMap<_, _> = previous
+            .iter()
+            .filter(|(_, usage)| usage.time_period().end() > now)
+            .collect();
+
+        // フィルタリング後のpreviousとcurrentを比較
+        for (id, usage) in previous_still_future {
             if !current.contains_key(id) {
                 self.notify_deleted(usage.clone()).await?;
             }
