@@ -2,11 +2,6 @@
 
 研究室のGPU・部屋などの資源の使用状況を管理し、変更を通知するシステム。
 
-## ドキュメント
-
-- **[管理者ガイド](docs/ADMIN_GUIDE_ja.md)** - 研究室管理者向けのセットアップと導入手順
-- **[ユーザーガイド](docs/USER_GUIDE_ja.md)** - システムの使い方（エンドユーザー向け）
-
 ## Features
 
 - **リソース使用状況の管理**: GPUサーバーと部屋の使用予定を管理（デフォルト実装: Google Calendar）
@@ -46,11 +41,93 @@ src/
     └── slackbot.rs          # リソースアクセス管理用Slackボット
 ```
 
-## クイックスタート
+## Setup
 
-セットアップと導入の詳細については、[管理者ガイド](docs/ADMIN_GUIDE_ja.md)を参照してください。
+セットアップの詳細については、[管理者ガイド](docs/ADMIN_GUIDE_ja.md)を参照してください。
 
-システムの使用方法については、[ユーザーガイド](docs/USER_GUIDE_ja.md)を参照してください。
+## Dockerデプロイ
+
+### Docker Composeでのビルドと実行
+
+```bash
+# 両方のサービスをビルドして起動
+docker-compose up -d
+
+# ログを表示
+docker-compose logs -f
+
+# サービスを停止
+docker-compose down
+```
+
+**セキュリティ注意**: デプロイ前にsecretsの適切なパーミッション設定を確認してください:
+
+```bash
+chmod 600 secrets/service-account.json
+chmod 600 secrets/*
+```
+
+Dockerセットアップは、各サービスに最適化された個別のイメージを持つマルチステージビルドを使用:
+
+- **ベースイメージ**: `ubuntu:24.04`（GLIBC 2.38サポートのため必須）
+- **サービス固有ステージ**: 各サービス（watcher/slackbot）は自身のバイナリのみを含む
+- **共有ビルダー**: 単一のビルドステージで両方のバイナリを効率的にコンパイル
+
+### スタンドアロンDocker使用
+
+```bash
+# watcherをビルド・実行
+docker build --target watcher -t lab-resource-manager:watcher .
+docker run -v ./config:/app/config:ro \
+           -v ./data:/app/data \
+           -v ./secrets:/app/secrets:ro \
+           --env-file .env \
+           lab-resource-manager:watcher
+
+# slackbotをビルド・実行
+docker build --target slackbot -t lab-resource-manager:slackbot .
+docker run -v ./config:/app/config:ro \
+           -v ./data:/app/data \
+           -v ./secrets:/app/secrets:ro \
+           --env-file .env \
+           lab-resource-manager:slackbot
+```
+
+## Usage
+
+### Watcher起動
+
+```bash
+# デフォルト（リポジトリ実装 + 設定済み通知先）
+cargo run --bin watcher
+
+# Mockリポジトリ使用（テスト用）
+cargo run --bin watcher --repository mock
+
+# ポーリング間隔指定（デフォルト60秒）
+cargo run --bin watcher --interval 30
+```
+
+### オプション
+
+- `--repository <google_calendar|mock>`: リポジトリ実装の選択
+- `--interval <秒>`: ポーリング間隔
+
+通知実装は `config/resources.toml` でリソースごとに設定します。
+
+### Slackボット起動
+
+Slackボットを使うと、ユーザーがメールアドレスを登録して全てのリソースコレクションへのアクセスを取得できます:
+
+```bash
+# ボットの起動
+cargo run --bin slackbot
+```
+
+**Slackコマンド:**
+
+- `/register-calendar <your-email@example.com>` - 自分のメールアドレスを登録し、Slackアカウントと連携
+- `/link-user <@slack_user> <email@example.com>` - 他のユーザーのメールアドレスをSlackアカウントと連携
 
 ### ライブラリとして使用
 
@@ -119,6 +196,17 @@ cargo check
 cargo clippy
 cargo fmt
 ```
+
+## デバイス指定記法
+
+リソース使用状況のタイトルで、以下の形式でデバイスを指定できます:
+
+- 単一: `0` → デバイス0
+- 範囲: `0-2` → デバイス0, 1, 2
+- 複数: `0,2,5` → デバイス0, 2, 5
+- 混在: `0-1,6-7` → デバイス0, 1, 6, 7
+
+ドメイン層の`ResourceFactory`がこれらの指定のパースを処理します。
 
 ## Project Status
 
