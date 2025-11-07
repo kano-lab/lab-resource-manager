@@ -4,7 +4,17 @@ use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::ports::{NotificationEvent, Notifier};
 use std::collections::HashMap;
 
-pub struct NotifyResourceUsageChangesUseCase<R, N>
+/// 未来および進行中のリソース使用状況の変更を監視し、通知するユースケース
+///
+/// このユースケースは以下の変更を検知して通知します:
+/// - 新規作成: 新しいリソース使用予約が追加された
+/// - 更新: 既存の予約内容が変更された
+/// - 削除: **未来の予約**がキャンセル/削除された
+///
+/// # スコープ
+/// このユースケースは「未来および進行中」のリソース使用のみを監視対象とします。
+/// 予約期間が終了したリソースは自然に監視対象外となり、削除通知は送信されません。
+pub struct NotifyFutureResourceUsageChangesUseCase<R, N>
 where
     R: ResourceUsageRepository,
     N: Notifier,
@@ -14,7 +24,7 @@ where
     previous_state: tokio::sync::Mutex<HashMap<String, ResourceUsage>>,
 }
 
-impl<R, N> NotifyResourceUsageChangesUseCase<R, N>
+impl<R, N> NotifyFutureResourceUsageChangesUseCase<R, N>
 where
     R: ResourceUsageRepository,
     N: Notifier,
@@ -91,9 +101,15 @@ where
         previous: &HashMap<String, ResourceUsage>,
         current: &HashMap<String, ResourceUsage>,
     ) -> Result<(), ApplicationError> {
+        let now = chrono::Utc::now();
+
         for (id, usage) in previous {
             if !current.contains_key(id) {
-                self.notify_deleted(usage.clone()).await?;
+                // 予約期間がまだ終了していない場合のみ削除通知を送る
+                // (自然に期限切れになった場合は通知しない)
+                if usage.time_period().end() > now {
+                    self.notify_deleted(usage.clone()).await?;
+                }
             }
         }
         Ok(())
