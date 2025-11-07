@@ -48,8 +48,8 @@ impl GoogleCalendarUsageRepository {
         Ok(Self { hub, config })
     }
 
-    /// すべてのカレンダーからイベントを取得
-    async fn fetch_all_events(&self) -> Result<Vec<(Event, String)>, RepositoryError> {
+    /// すべてのカレンダーから未来のイベントを取得
+    async fn fetch_future_events(&self) -> Result<Vec<(Event, String)>, RepositoryError> {
         let mut all_events = Vec::new();
 
         // 各サーバーカレンダーから取得
@@ -67,7 +67,7 @@ impl GoogleCalendarUsageRepository {
         Ok(all_events)
     }
 
-    /// 特定のカレンダーからイベントを取得
+    /// 特定のカレンダーから未来のイベント（進行中および今後予定されているもの）を取得
     async fn fetch_events_from_calendar(
         &self,
         calendar_id: &str,
@@ -201,7 +201,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     }
 
     async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        let events = self.fetch_all_events().await?;
+        let events = self.fetch_future_events().await?;
 
         let mut usages = Vec::new();
         for (event, context) in events {
