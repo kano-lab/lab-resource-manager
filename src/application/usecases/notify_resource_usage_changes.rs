@@ -51,7 +51,7 @@ where
     async fn fetch_current_usages(
         &self,
     ) -> Result<HashMap<String, ResourceUsage>, ApplicationError> {
-        let usages = self.repository.find_all().await?;
+        let usages = self.repository.find_active().await?;
         Ok(usages
             .into_iter()
             .map(|usage| (usage.id().as_str().to_string(), usage))

@@ -5,5 +5,7 @@ use async_trait::async_trait;
 
 #[async_trait]
 pub trait ResourceUsageRepository {
-    async fn find_all(&self) -> Result<Vec<ResourceUsage>, RepositoryError>;
+    /// 進行中または今後予定されているリソース使用状況を取得する
+    /// (Get ongoing or upcoming resource usages)
+    async fn find_active(&self) -> Result<Vec<ResourceUsage>, RepositoryError>;
 }
