@@ -120,14 +120,14 @@ pub enum ResourceFactoryError {
         /// 範囲の開始
         start: u32,
         /// 範囲の終了
-        end: u32
+        end: u32,
     },
     /// デバイスが見つからない
     DeviceNotFound {
         /// サーバー名
         server: String,
         /// デバイスID
-        device_id: u32
+        device_id: u32,
     },
 }
 

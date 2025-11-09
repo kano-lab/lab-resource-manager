@@ -7,12 +7,12 @@ pub enum IdentityLinkError {
     /// 指定された外部システムの識別情報が既に存在する
     IdentityAlreadyExists {
         /// 重複している外部システム
-        system: ExternalSystem
+        system: ExternalSystem,
     },
     /// 指定された外部システムの識別情報が見つからない
     IdentityNotFound {
         /// 見つからなかった外部システム
-        system: ExternalSystem
+        system: ExternalSystem,
     },
 }
 

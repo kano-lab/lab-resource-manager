@@ -45,7 +45,7 @@ pub enum Resource {
     /// 部屋
     Room {
         /// 部屋名
-        name: String
+        name: String,
     },
 }
 
