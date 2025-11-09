@@ -19,6 +19,7 @@ impl Default for SlackSender {
 }
 
 impl SlackSender {
+    /// 新しいSlackSenderを作成
     pub fn new() -> Self {
         Self {
             client: Client::new(),

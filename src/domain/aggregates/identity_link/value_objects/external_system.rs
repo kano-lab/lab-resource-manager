@@ -5,10 +5,12 @@ use std::str::FromStr;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ExternalSystem {
+    /// Slack
     Slack,
 }
 
 impl ExternalSystem {
+    /// 文字列表現を取得
     pub fn as_str(&self) -> &str {
         match self {
             ExternalSystem::Slack => "slack",

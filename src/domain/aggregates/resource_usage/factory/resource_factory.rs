@@ -1,5 +1,6 @@
 use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
 
+/// デバイス指定記法からResourceオブジェクトを生成するファクトリ
 pub struct ResourceFactory;
 
 impl ResourceFactory {
@@ -105,6 +106,7 @@ impl ResourceFactory {
     }
 }
 
+/// リソースファクトリのエラー型
 #[derive(Debug)]
 pub enum ResourceFactoryError {
     /// デバイス指定が空
@@ -114,9 +116,19 @@ pub enum ResourceFactoryError {
     /// 無効なフォーマット
     InvalidFormat(String),
     /// 無効な範囲指定
-    InvalidRange { start: u32, end: u32 },
+    InvalidRange {
+        /// 範囲の開始
+        start: u32,
+        /// 範囲の終了
+        end: u32
+    },
     /// デバイスが見つからない
-    DeviceNotFound { server: String, device_id: u32 },
+    DeviceNotFound {
+        /// サーバー名
+        server: String,
+        /// デバイスID
+        device_id: u32
+    },
 }
 
 impl std::fmt::Display for ResourceFactoryError {

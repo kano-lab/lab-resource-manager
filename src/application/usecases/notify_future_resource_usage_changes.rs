@@ -29,6 +29,14 @@ where
     R: ResourceUsageRepository,
     N: Notifier,
 {
+    /// 新しいインスタンスを作成し、初期状態を取得する
+    ///
+    /// # Arguments
+    /// * `repository` - リソース使用リポジトリ
+    /// * `notifier` - 通知サービス
+    ///
+    /// # Errors
+    /// リポジトリから初期状態の取得に失敗した場合
     pub async fn new(repository: R, notifier: N) -> Result<Self, ApplicationError> {
         let instance = Self {
             repository,
@@ -42,6 +50,12 @@ where
         Ok(instance)
     }
 
+    /// 一度だけポーリングを実行し、変更を検知して通知する
+    ///
+    /// 前回の状態と現在の状態を比較し、作成・更新・削除された予約を検知して通知します。
+    ///
+    /// # Errors
+    /// リポジトリアクセスまたは通知送信に失敗した場合
     pub async fn poll_once(&self) -> Result<(), ApplicationError> {
         let current_usages = self.fetch_current_usages().await?;
         let mut previous_usages = self.previous_state.lock().await;

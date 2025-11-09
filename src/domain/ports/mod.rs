@@ -18,9 +18,13 @@
 //! Infrastructure層（アダプター実装）
 //! ```
 
+/// ポート共通のエラー定義
 pub mod error;
+/// 通知サービスポート
 pub mod notifier;
+/// リポジトリポート
 pub mod repositories;
+/// リソースコレクションアクセスサービスポート
 pub mod resource_collection_access;
 
 pub use error::PortError;

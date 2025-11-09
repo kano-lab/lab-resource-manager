@@ -4,14 +4,18 @@ use crate::domain::errors::DomainError;
 use crate::domain::ports::error::PortError;
 use std::fmt;
 
+/// リポジトリ操作で発生するエラー
 #[derive(Debug)]
 pub enum RepositoryError {
+    /// リソースが見つからない
     NotFound,
+    /// 接続エラー
     ConnectionError(String),
     /// 無効なメールアドレス
     InvalidEmail(EmailAddressError),
     /// ResourceUsageのドメインルール違反
     InvalidResourceUsage(ResourceUsageError),
+    /// 不明なエラー
     Unknown(String),
 }
 
