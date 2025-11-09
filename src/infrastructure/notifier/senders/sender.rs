@@ -4,8 +4,11 @@ use async_trait::async_trait;
 
 /// 通知送信に必要なコンテキスト情報
 pub struct NotificationContext<'a> {
+    /// 通知イベント
     pub event: &'a NotificationEvent,
+    /// ユーザーのID紐付け情報（オプション）
     pub identity_link: Option<&'a IdentityLink>,
+    /// タイムゾーン（オプション）
     pub timezone: Option<&'a str>,
 }
 
@@ -18,6 +21,7 @@ pub struct NotificationContext<'a> {
 /// * `Config` - 送信に必要な設定の型（webhook URL, email address等）
 #[async_trait]
 pub trait Sender: Send + Sync {
+    /// 送信に必要な設定の型
     type Config: ?Sized;
 
     /// 指定された設定を使ってメッセージを送信

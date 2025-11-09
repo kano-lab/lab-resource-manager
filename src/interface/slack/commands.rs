@@ -14,6 +14,10 @@ pub struct SlackCommandHandler {
 }
 
 impl SlackCommandHandler {
+    /// 新しいSlackコマンドハンドラを作成
+    ///
+    /// # Arguments
+    /// * `grant_access_usecase` - アクセス権付与ユースケース
     pub fn new(grant_access_usecase: Arc<GrantUserResourceAccessUseCase>) -> Self {
         Self {
             grant_access_usecase,

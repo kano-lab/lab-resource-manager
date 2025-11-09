@@ -1,3 +1,7 @@
+//! # Resource Usage Watcher
+//!
+//! リソース使用状況の変更を監視し、通知するバイナリ
+
 use clap::Parser;
 use lab_resource_manager::*;
 use std::sync::Arc;

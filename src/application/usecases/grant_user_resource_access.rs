@@ -21,6 +21,12 @@ pub struct GrantUserResourceAccessUseCase {
 }
 
 impl GrantUserResourceAccessUseCase {
+    /// 新しいインスタンスを作成する
+    ///
+    /// # Arguments
+    /// * `identity_repo` - ID紐付けリポジトリ
+    /// * `collection_access` - リソースコレクションアクセスサービス
+    /// * `collection_ids` - アクセス権を付与するコレクションIDのリスト
     pub fn new(
         identity_repo: Arc<dyn IdentityLinkRepository>,
         collection_access: Arc<dyn ResourceCollectionAccessService>,
@@ -33,6 +39,16 @@ impl GrantUserResourceAccessUseCase {
         }
     }
 
+    /// ユーザーにリソースアクセス権を付与する
+    ///
+    /// # Arguments
+    /// * `external_system` - 外部システム（例: Slack）
+    /// * `external_user_id` - 外部システム上のユーザーID
+    /// * `email` - ユーザーのメールアドレス
+    ///
+    /// # Errors
+    /// * `ApplicationError::ExternalSystemAlreadyLinked` - 既に同じ外部システムに紐付けられている場合
+    /// * その他のリポジトリエラーやアクセス権付与エラー
     pub async fn execute(
         &self,
         external_system: ExternalSystem,

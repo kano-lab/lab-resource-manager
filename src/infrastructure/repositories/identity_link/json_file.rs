@@ -96,6 +96,10 @@ impl IdentityLinkDto {
 }
 
 impl JsonFileIdentityLinkRepository {
+    /// 新しいJSONファイルベースのリポジトリを作成
+    ///
+    /// # Arguments
+    /// * `file_path` - JSONファイルのパス
     pub fn new(file_path: PathBuf) -> Self {
         Self {
             file_path,

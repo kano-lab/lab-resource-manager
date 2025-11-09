@@ -7,10 +7,13 @@ use crate::domain::{
 };
 use async_trait::async_trait;
 
+/// ResourceUsage集約のリポジトリポート
 #[async_trait]
 pub trait ResourceUsageRepository {
+    /// IDでResourceUsageを検索
     async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError>;
 
+    /// すべてのResourceUsageを取得
     async fn find_all(&self) -> Result<Vec<ResourceUsage>, RepositoryError>;
 
     /// 未来のリソース使用状況を取得する（進行中および今後予定されているもの）
@@ -24,12 +27,15 @@ pub trait ResourceUsageRepository {
     /// (Get future resource usages - ongoing and upcoming)
     async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError>;
 
+    /// 指定期間と重複するResourceUsageを検索
     async fn find_overlapping(
         &self,
         time_period: &TimePeriod,
     ) -> Result<Vec<ResourceUsage>, RepositoryError>;
 
+    /// ResourceUsageを保存
     async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError>;
 
+    /// ResourceUsageを削除
     async fn delete(&self, id: &UsageId) -> Result<(), RepositoryError>;
 }

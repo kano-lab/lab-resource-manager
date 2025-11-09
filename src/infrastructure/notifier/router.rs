@@ -21,6 +21,11 @@ pub struct NotificationRouter {
 }
 
 impl NotificationRouter {
+    /// 新しい通知ルーターを作成
+    ///
+    /// # Arguments
+    /// * `config` - リソース設定
+    /// * `identity_repo` - ID紐付けリポジトリ
     pub fn new(config: ResourceConfig, identity_repo: Arc<dyn IdentityLinkRepository>) -> Self {
         Self {
             config,

@@ -11,6 +11,8 @@
 //!
 //! Application層はDomain層にのみ依存する。
 //! Infrastructure層への直接の依存は禁止。
+
+/// Application層で発生するエラーの定義
 pub mod error;
 pub mod usecases;
 

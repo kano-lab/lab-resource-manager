@@ -40,8 +40,11 @@
 //!
 //! ### 4. Thin Application Layer
 //! Application層は薄く保ち、ドメインロジックをDomain層に配置する。
+
+/// ユーザーにリソースアクセス権を付与するユースケース
 pub mod grant_user_resource_access;
-pub mod notify_resource_usage_changes;
+/// 未来のリソース使用変更を監視して通知するユースケース
+pub mod notify_future_resource_usage_changes;
 
 pub use grant_user_resource_access::GrantUserResourceAccessUseCase;
-pub use notify_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase;
+pub use notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase;

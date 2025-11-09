@@ -1,15 +1,23 @@
 use chrono::{DateTime, Utc};
 use std::fmt;
 
+/// ResourceUsage集約のドメインエラー型
 #[derive(Debug, Clone)]
 pub enum ResourceUsageError {
+    /// 無効な時間枠（終了時刻が開始時刻より前）
     InvalidTimePeriod {
+        /// 開始時刻
         start: DateTime<Utc>,
+        /// 終了時刻
         end: DateTime<Utc>,
     },
+    /// リソース項目が空
     NoResourceItems,
+    /// リソース使用の競合
     UsageConflict {
+        /// 競合しているリソース名
         resource: String,
+        /// 競合しているユーザー
         conflicting_user: String,
     },
 }

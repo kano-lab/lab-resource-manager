@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+/// テスト用のインメモリResourceUsageリポジトリ実装
 #[derive(Clone)]
 pub struct MockUsageRepository {
     storage: Arc<Mutex<HashMap<String, ResourceUsage>>>,
@@ -21,6 +22,7 @@ impl Default for MockUsageRepository {
 }
 
 impl MockUsageRepository {
+    /// 新しいモックリポジトリを作成
     pub fn new() -> Self {
         Self {
             storage: Arc::new(Mutex::new(HashMap::new())),

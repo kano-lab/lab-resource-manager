@@ -19,12 +19,18 @@ use google_calendar3::{
     yup_oauth2,
 };
 
+/// Google Calendar APIを使用したResourceUsageリポジトリ実装
 pub struct GoogleCalendarUsageRepository {
     hub: CalendarHub<HttpsConnector<HttpConnector>>,
     config: ResourceConfig,
 }
 
 impl GoogleCalendarUsageRepository {
+    /// 新しいGoogle Calendarリポジトリを作成
+    ///
+    /// # Arguments
+    /// * `service_account_key` - サービスアカウントキーファイルのパス
+    /// * `config` - リソース設定
     pub async fn new(
         service_account_key: &str,
         config: ResourceConfig,

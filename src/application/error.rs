@@ -6,21 +6,28 @@ use crate::domain::ports::{
 };
 use std::fmt;
 
+/// Application層で発生するエラーの列挙型
+///
+/// インフラストラクチャ層、ドメイン層、およびユースケース固有のエラーをラップする。
 #[derive(Debug)]
 pub enum ApplicationError {
-    // Infrastructure層からのエラー
+    /// リポジトリ操作中に発生したエラー
     Repository(RepositoryError),
+    /// 通知送信中に発生したエラー
     Notification(NotificationError),
+    /// リソースコレクションへのアクセス中に発生したエラー
     ResourceCollectionAccess(ResourceCollectionAccessError),
 
-    // Domain層からのエラー（集約ごと）
+    /// リソース使用に関するドメインエラー
     ResourceUsage(ResourceUsageError),
+    /// ID紐付けに関するドメインエラー
     IdentityLink(IdentityLinkError),
 
-    // UseCase固有のビジネスルール違反
     /// 外部システムが既に紐付けられている
     ExternalSystemAlreadyLinked {
+        /// 紐付けられているメールアドレス
         email: String,
+        /// 既に紐付けられている外部システム名
         external_system: String,
     },
 }

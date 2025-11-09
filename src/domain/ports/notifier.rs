@@ -5,18 +5,25 @@ use crate::domain::{
 use async_trait::async_trait;
 use std::fmt;
 
+/// 通知イベントの種類
 #[derive(Debug, Clone)]
 pub enum NotificationEvent {
+    /// リソース使用予定が作成された
     ResourceUsageCreated(ResourceUsage),
+    /// リソース使用予定が更新された
     ResourceUsageUpdated(ResourceUsage),
+    /// リソース使用予定が削除された
     ResourceUsageDeleted(ResourceUsage),
 }
 
+/// 通知サービスのポート
 #[async_trait]
 pub trait Notifier: Send + Sync {
+    /// イベントを通知する
     async fn notify(&self, event: NotificationEvent) -> Result<(), NotificationError>;
 }
 
+/// 通知エラー
 #[derive(Debug)]
 pub enum NotificationError {
     /// 通知送信の失敗
