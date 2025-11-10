@@ -3,6 +3,7 @@ use crate::domain::{
         entity::ResourceUsage,
         value_objects::{TimePeriod, UsageId},
     },
+    common::EmailAddress,
     ports::repositories::RepositoryError,
 };
 use async_trait::async_trait;
@@ -31,6 +32,12 @@ pub trait ResourceUsageRepository {
     async fn find_overlapping(
         &self,
         time_period: &TimePeriod,
+    ) -> Result<Vec<ResourceUsage>, RepositoryError>;
+
+    /// 特定のユーザーが所有するResourceUsageを検索
+    async fn find_by_owner(
+        &self,
+        owner_email: &EmailAddress,
     ) -> Result<Vec<ResourceUsage>, RepositoryError>;
 
     /// ResourceUsageを保存

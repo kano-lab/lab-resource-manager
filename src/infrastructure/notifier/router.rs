@@ -8,6 +8,7 @@ use std::sync::Arc;
 use super::senders::{
     MockSender, SlackSender,
     sender::{NotificationContext, Sender},
+    slack::SlackNotificationConfig,
 };
 
 /// 複数の通知手段をオーケストレートし、リソースに基づいて適切な通知先にルーティングする
@@ -87,8 +88,18 @@ impl NotificationRouter {
         };
 
         match config {
-            NotificationConfig::Slack { webhook_url, .. } => {
-                self.slack_sender.send(webhook_url.as_str(), context).await
+            NotificationConfig::Slack {
+                bot_token,
+                channel_id,
+                webhook_url,
+                ..
+            } => {
+                let slack_config = SlackNotificationConfig {
+                    bot_token: bot_token.clone(),
+                    channel_id: channel_id.clone(),
+                    webhook_url: webhook_url.clone(),
+                };
+                self.slack_sender.send(&slack_config, context).await
             }
             NotificationConfig::Mock { .. } => self.mock_sender.send(&(), context).await,
         }

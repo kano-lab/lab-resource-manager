@@ -4,12 +4,21 @@ use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::json;
+use slack_morphism::prelude::*;
 
 use super::sender::{NotificationContext, Sender};
 
-/// Slack Webhook経由でメッセージを送信する
+/// Slack通知設定
+pub struct SlackNotificationConfig {
+    pub bot_token: Option<String>,
+    pub channel_id: Option<String>,
+    pub webhook_url: Option<String>,
+}
+
+/// Slack経由でメッセージを送信する（Bot Token or Webhook）
 pub struct SlackSender {
     client: Client,
+    slack_client: SlackClient<SlackClientHyperHttpsConnector>,
 }
 
 impl Default for SlackSender {
@@ -23,6 +32,7 @@ impl SlackSender {
     pub fn new() -> Self {
         Self {
             client: Client::new(),
+            slack_client: SlackClient::new(SlackClientHyperConnector::new().unwrap()),
         }
     }
 
@@ -99,25 +109,96 @@ impl SlackSender {
 
 #[async_trait]
 impl Sender for SlackSender {
-    type Config = str;
+    type Config = SlackNotificationConfig;
 
     async fn send(
         &self,
-        webhook_url: &str,
+        config: &SlackNotificationConfig,
         context: NotificationContext<'_>,
     ) -> Result<(), NotificationError> {
         let message = self.format_message(&context);
+        let usage_id = match context.event {
+            NotificationEvent::ResourceUsageCreated(u) => u.id().as_str(),
+            NotificationEvent::ResourceUsageUpdated(u) => u.id().as_str(),
+            NotificationEvent::ResourceUsageDeleted(u) => u.id().as_str(),
+        };
 
-        let payload = json!({
-            "text": message
-        });
+        // Block Kit形式でボタン付きメッセージを構築（JSON形式）
+        let blocks_json = json!([
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": message
+                }
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "🔄 更新"
+                        },
+                        "style": "primary",
+                        "action_id": "edit_reservation",
+                        "value": usage_id
+                    },
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "❌ キャンセル"
+                        },
+                        "style": "danger",
+                        "action_id": "cancel_reservation",
+                        "value": usage_id
+                    }
+                ]
+            }
+        ]);
 
-        self.client
-            .post(webhook_url)
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| NotificationError::SendFailure(format!("Slack送信失敗: {}", e)))?;
+        // bot_tokenがあればAPI経由、なければWebhook経由
+        if let (Some(bot_token), Some(channel_id)) = (&config.bot_token, &config.channel_id) {
+            // Bot Token方式（インタラクティブボタン対応）
+            let token = SlackApiToken::new(bot_token.clone().into());
+            let session = self.slack_client.open_session(&token);
+
+            // blocksをSlackBlock形式にデシリアライズ
+            let blocks: Vec<SlackBlock> = serde_json::from_value(blocks_json.clone())
+                .unwrap_or_else(|_| vec![]);
+
+            let post_chat_req = SlackApiChatPostMessageRequest::new(
+                channel_id.clone().into(),
+                SlackMessageContent::new()
+                    .with_text(message.clone())
+                    .with_blocks(blocks),
+            );
+
+            session
+                .chat_post_message(&post_chat_req)
+                .await
+                .map_err(|e| NotificationError::SendFailure(format!("Slack API送信失敗: {}", e)))?;
+
+        } else if let Some(webhook_url) = &config.webhook_url {
+            // Webhook方式（レガシー、ボタンは動作しない）
+            let payload = json!({
+                "text": message,  // フォールバック用
+                "blocks": blocks_json
+            });
+
+            self.client
+                .post(webhook_url)
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|e| NotificationError::SendFailure(format!("Slack Webhook送信失敗: {}", e)))?;
+        } else {
+            return Err(NotificationError::SendFailure(
+                "bot_token+channel_id または webhook_url が設定されていません".to_string(),
+            ));
+        }
 
         Ok(())
     }

@@ -1,5 +1,7 @@
 //! # Resource Usage Watcher
 //!
+//! **DEPRECATED**: このバイナリは非推奨です。通知機能はSlackBotに統合されました。
+//!
 //! リソース使用状況の変更を監視し、通知するバイナリ
 
 use clap::Parser;
