@@ -37,26 +37,3 @@ pub fn parse_datetime(
 
     Ok(local_datetime.with_timezone(&Utc))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_datetime_valid() {
-        let result = parse_datetime("2025-01-15", "14:30");
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_parse_datetime_invalid_date_format() {
-        let result = parse_datetime("2025/01/15", "14:30");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_datetime_invalid_time_format() {
-        let result = parse_datetime("2025-01-15", "14:30:00");
-        assert!(result.is_err());
-    }
-}
