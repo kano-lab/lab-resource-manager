@@ -5,7 +5,9 @@ use crate::application::usecases::{
     update_resource_usage::UpdateResourceUsageUseCase,
 };
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
-use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod, UsageId};
+use crate::domain::aggregates::resource_usage::value_objects::{
+    Gpu, Resource, TimePeriod, UsageId,
+};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::infrastructure::config::ResourceConfig;
@@ -58,8 +60,12 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
         repository: Arc<R>,
         identity_repo: Arc<dyn crate::domain::ports::repositories::IdentityLinkRepository>,
     ) -> Self {
-        self.create_usage_usecase = Some(Arc::new(CreateResourceUsageUseCase::new(repository.clone())));
-        self.delete_usage_usecase = Some(Arc::new(DeleteResourceUsageUseCase::new(repository.clone())));
+        self.create_usage_usecase = Some(Arc::new(CreateResourceUsageUseCase::new(
+            repository.clone(),
+        )));
+        self.delete_usage_usecase = Some(Arc::new(DeleteResourceUsageUseCase::new(
+            repository.clone(),
+        )));
         self.update_usage_usecase = Some(Arc::new(UpdateResourceUsageUseCase::new(repository)));
         self.identity_repo = Some(identity_repo);
         self
@@ -108,10 +114,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
                     .await
             }
             "/link-user" => self.handle_link_user(text, response_url).await,
-            "/reserve" => {
-                self.handle_reserve_command(trigger_id, slack_user_id)
-                    .await
-            }
+            "/reserve" => self.handle_reserve_command(trigger_id, slack_user_id).await,
             _ => Ok(SlackCommandEventResponse::new(
                 SlackMessageContent::new().with_text(format!("不明なコマンド: {}", command)),
             )),
@@ -132,7 +135,10 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
         }
 
         // 非推奨警告をログに記録
-        info!("⚠️  非推奨コマンド /register-calendar が使用されました: user={}", slack_user_id);
+        info!(
+            "⚠️  非推奨コマンド /register-calendar が使用されました: user={}",
+            slack_user_id
+        );
 
         let grant_access_usecase = self.grant_access_usecase.clone();
         let email_str = text.to_string();
@@ -274,7 +280,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
                 return Ok(SlackCommandEventResponse::new(
                     SlackMessageContent::new()
                         .with_text("❌ リソース設定が読み込まれていません".to_string()),
-                ))
+                ));
             }
         };
 
@@ -284,7 +290,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
                 return Ok(SlackCommandEventResponse::new(
                     SlackMessageContent::new()
                         .with_text("❌ Slackクライアントが初期化されていません".to_string()),
-                ))
+                ));
             }
         };
 
@@ -294,16 +300,22 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
                 return Ok(SlackCommandEventResponse::new(
                     SlackMessageContent::new()
                         .with_text("❌ Bot tokenが設定されていません".to_string()),
-                ))
+                ));
             }
         };
 
         // ユーザーのリンク状態をチェック
         if let Some(identity_repo) = &self.identity_repo {
-            match identity_repo.find_by_external_user_id(&ExternalSystem::Slack, &user_id).await {
+            match identity_repo
+                .find_by_external_user_id(&ExternalSystem::Slack, &user_id)
+                .await
+            {
                 Ok(None) => {
                     // 未リンク: メールアドレス登録モーダルを表示
-                    info!("ユーザー {} は未リンク。メールアドレス登録モーダルを表示します", user_id);
+                    info!(
+                        "ユーザー {} は未リンク。メールアドレス登録モーダルを表示します",
+                        user_id
+                    );
                     let modal = create_register_email_modal();
                     let session = client.open_session(bot_token);
                     let open_view_req = SlackApiViewsOpenRequest::new(trigger_id, modal);
@@ -311,9 +323,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
                     match session.views_open(&open_view_req).await {
                         Ok(_) => {
                             info!("✅ メールアドレス登録モーダルを開きました");
-                            return Ok(SlackCommandEventResponse::new(
-                                SlackMessageContent::new(),
-                            ));
+                            return Ok(SlackCommandEventResponse::new(SlackMessageContent::new()));
                         }
                         Err(e) => {
                             error!("❌ メールアドレス登録モーダルを開けませんでした: {}", e);
@@ -326,7 +336,10 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
                 }
                 Ok(Some(_)) => {
                     // リンク済み: 予約モーダルを表示
-                    info!("ユーザー {} はリンク済み。予約モーダルを表示します", user_id);
+                    info!(
+                        "ユーザー {} はリンク済み。予約モーダルを表示します",
+                        user_id
+                    );
                 }
                 Err(e) => {
                     error!("ユーザーリンク状態の確認に失敗: {}", e);
@@ -347,9 +360,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
             Ok(_) => {
                 info!("✅ モーダルを開きました");
                 // モーダルが開いた場合、何も返さない（即座に応答済み）
-                Ok(SlackCommandEventResponse::new(
-                    SlackMessageContent::new(),
-                ))
+                Ok(SlackCommandEventResponse::new(SlackMessageContent::new()))
             }
             Err(e) => {
                 error!("❌ モーダルを開けませんでした: {}", e);
@@ -364,8 +375,6 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
     /// メールアドレス登録用のモーダルを作成
     ///
     /// ユーザーが未リンクの場合に表示される
-
-
     /// インタラクション処理（ボタンクリックなど）
     pub async fn handle_interaction(
         &self,
@@ -386,49 +395,49 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
             info!("📝 モーダル送信を処理中...");
 
             // callback_idをチェック
-            if let SlackView::Modal(modal) = &view_submission.view.view {
-                if let Some(callback_id) = &modal.callback_id {
-                    if callback_id.to_string() == CALLBACK_REGISTER_EMAIL {
-                        info!("  → メールアドレス登録モーダルの送信を検出");
+            if let SlackView::Modal(modal) = &view_submission.view.view
+                && let Some(callback_id) = &modal.callback_id
+            {
+                if callback_id.to_string() == CALLBACK_REGISTER_EMAIL {
+                    info!("  → メールアドレス登録モーダルの送信を検出");
 
-                        // モーダルから値を抽出してユーザー登録を行う
-                        match self.process_registration_submission(view_submission).await {
-                            Ok(_) => {
-                                info!("✅ ユーザー登録を完了しました");
-                                return Ok(());
-                            }
-                            Err(e) => {
-                                error!("❌ ユーザー登録に失敗: {}", e);
-                                return Err(e);
-                            }
+                    // モーダルから値を抽出してユーザー登録を行う
+                    match self.process_registration_submission(view_submission).await {
+                        Ok(_) => {
+                            info!("✅ ユーザー登録を完了しました");
+                            return Ok(());
                         }
-                    } else if callback_id.to_string() == CALLBACK_RESERVE_SUBMIT {
-                        info!("  → 予約モーダルの送信を検出");
-
-                        // モーダルから値を抽出して予約を作成
-                        match self.process_reservation_submission(view_submission).await {
-                            Ok(_) => {
-                                info!("✅ 予約を作成しました");
-                                return Ok(());
-                            }
-                            Err(e) => {
-                                error!("❌ 予約作成に失敗: {}", e);
-                                return Err(e);
-                            }
+                        Err(e) => {
+                            error!("❌ ユーザー登録に失敗: {}", e);
+                            return Err(e);
                         }
-                    } else if callback_id.to_string() == CALLBACK_UPDATE_SUBMIT {
-                        info!("  → 予約更新モーダルの送信を検出");
+                    }
+                } else if callback_id.to_string() == CALLBACK_RESERVE_SUBMIT {
+                    info!("  → 予約モーダルの送信を検出");
 
-                        // モーダルから値を抽出して予約を更新
-                        match self.process_update_submission(view_submission).await {
-                            Ok(_) => {
-                                info!("✅ 予約を更新しました");
-                                return Ok(());
-                            }
-                            Err(e) => {
-                                error!("❌ 予約更新に失敗: {}", e);
-                                return Err(e);
-                            }
+                    // モーダルから値を抽出して予約を作成
+                    match self.process_reservation_submission(view_submission).await {
+                        Ok(_) => {
+                            info!("✅ 予約を作成しました");
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            error!("❌ 予約作成に失敗: {}", e);
+                            return Err(e);
+                        }
+                    }
+                } else if callback_id.to_string() == CALLBACK_UPDATE_SUBMIT {
+                    info!("  → 予約更新モーダルの送信を検出");
+
+                    // モーダルから値を抽出して予約を更新
+                    match self.process_update_submission(view_submission).await {
+                        Ok(_) => {
+                            info!("✅ 予約を更新しました");
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            error!("❌ 予約更新に失敗: {}", e);
+                            return Err(e);
                         }
                     }
                 }
@@ -453,7 +462,10 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
                                 info!("🔄 予約更新要求: usage_id={}", usage_id_str);
                                 if let Some(user) = &block_actions.user {
                                     let trigger_id = &block_actions.trigger_id;
-                                    match self.handle_edit_reservation(&user.id, usage_id_str, trigger_id).await {
+                                    match self
+                                        .handle_edit_reservation(&user.id, usage_id_str, trigger_id)
+                                        .await
+                                    {
                                         Ok(_) => {
                                             info!("✅ 更新モーダルを開きました");
                                         }
@@ -470,7 +482,10 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
                             if let Some(usage_id_str) = &action.value {
                                 info!("🗑️ 予約キャンセル要求: usage_id={}", usage_id_str);
                                 if let Some(user) = &block_actions.user {
-                                    match self.handle_cancel_reservation(&user.id, usage_id_str).await {
+                                    match self
+                                        .handle_cancel_reservation(&user.id, usage_id_str)
+                                        .await
+                                    {
                                         Ok(_) => {
                                             info!("✅ 予約をキャンセルしました");
                                         }
@@ -507,10 +522,13 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
                         info!("  → アクションID: {}", action_id);
 
                         // リソースタイプ変更またはサーバー選択の場合、モーダルを更新
-                        if action_id == ACTION_RESERVE_RESOURCE_TYPE || action_id == ACTION_RESERVE_SERVER_SELECT {
+                        if action_id == ACTION_RESERVE_RESOURCE_TYPE
+                            || action_id == ACTION_RESERVE_SERVER_SELECT
+                        {
                             info!("🔄 モーダル更新トリガー検出: {}", action_id);
                             // 現在のモーダルの状態から値を取得
-                            let (resource_type, selected_server) = self.extract_modal_state_from_block_actions(block_actions);
+                            let (resource_type, selected_server) =
+                                self.extract_modal_state_from_block_actions(block_actions);
 
                             // アクションから新しい選択値を取得
                             let new_resource_type = if action_id == ACTION_RESERVE_RESOURCE_TYPE {
@@ -528,7 +546,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
                                                 None
                                             }
                                         }
-                                        _ => None
+                                        _ => None,
                                     }
                                 })
                             } else {
@@ -537,12 +555,13 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
 
                             let new_selected_server = if action_id == ACTION_RESERVE_SERVER_SELECT {
                                 // セレクトメニューの選択値を取得（textから）
-                                action.selected_option.as_ref().and_then(|opt| {
-                                    match &opt.text {
+                                action
+                                    .selected_option
+                                    .as_ref()
+                                    .and_then(|opt| match &opt.text {
                                         SlackBlockText::Plain(plain) => Some(plain.text.as_str()),
-                                        _ => None
-                                    }
-                                })
+                                        _ => None,
+                                    })
                             } else {
                                 selected_server
                             };
@@ -550,7 +569,10 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
                             // view_idをcontainerから取得
                             let view_id = match &block_actions.container {
                                 SlackInteractionActionContainer::View(view_container) => {
-                                    info!("  → view_id取得成功: {}", view_container.view_id.to_string());
+                                    info!(
+                                        "  → view_id取得成功: {}",
+                                        view_container.view_id.to_string()
+                                    );
                                     view_container.view_id.clone()
                                 }
                                 SlackInteractionActionContainer::Message(_) => {
@@ -559,8 +581,10 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
                                 }
                             };
 
-                            info!("📝 選択値: type={:?}, server={:?}",
-                                  new_resource_type, new_selected_server);
+                            info!(
+                                "📝 選択値: type={:?}, server={:?}",
+                                new_resource_type, new_selected_server
+                            );
 
                             // 新しいモーダルを作成
                             info!("🔨 新しいモーダルを作成中...");
@@ -573,10 +597,14 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
 
                             // モーダルを更新
                             info!("🚀 Slack APIにモーダル更新をリクエスト中...");
-                            if let Err(e) = self.update_modal(view_id.clone(), updated_modal).await {
+                            if let Err(e) = self.update_modal(view_id.clone(), updated_modal).await
+                            {
                                 error!("❌ モーダルの更新に失敗: {}", e);
                             } else {
-                                info!("✅ モーダルを動的に更新しました (view_id: {})", view_id.to_string());
+                                info!(
+                                    "✅ モーダルを動的に更新しました (view_id: {})",
+                                    view_id.to_string()
+                                );
                             }
                         }
                     }
@@ -588,7 +616,10 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
     }
 
     /// block_actionsイベントからモーダルの現在状態を抽出
-    fn extract_modal_state_from_block_actions(&self, _block_actions: &SlackInteractionBlockActionsEvent) -> (Option<&str>, Option<&str>) {
+    fn extract_modal_state_from_block_actions(
+        &self,
+        _block_actions: &SlackInteractionBlockActionsEvent,
+    ) -> (Option<&str>, Option<&str>) {
         let resource_type: Option<&str> = None;
         let selected_server: Option<&str> = None;
 
@@ -630,8 +661,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
         info!("  → クライアントとトークン取得成功");
 
         let session = client.open_session(bot_token);
-        let update_req = SlackApiViewsUpdateRequest::new(new_view)
-            .with_view_id(view_id.clone());
+        let update_req = SlackApiViewsUpdateRequest::new(new_view).with_view_id(view_id.clone());
 
         info!("  → Slack API views.update 呼び出し中...");
         match session.views_update(&update_req).await {
@@ -895,7 +925,9 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
 
         // private_metadataからusage_idを取得
         let usage_id_str = if let SlackView::Modal(modal) = &view_submission.view.view {
-            modal.private_metadata.as_ref()
+            modal
+                .private_metadata
+                .as_ref()
                 .ok_or("usage_idが見つかりません（private_metadataが空です）")?
                 .as_str()
         } else {
@@ -1026,9 +1058,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
         };
 
         match callback_id {
-            Some(CALLBACK_RESERVE_SUBMIT) => {
-                self.handle_reserve_submission(view, user_id).await
-            }
+            Some(CALLBACK_RESERVE_SUBMIT) => self.handle_reserve_submission(view, user_id).await,
             _ => {
                 error!("不明なcallback_id: {:?}", callback_id);
                 Ok(SlackViewSubmissionResponse::Clear(
@@ -1062,13 +1092,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
         let email_value = state_values
             .get(&SlackBlockId::new(ACTION_EMAIL_INPUT.to_string()))
             .and_then(|actions| actions.get(&SlackActionId::new(ACTION_EMAIL_INPUT.to_string())))
-            .and_then(|value| {
-                if let Some(plain_text_value) = &value.value {
-                    Some(plain_text_value.clone())
-                } else {
-                    None
-                }
-            })
+            .and_then(|value| value.value.clone())
             .ok_or("メールアドレスが入力されていません")?;
 
         // バリデーション
@@ -1110,7 +1134,9 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
                 }
             }
         } else {
-            info!("⚠️ 予約モーダルを開くための設定が不足しています（trigger_idが無い可能性があります）");
+            info!(
+                "⚠️ 予約モーダルを開くための設定が不足しています（trigger_idが無い可能性があります）"
+            );
         }
 
         Ok(())
@@ -1128,9 +1154,12 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
             None => {
                 error!("CreateUsageUseCaseが設定されていません");
                 let mut errors = HashMap::new();
-                errors.insert("error".to_string(), "システムエラー: 予約機能が利用できません".to_string());
+                errors.insert(
+                    "error".to_string(),
+                    "システムエラー: 予約機能が利用できません".to_string(),
+                );
                 return Ok(SlackViewSubmissionResponse::Errors(
-                    SlackViewSubmissionErrorsResponse::new(errors)
+                    SlackViewSubmissionErrorsResponse::new(errors),
                 ));
             }
         };
@@ -1140,9 +1169,12 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
             None => {
                 error!("IdentityRepositoryが設定されていません");
                 let mut errors = HashMap::new();
-                errors.insert("error".to_string(), "システムエラー: ID紐付け機能が利用できません".to_string());
+                errors.insert(
+                    "error".to_string(),
+                    "システムエラー: ID紐付け機能が利用できません".to_string(),
+                );
                 return Ok(SlackViewSubmissionResponse::Errors(
-                    SlackViewSubmissionErrorsResponse::new(errors)
+                    SlackViewSubmissionErrorsResponse::new(errors),
                 ));
             }
         };
@@ -1152,9 +1184,12 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
             None => {
                 error!("ResourceConfigが設定されていません");
                 let mut errors = HashMap::new();
-                errors.insert("error".to_string(), "システムエラー: リソース設定が読み込まれていません".to_string());
+                errors.insert(
+                    "error".to_string(),
+                    "システムエラー: リソース設定が読み込まれていません".to_string(),
+                );
                 return Ok(SlackViewSubmissionResponse::Errors(
-                    SlackViewSubmissionErrorsResponse::new(errors)
+                    SlackViewSubmissionErrorsResponse::new(errors),
                 ));
             }
         };
@@ -1170,13 +1205,12 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
         // 次のステップで正しいイベント処理を実装する
         info!("予約作成を受け付けました（実装中）");
         Ok(SlackViewSubmissionResponse::Clear(
-            SlackViewSubmissionClearResponse::new()
+            SlackViewSubmissionClearResponse::new(),
         ))
     }
 }
 
 /// 日付文字列と時刻文字列をDateTime<Utc>に変換
-
 impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> {
     /// キャンセルボタンのインタラクション処理
     // TODO: Refactor this into interactions/buttons::handle_cancel_reservation
@@ -1202,7 +1236,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
 
         // SlackユーザーIDからメールアドレスを取得
         let identity_link = identity_repo
-            .find_by_external_user_id(&ExternalSystem::Slack, &slack_user_id.to_string())
+            .find_by_external_user_id(&ExternalSystem::Slack, slack_user_id.as_ref())
             .await?
             .ok_or_else(|| {
                 format!(
@@ -1259,12 +1293,15 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackCommandHandler<R> 
 
         // 未リンクチェック：SlackユーザーIDからメールアドレスを取得
         let identity_link = identity_repo
-            .find_by_external_user_id(&ExternalSystem::Slack, &slack_user_id.to_string())
+            .find_by_external_user_id(&ExternalSystem::Slack, slack_user_id.as_ref())
             .await?;
 
         if identity_link.is_none() {
             // 未リンクの場合はメールアドレス登録モーダルを表示
-            info!("ユーザー {} は未リンク。メールアドレス登録モーダルを表示します", slack_user_id);
+            info!(
+                "ユーザー {} は未リンク。メールアドレス登録モーダルを表示します",
+                slack_user_id
+            );
             let modal = create_register_email_modal();
             let session = client.open_session(bot_token);
             let open_view_req = SlackApiViewsOpenRequest::new(trigger_id.clone(), modal);

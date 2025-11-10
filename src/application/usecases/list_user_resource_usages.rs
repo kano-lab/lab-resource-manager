@@ -35,7 +35,7 @@ impl<R: ResourceUsageRepository> ListUserResourceUsagesUseCase<R> {
         let mut usages = self.repository.find_by_owner(owner_email).await?;
 
         // 開始時刻でソート
-        usages.sort_by(|a, b| a.time_period().start().cmp(&b.time_period().start()));
+        usages.sort_by_key(|a| a.time_period().start());
 
         Ok(usages)
     }
@@ -44,7 +44,9 @@ impl<R: ResourceUsageRepository> ListUserResourceUsagesUseCase<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod, UsageId};
+    use crate::domain::aggregates::resource_usage::value_objects::{
+        Gpu, Resource, TimePeriod, UsageId,
+    };
     use crate::infrastructure::repositories::resource_usage::mock::MockUsageRepository;
     use chrono::{Duration, Utc};
 
@@ -62,9 +64,14 @@ mod tests {
             UsageId::new("usage-1".to_string()),
             owner_email.clone(),
             TimePeriod::new(start1, end1).unwrap(),
-            vec![Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()))],
+            vec![Resource::Gpu(Gpu::new(
+                "Thalys".to_string(),
+                0,
+                "A100".to_string(),
+            ))],
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         let start2 = Utc::now() + Duration::hours(3);
         let end2 = start2 + Duration::hours(2);
@@ -72,9 +79,14 @@ mod tests {
             UsageId::new("usage-2".to_string()),
             owner_email.clone(),
             TimePeriod::new(start2, end2).unwrap(),
-            vec![Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string()))],
+            vec![Resource::Gpu(Gpu::new(
+                "Thalys".to_string(),
+                1,
+                "A100".to_string(),
+            ))],
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         // 別のユーザーの予約
         let start3 = Utc::now() + Duration::hours(2);
@@ -83,9 +95,14 @@ mod tests {
             UsageId::new("usage-3".to_string()),
             other_email,
             TimePeriod::new(start3, end3).unwrap(),
-            vec![Resource::Gpu(Gpu::new("Thalys".to_string(), 2, "A100".to_string()))],
+            vec![Resource::Gpu(Gpu::new(
+                "Thalys".to_string(),
+                2,
+                "A100".to_string(),
+            ))],
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         repository.save(&usage1).await.unwrap();
         repository.save(&usage2).await.unwrap();

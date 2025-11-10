@@ -166,8 +166,8 @@ impl Sender for SlackSender {
             let session = self.slack_client.open_session(&token);
 
             // blocksをSlackBlock形式にデシリアライズ
-            let blocks: Vec<SlackBlock> = serde_json::from_value(blocks_json.clone())
-                .unwrap_or_else(|_| vec![]);
+            let blocks: Vec<SlackBlock> =
+                serde_json::from_value(blocks_json.clone()).unwrap_or_else(|_| vec![]);
 
             let post_chat_req = SlackApiChatPostMessageRequest::new(
                 channel_id.clone().into(),
@@ -180,7 +180,6 @@ impl Sender for SlackSender {
                 .chat_post_message(&post_chat_req)
                 .await
                 .map_err(|e| NotificationError::SendFailure(format!("Slack API送信失敗: {}", e)))?;
-
         } else if let Some(webhook_url) = &config.webhook_url {
             // Webhook方式（レガシー、ボタンは動作しない）
             let payload = json!({
@@ -193,7 +192,9 @@ impl Sender for SlackSender {
                 .json(&payload)
                 .send()
                 .await
-                .map_err(|e| NotificationError::SendFailure(format!("Slack Webhook送信失敗: {}", e)))?;
+                .map_err(|e| {
+                    NotificationError::SendFailure(format!("Slack Webhook送信失敗: {}", e))
+                })?;
         } else {
             return Err(NotificationError::SendFailure(
                 "bot_token+channel_id または webhook_url が設定されていません".to_string(),

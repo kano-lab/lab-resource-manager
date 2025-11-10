@@ -242,9 +242,7 @@ impl GoogleCalendarUsageRepository {
     fn get_calendar_id_for_usage(&self, usage: &ResourceUsage) -> Result<String, RepositoryError> {
         let resources = usage.resources();
         if resources.is_empty() {
-            return Err(RepositoryError::Unknown(
-                "リソースが空です".to_string(),
-            ));
+            return Err(RepositoryError::Unknown("リソースが空です".to_string()));
         }
 
         match &resources[0] {
@@ -457,16 +455,17 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         // すべてのカレンダーから検索
         if let Some((_, context)) = self.find_event_across_calendars(event_id).await? {
             // カレンダーIDを取得
-            let calendar_id = if let Some(server) = self.config.servers.iter().find(|s| s.name == context) {
-                &server.calendar_id
-            } else if let Some(room) = self.config.rooms.iter().find(|r| r.name == context) {
-                &room.calendar_id
-            } else {
-                return Err(RepositoryError::Unknown(format!(
-                    "カレンダーが見つかりません: {}",
-                    context
-                )));
-            };
+            let calendar_id =
+                if let Some(server) = self.config.servers.iter().find(|s| s.name == context) {
+                    &server.calendar_id
+                } else if let Some(room) = self.config.rooms.iter().find(|r| r.name == context) {
+                    &room.calendar_id
+                } else {
+                    return Err(RepositoryError::Unknown(format!(
+                        "カレンダーが見つかりません: {}",
+                        context
+                    )));
+                };
 
             // イベントを削除
             self.hub

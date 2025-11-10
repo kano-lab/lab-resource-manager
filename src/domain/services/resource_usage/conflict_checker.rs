@@ -41,10 +41,10 @@ impl ResourceConflictChecker {
         for new_resource in resources {
             for existing_usage in &overlapping {
                 // 除外対象の場合はスキップ
-                if let Some(exclude_id) = exclude_usage_id {
-                    if existing_usage.id() == exclude_id {
-                        continue;
-                    }
+                if let Some(exclude_id) = exclude_usage_id
+                    && existing_usage.id() == exclude_id
+                {
+                    continue;
                 }
 
                 // 既存予約のリソースと競合チェック

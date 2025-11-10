@@ -103,13 +103,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // GoogleCalendarRepositoryの初期化
     let usage_repository = Arc::new(
-        GoogleCalendarUsageRepository::new(&service_account_key, config_arc.as_ref().clone()).await?
+        GoogleCalendarUsageRepository::new(&service_account_key, config_arc.as_ref().clone())
+            .await?,
     );
     println!("✅ GoogleCalendarUsageRepository を初期化しました");
 
     // Tokenの読み込み
-    let bot_token = env::var("SLACK_BOT_TOKEN")
-        .expect("環境変数 SLACK_BOT_TOKEN が必要です");
+    let bot_token = env::var("SLACK_BOT_TOKEN").expect("環境変数 SLACK_BOT_TOKEN が必要です");
     let bot_token = SlackApiToken::new(bot_token.into());
     let bot = Arc::new(
         SlackBot::new_with_resource_management(
@@ -128,14 +128,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let notifier = NotificationRouter::new(config_arc.as_ref().clone(), identity_repo.clone());
 
     // 別のリポジトリインスタンスを作成（ポーリング用）
-    let polling_repository = GoogleCalendarUsageRepository::new(&service_account_key, config_arc.as_ref().clone()).await?;
+    let polling_repository =
+        GoogleCalendarUsageRepository::new(&service_account_key, config_arc.as_ref().clone())
+            .await?;
 
-    let notify_usecase = NotifyFutureResourceUsageChangesUseCase::new(
-        polling_repository,
-        notifier,
-    )
-    .await
-    .map_err(|e| format!("通知UseCaseの初期化に失敗: {}", e))?;
+    let notify_usecase = NotifyFutureResourceUsageChangesUseCase::new(polling_repository, notifier)
+        .await
+        .map_err(|e| format!("通知UseCaseの初期化に失敗: {}", e))?;
 
     let notify_usecase = Arc::new(notify_usecase);
     println!("✅ 通知機能を初期化しました");
@@ -238,7 +237,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(60);
-    println!("🔍 カレンダー監視を開始します（間隔: {}秒）", polling_interval_secs);
+    println!(
+        "🔍 カレンダー監視を開始します（間隔: {}秒）",
+        polling_interval_secs
+    );
     println!();
     println!("Bot を停止するには Ctrl+C を押してください");
 
@@ -249,7 +251,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let interval = Duration::from_secs(polling_interval_secs);
             loop {
                 match notify_usecase.poll_once().await {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(e) => {
                         eprintln!("❌ ポーリングエラー: {}", e);
                     }

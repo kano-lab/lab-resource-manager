@@ -2,7 +2,9 @@ use crate::application::error::ApplicationError;
 use crate::domain::aggregates::resource_usage::value_objects::{TimePeriod, UsageId};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{RepositoryError, ResourceUsageRepository};
-use crate::domain::services::{AuthorizationPolicy, ResourceConflictChecker, ResourceUsageAuthorizationPolicy};
+use crate::domain::services::{
+    AuthorizationPolicy, ResourceConflictChecker, ResourceUsageAuthorizationPolicy,
+};
 use std::sync::Arc;
 
 /// リソース使用予定を更新するユースケース

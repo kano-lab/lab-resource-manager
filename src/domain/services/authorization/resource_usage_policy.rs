@@ -20,7 +20,11 @@ impl ResourceUsageAuthorizationPolicy {
 }
 
 impl AuthorizationPolicy<ResourceUsage> for ResourceUsageAuthorizationPolicy {
-    fn authorize_update(&self, actor: &EmailAddress, resource: &ResourceUsage) -> Result<(), AuthorizationError> {
+    fn authorize_update(
+        &self,
+        actor: &EmailAddress,
+        resource: &ResourceUsage,
+    ) -> Result<(), AuthorizationError> {
         if !self.is_owner(actor, resource) {
             return Err(AuthorizationError::Forbidden {
                 actor: actor.clone(),
@@ -31,7 +35,11 @@ impl AuthorizationPolicy<ResourceUsage> for ResourceUsageAuthorizationPolicy {
         Ok(())
     }
 
-    fn authorize_delete(&self, actor: &EmailAddress, resource: &ResourceUsage) -> Result<(), AuthorizationError> {
+    fn authorize_delete(
+        &self,
+        actor: &EmailAddress,
+        resource: &ResourceUsage,
+    ) -> Result<(), AuthorizationError> {
         if !self.is_owner(actor, resource) {
             return Err(AuthorizationError::Forbidden {
                 actor: actor.clone(),
@@ -46,7 +54,9 @@ impl AuthorizationPolicy<ResourceUsage> for ResourceUsageAuthorizationPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod, UsageId};
+    use crate::domain::aggregates::resource_usage::value_objects::{
+        Gpu, Resource, TimePeriod, UsageId,
+    };
     use chrono::{Duration, Utc};
 
     #[test]
@@ -59,7 +69,11 @@ mod tests {
             UsageId::new("test".to_string()),
             owner.clone(),
             TimePeriod::new(start, end).unwrap(),
-            vec![Resource::Gpu(Gpu::new("Server".to_string(), 0, "A100".to_string()))],
+            vec![Resource::Gpu(Gpu::new(
+                "Server".to_string(),
+                0,
+                "A100".to_string(),
+            ))],
             None,
         )
         .unwrap();
@@ -78,7 +92,11 @@ mod tests {
             UsageId::new("test".to_string()),
             owner,
             TimePeriod::new(start, end).unwrap(),
-            vec![Resource::Gpu(Gpu::new("Server".to_string(), 0, "A100".to_string()))],
+            vec![Resource::Gpu(Gpu::new(
+                "Server".to_string(),
+                0,
+                "A100".to_string(),
+            ))],
             None,
         )
         .unwrap();
@@ -100,7 +118,11 @@ mod tests {
             UsageId::new("test".to_string()),
             owner,
             TimePeriod::new(start, end).unwrap(),
-            vec![Resource::Gpu(Gpu::new("Server".to_string(), 0, "A100".to_string()))],
+            vec![Resource::Gpu(Gpu::new(
+                "Server".to_string(),
+                0,
+                "A100".to_string(),
+            ))],
             None,
         )
         .unwrap();

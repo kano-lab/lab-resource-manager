@@ -27,12 +27,9 @@ pub fn create_register_email_modal() -> SlackView {
     ];
 
     SlackView::Modal(
-        SlackModalView::new(
-            pt!("メールアドレスの登録"),
-            blocks,
-        )
-        .with_callback_id(CALLBACK_REGISTER_EMAIL.into())
-        .with_submit(pt!("登録"))
-        .with_close(pt!("キャンセル"))
+        SlackModalView::new(pt!("メールアドレスの登録"), blocks)
+            .with_callback_id(CALLBACK_REGISTER_EMAIL.into())
+            .with_submit(pt!("登録"))
+            .with_close(pt!("キャンセル")),
     )
 }

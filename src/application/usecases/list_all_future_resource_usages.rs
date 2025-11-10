@@ -28,7 +28,7 @@ impl<R: ResourceUsageRepository> ListAllFutureResourceUsagesUseCase<R> {
         let mut usages = self.repository.find_future().await?;
 
         // 開始時刻でソート
-        usages.sort_by(|a, b| a.time_period().start().cmp(&b.time_period().start()));
+        usages.sort_by_key(|a| a.time_period().start());
 
         Ok(usages)
     }

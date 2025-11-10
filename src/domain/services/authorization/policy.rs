@@ -37,13 +37,25 @@ impl std::error::Error for AuthorizationError {}
 /// Actor-Action-Resourceモデルに基づいた認可を提供
 pub trait AuthorizationPolicy<T> {
     /// 更新権限をチェック
-    fn authorize_update(&self, actor: &EmailAddress, resource: &T) -> Result<(), AuthorizationError>;
+    fn authorize_update(
+        &self,
+        actor: &EmailAddress,
+        resource: &T,
+    ) -> Result<(), AuthorizationError>;
 
     /// 削除権限をチェック
-    fn authorize_delete(&self, actor: &EmailAddress, resource: &T) -> Result<(), AuthorizationError>;
+    fn authorize_delete(
+        &self,
+        actor: &EmailAddress,
+        resource: &T,
+    ) -> Result<(), AuthorizationError>;
 
     /// 読み取り権限をチェック（オプション）
-    fn authorize_read(&self, _actor: &EmailAddress, _resource: &T) -> Result<(), AuthorizationError> {
+    fn authorize_read(
+        &self,
+        _actor: &EmailAddress,
+        _resource: &T,
+    ) -> Result<(), AuthorizationError> {
         // デフォルトでは全員が読み取り可能
         Ok(())
     }

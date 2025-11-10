@@ -50,16 +50,19 @@ pub fn create_reserve_modal(
     let mut blocks: Vec<SlackBlock> = vec![];
 
     // リソースタイプ選択（常に表示）
-    blocks.push(SlackBlock::Input(SlackInputBlock::new(
-        pt!("リソースタイプ"),
-        SlackInputBlockElement::RadioButtons(
-            SlackBlockRadioButtonsElement::new(
-                SlackActionId::new(ACTION_RESERVE_RESOURCE_TYPE.to_string()),
-                resource_type_options,
-            )
-            .with_initial_option(initial_resource_type)
-        ),
-    ).with_dispatch_action(true)));
+    blocks.push(SlackBlock::Input(
+        SlackInputBlock::new(
+            pt!("リソースタイプ"),
+            SlackInputBlockElement::RadioButtons(
+                SlackBlockRadioButtonsElement::new(
+                    SlackActionId::new(ACTION_RESERVE_RESOURCE_TYPE.to_string()),
+                    resource_type_options,
+                )
+                .with_initial_option(initial_resource_type),
+            ),
+        )
+        .with_dispatch_action(true),
+    ));
 
     // リソースタイプに応じて条件分岐
     if current_resource_type == "gpu" {
@@ -72,15 +75,18 @@ pub fn create_reserve_modal(
     add_datetime_blocks(&mut blocks, &start_date, &start_time, &end_date, &end_time);
 
     // 備考（常に表示、オプション）
-    blocks.push(SlackBlock::Input(SlackInputBlock::new(
-        pt!("備考"),
-        SlackInputBlockElement::PlainTextInput(
-            SlackBlockPlainTextInputElement::new(
-                SlackActionId::new(ACTION_RESERVE_NOTES.to_string()),
-            )
-            .with_multiline(true)
-        ),
-    ).with_optional(true)));
+    blocks.push(SlackBlock::Input(
+        SlackInputBlock::new(
+            pt!("備考"),
+            SlackInputBlockElement::PlainTextInput(
+                SlackBlockPlainTextInputElement::new(SlackActionId::new(
+                    ACTION_RESERVE_NOTES.to_string(),
+                ))
+                .with_multiline(true),
+            ),
+        )
+        .with_optional(true),
+    ));
 
     // モーダルの作成（usage_idがあれば更新、なければ作成）
     let (callback_id, title, submit_text) = if usage_id.is_some() {
@@ -89,13 +95,10 @@ pub fn create_reserve_modal(
         (CALLBACK_RESERVE_SUBMIT, "リソース予約", "予約する")
     };
 
-    let mut modal_view = SlackModalView::new(
-        pt!(title),
-        blocks,
-    )
-    .with_callback_id(callback_id.into())
-    .with_submit(pt!(submit_text))
-    .with_close(pt!("キャンセル"));
+    let mut modal_view = SlackModalView::new(pt!(title), blocks)
+        .with_callback_id(callback_id.into())
+        .with_submit(pt!(submit_text))
+        .with_close(pt!("キャンセル"));
 
     // usage_idがあればprivate_metadataに設定
     if let Some(id) = usage_id {
@@ -115,92 +118,94 @@ fn add_gpu_blocks(
     let server_options: Vec<SlackBlockChoiceItem<SlackBlockPlainTextOnly>> = config
         .servers
         .iter()
-        .map(|server| {
-            SlackBlockChoiceItem::new(
-                pt!(server.name.clone()),
-                server.name.clone().into(),
-            )
-        })
+        .map(|server| SlackBlockChoiceItem::new(pt!(server.name.clone()), server.name.clone()))
         .collect();
 
     // GPU Server選択フィールド
-    let mut server_select_element = SlackBlockStaticSelectElement::new(
-        SlackActionId::new(ACTION_RESERVE_SERVER_SELECT.to_string()),
-    )
+    let mut server_select_element = SlackBlockStaticSelectElement::new(SlackActionId::new(
+        ACTION_RESERVE_SERVER_SELECT.to_string(),
+    ))
     .with_placeholder(pt!("サーバーを選択"))
     .with_options(server_options.clone());
 
     // デフォルト値を設定
     // 既に選択されている場合はそれを、そうでない場合は最初のサーバーを選択
-    let default_server_name = selected_server
-        .or_else(|| config.servers.first().map(|s| s.name.as_str()));
+    let default_server_name =
+        selected_server.or_else(|| config.servers.first().map(|s| s.name.as_str()));
 
     if let Some(server_name) = default_server_name {
-        let initial_server = SlackBlockChoiceItem::new(
-            pt!(server_name.to_string()),
-            server_name.to_string().into(),
-        );
+        let initial_server =
+            SlackBlockChoiceItem::new(pt!(server_name.to_string()), server_name.to_string());
         server_select_element = server_select_element.with_initial_option(initial_server);
     }
 
-    blocks.push(SlackBlock::Input(SlackInputBlock::new(
-        pt!("GPU Server"),
-        SlackInputBlockElement::StaticSelect(server_select_element),
-    ).with_dispatch_action(true)));
+    blocks.push(SlackBlock::Input(
+        SlackInputBlock::new(
+            pt!("GPU Server"),
+            SlackInputBlockElement::StaticSelect(server_select_element),
+        )
+        .with_dispatch_action(true),
+    ));
 
     // デバイス選択肢（選択されたサーバーに応じて変更）
-    let device_options: Vec<SlackBlockChoiceItem<SlackBlockText>> = if let Some(server_name) = selected_server {
-        // 特定のサーバーのデバイスを表示
-        config
-            .servers
-            .iter()
-            .find(|s| s.name == server_name)
-            .map(|server| {
-                server.devices
-                    .iter()
-                    .map(|device| {
-                        SlackBlockChoiceItem::new(
-                            SlackBlockText::Plain(
-                                SlackBlockPlainText::from(format!("Device {} ({})", device.id, device.model))
-                            ),
-                            device.id.to_string().into(),
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    } else {
-        // サーバー未選択の場合は最初のサーバーのデバイスを表示
-        config
-            .servers
-            .first()
-            .map(|server| {
-                server.devices
-                    .iter()
-                    .map(|device| {
-                        SlackBlockChoiceItem::new(
-                            SlackBlockText::Plain(
-                                SlackBlockPlainText::from(format!("Device {} ({})", device.id, device.model))
-                            ),
-                            device.id.to_string().into(),
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
+    let device_options: Vec<SlackBlockChoiceItem<SlackBlockText>> =
+        if let Some(server_name) = selected_server {
+            // 特定のサーバーのデバイスを表示
+            config
+                .servers
+                .iter()
+                .find(|s| s.name == server_name)
+                .map(|server| {
+                    server
+                        .devices
+                        .iter()
+                        .map(|device| {
+                            SlackBlockChoiceItem::new(
+                                SlackBlockText::Plain(SlackBlockPlainText::from(format!(
+                                    "Device {} ({})",
+                                    device.id, device.model
+                                ))),
+                                device.id.to_string(),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            // サーバー未選択の場合は最初のサーバーのデバイスを表示
+            config
+                .servers
+                .first()
+                .map(|server| {
+                    server
+                        .devices
+                        .iter()
+                        .map(|device| {
+                            SlackBlockChoiceItem::new(
+                                SlackBlockText::Plain(SlackBlockPlainText::from(format!(
+                                    "Device {} ({})",
+                                    device.id, device.model
+                                ))),
+                                device.id.to_string(),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
 
     // GPU Device選択（チェックボックス）
     if !device_options.is_empty() {
-        blocks.push(SlackBlock::Input(SlackInputBlock::new(
-            pt!("GPU Devices"),
-            SlackInputBlockElement::Checkboxes(
-                SlackBlockCheckboxesElement::new(
+        blocks.push(SlackBlock::Input(
+            SlackInputBlock::new(
+                pt!("GPU Devices"),
+                SlackInputBlockElement::Checkboxes(SlackBlockCheckboxesElement::new(
                     SlackActionId::new(ACTION_RESERVE_DEVICES.to_string()),
                     device_options,
-                )
-            ),
-        ).with_optional(true)));
+                )),
+            )
+            .with_optional(true),
+        ));
     }
 }
 
@@ -210,27 +215,20 @@ fn add_room_blocks(blocks: &mut Vec<SlackBlock>, config: &ResourceConfig) {
     let room_options: Vec<SlackBlockChoiceItem<SlackBlockPlainTextOnly>> = config
         .rooms
         .iter()
-        .map(|room| {
-            SlackBlockChoiceItem::new(
-                pt!(room.name.clone()),
-                room.name.clone().into(),
-            )
-        })
+        .map(|room| SlackBlockChoiceItem::new(pt!(room.name.clone()), room.name.clone()))
         .collect();
 
     // Room選択フィールド
-    let mut room_select_element = SlackBlockStaticSelectElement::new(
-        SlackActionId::new(ACTION_RESERVE_ROOM_SELECT.to_string()),
-    )
+    let mut room_select_element = SlackBlockStaticSelectElement::new(SlackActionId::new(
+        ACTION_RESERVE_ROOM_SELECT.to_string(),
+    ))
     .with_placeholder(pt!("部屋を選択"))
     .with_options(room_options.clone());
 
     // デフォルト値を設定（最初の部屋を選択）
     if let Some(first_room) = config.rooms.first() {
-        let initial_room = SlackBlockChoiceItem::new(
-            pt!(first_room.name.clone()),
-            first_room.name.clone().into(),
-        );
+        let initial_room =
+            SlackBlockChoiceItem::new(pt!(first_room.name.clone()), first_room.name.clone());
         room_select_element = room_select_element.with_initial_option(initial_room);
     }
 
@@ -251,40 +249,40 @@ fn add_datetime_blocks(
     blocks.push(SlackBlock::Input(SlackInputBlock::new(
         pt!("開始日"),
         SlackInputBlockElement::DatePicker(
-            SlackBlockDatePickerElement::new(
-                SlackActionId::new(ACTION_RESERVE_START_DATE.to_string()),
-            )
-            .with_initial_date(start_date.to_string().into())
+            SlackBlockDatePickerElement::new(SlackActionId::new(
+                ACTION_RESERVE_START_DATE.to_string(),
+            ))
+            .with_initial_date(start_date.to_string()),
         ),
     )));
 
     blocks.push(SlackBlock::Input(SlackInputBlock::new(
         pt!("開始時刻"),
         SlackInputBlockElement::TimePicker(
-            SlackBlockTimePickerElement::new(
-                SlackActionId::new(ACTION_RESERVE_START_TIME.to_string()),
-            )
-            .with_initial_time(start_time.to_string().into())
+            SlackBlockTimePickerElement::new(SlackActionId::new(
+                ACTION_RESERVE_START_TIME.to_string(),
+            ))
+            .with_initial_time(start_time.to_string()),
         ),
     )));
 
     blocks.push(SlackBlock::Input(SlackInputBlock::new(
         pt!("終了日"),
         SlackInputBlockElement::DatePicker(
-            SlackBlockDatePickerElement::new(
-                SlackActionId::new(ACTION_RESERVE_END_DATE.to_string()),
-            )
-            .with_initial_date(end_date.to_string().into())
+            SlackBlockDatePickerElement::new(SlackActionId::new(
+                ACTION_RESERVE_END_DATE.to_string(),
+            ))
+            .with_initial_date(end_date.to_string()),
         ),
     )));
 
     blocks.push(SlackBlock::Input(SlackInputBlock::new(
         pt!("終了時刻"),
         SlackInputBlockElement::TimePicker(
-            SlackBlockTimePickerElement::new(
-                SlackActionId::new(ACTION_RESERVE_END_TIME.to_string()),
-            )
-            .with_initial_time(end_time.to_string().into())
+            SlackBlockTimePickerElement::new(SlackActionId::new(
+                ACTION_RESERVE_END_TIME.to_string(),
+            ))
+            .with_initial_time(end_time.to_string()),
         ),
     )));
 }

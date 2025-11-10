@@ -139,10 +139,7 @@ mod tests {
             .execute(&UsageId::new("test-id".to_string()), &other_email)
             .await;
 
-        assert!(matches!(
-            result,
-            Err(ApplicationError::Unauthorized(_))
-        ));
+        assert!(matches!(result, Err(ApplicationError::Unauthorized(_))));
 
         // 削除されていないことを確認
         let still_exists = repository

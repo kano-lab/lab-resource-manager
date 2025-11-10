@@ -39,8 +39,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackBot<R> {
         let client = Arc::new(SlackClient::new(SlackClientHyperConnector::new()?));
 
         let command_handler = Arc::new(
-            SlackCommandHandler::new(grant_access_usecase)
-                .with_slack_client(client.clone())
+            SlackCommandHandler::new(grant_access_usecase).with_slack_client(client.clone()),
         );
 
         Ok(Self {
@@ -61,7 +60,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackBot<R> {
             SlackCommandHandler::new(grant_access_usecase)
                 .with_resource_config(config)
                 .with_slack_client(client.clone())
-                .with_bot_token(bot_token)
+                .with_bot_token(bot_token),
         );
 
         Ok(Self {
@@ -85,7 +84,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackBot<R> {
                 .with_resource_usage(usage_repository, identity_repo)
                 .with_resource_config(config)
                 .with_slack_client(client.clone())
-                .with_bot_token(bot_token)
+                .with_bot_token(bot_token),
         );
 
         Ok(Self {
@@ -116,7 +115,9 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackBot<R> {
         view: SlackView,
         user_id: SlackUserId,
     ) -> Result<SlackViewSubmissionResponse, Box<dyn std::error::Error + Send + Sync>> {
-        self.command_handler.handle_view_submission(view, user_id).await
+        self.command_handler
+            .handle_view_submission(view, user_id)
+            .await
     }
 
     /// クライアントへの参照を取得
