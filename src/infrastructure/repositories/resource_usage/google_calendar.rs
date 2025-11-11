@@ -23,6 +23,7 @@ use google_calendar3::{
 pub struct GoogleCalendarUsageRepository {
     hub: CalendarHub<HttpsConnector<HttpConnector>>,
     config: ResourceConfig,
+    service_account_email: String,
 }
 
 impl GoogleCalendarUsageRepository {
@@ -36,6 +37,7 @@ impl GoogleCalendarUsageRepository {
         config: ResourceConfig,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let secret = yup_oauth2::read_service_account_key(service_account_key).await?;
+        let service_account_email = secret.client_email.clone();
 
         let auth = yup_oauth2::ServiceAccountAuthenticator::builder(secret)
             .build()
@@ -51,7 +53,11 @@ impl GoogleCalendarUsageRepository {
 
         let hub = CalendarHub::new(client, auth);
 
-        Ok(Self { hub, config })
+        Ok(Self {
+            hub,
+            config,
+            service_account_email,
+        })
     }
 
     /// すべてのカレンダーから未来のイベントを取得
@@ -120,13 +126,26 @@ impl GoogleCalendarUsageRepository {
     ) -> Result<ResourceUsage, RepositoryError> {
         let id = UsageId::new(event.id.clone().unwrap_or_default());
 
-        let creator_email = event
+        // owner_emailの決定ロジック
+        let owner_email = event
             .creator
             .as_ref()
             .and_then(|c| c.email.as_ref())
             .ok_or_else(|| RepositoryError::Unknown("作成者情報がありません".to_string()))?;
 
-        let user = self.parse_user(creator_email)?;
+        // creatorがサービスアカウントの場合はattendeesから実際のユーザーを取得
+        let owner_email = if owner_email == &self.service_account_email {
+            event
+                .attendees
+                .as_ref()
+                .and_then(|attendees| attendees.first())
+                .and_then(|attendee| attendee.email.as_ref())
+                .unwrap_or(owner_email) // attendeesが不正な場合はサービスアカウントをフォールバック
+        } else {
+            owner_email
+        };
+
+        let user = self.parse_user(owner_email)?;
 
         let start = event
             .start
@@ -286,6 +305,11 @@ impl GoogleCalendarUsageRepository {
                 date_time: Some(usage.time_period().end()),
                 ..Default::default()
             }),
+            // ゲスト（attendees）として実際のユーザーを登録
+            attendees: Some(vec![google_calendar3::api::EventAttendee {
+                email: Some(usage.owner_email().as_str().to_string()),
+                ..Default::default()
+            }]),
             ..Default::default()
         };
 
