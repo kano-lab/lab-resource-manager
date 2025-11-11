@@ -1,4 +1,4 @@
-//! Resource reservation modal builder
+//! リソース予約モーダルビルダー
 
 use crate::infrastructure::config::ResourceConfig;
 use crate::interface::slack::constants::*;
@@ -7,13 +7,13 @@ use slack_morphism::prelude::*;
 
 /// 予約作成・更新用のモーダルを作成
 ///
-/// # Arguments
+/// # 引数
 /// * `config` - リソース設定
 /// * `resource_type` - 選択されたリソースタイプ ("gpu" or "room")
 /// * `selected_server` - 選択されたサーバー名（GPU選択時のみ）
 /// * `usage_id` - 更新対象の予約ID（Noneの場合は新規作成）
 ///
-/// # Returns
+/// # 戻り値
 /// 予約フォームのモーダルビュー
 pub fn create_reserve_modal(
     config: &ResourceConfig,

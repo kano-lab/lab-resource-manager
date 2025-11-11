@@ -6,7 +6,6 @@ use crate::domain::aggregates::resource_usage::{
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::services::ResourceConflictChecker;
-use chrono::Utc;
 use std::sync::Arc;
 
 /// リソース使用予定を作成するユースケース
@@ -51,11 +50,11 @@ impl<R: ResourceUsageRepository> CreateResourceUsageUseCase<R> {
         notes: Option<String>,
     ) -> Result<UsageId, ApplicationError> {
         // 開始時刻が過去でないことを確認
-        if time_period.start() < Utc::now() {
-            return Err(ApplicationError::InvalidTimePeriod(
-                "開始時刻が過去です".to_string(),
-            ));
-        }
+        // if time_period.start() < Utc::now() {
+        //     return Err(ApplicationError::InvalidTimePeriod(
+        //         "開始時刻が過去です".to_string(),
+        //     ));
+        // }
 
         // 競合チェック
         self.conflict_checker

@@ -1,12 +1,12 @@
-//! Email registration modal builder
+//! メールアドレス登録モーダルビルダー
 
 use crate::interface::slack::constants::{ACTION_EMAIL_INPUT, CALLBACK_REGISTER_EMAIL};
 use slack_morphism::prelude::*;
 
 /// メールアドレス登録モーダルを作成
 ///
-/// リソース予約前にGoogleカレンダー連携用のメールアドレスを登録するためのモーダル
-pub fn create_register_email_modal() -> SlackView {
+/// リソース予約前にGoogle Calendarメールアドレスを登録するモーダル
+pub fn create() -> SlackView {
     let blocks = vec![
         SlackBlock::Section(
             SlackSectionBlock::new()

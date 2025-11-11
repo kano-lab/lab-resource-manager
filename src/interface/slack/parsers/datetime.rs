@@ -1,17 +1,17 @@
-//! Date and time parsing utilities
+//! 日付・時刻パースユーティリティ
 
 use chrono::{DateTime, Local, NaiveDate, NaiveTime, TimeZone, Utc};
 
 /// 日付文字列と時刻文字列をUTC DateTimeにパース
 ///
-/// # Arguments
+/// # 引数
 /// * `date_str` - 日付文字列 (YYYY-MM-DD形式)
 /// * `time_str` - 時刻文字列 (HH:MM形式)
 ///
-/// # Returns
+/// # 戻り値
 /// パースされたUTC DateTime
 ///
-/// # Errors
+/// # エラー
 /// - 日付または時刻のフォーマットが不正な場合
 /// - 無効な日時の場合
 pub fn parse_datetime(

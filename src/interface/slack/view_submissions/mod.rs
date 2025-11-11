@@ -1,0 +1,31 @@
+//! ビュー送信ハンドラ
+//!
+//! Slack View Submission イベントの処理を行います。
+//!
+//! ## 責務
+//!
+//! モーダル（ダイアログ）のフォーム送信時の処理を担当します。
+//! ユーザーがモーダル内のフォームに入力して送信ボタンを押すと、
+//! このモジュールのハンドラが呼び出されます。
+//!
+//! ## Slack API との対応
+//!
+//! このモジュールは、Slack APIの「View Submission」イベントタイプに対応します。
+//! モーダルには`callback_id`が設定されており、送信時にその値に基づいて
+//! 適切なハンドラにルーティングされます。
+//!
+//! | callback_id | ハンドラ | 処理内容 |
+//! |-------------|---------|---------|
+//! | `register_email` | `registration` | メールアドレス登録 |
+//! | `reserve_submit` | `reservation` | リソース予約作成 |
+//! | `update_submit` | `update` | リソース予約更新 |
+//!
+//! ## モジュール
+//!
+//! - `registration`: メールアドレス登録モーダルの送信処理
+//! - `reservation`: リソース予約作成モーダルの送信処理
+//! - `update`: リソース予約更新モーダルの送信処理
+
+pub mod registration;
+pub mod reservation;
+pub mod update;

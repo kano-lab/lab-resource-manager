@@ -1,7 +1,21 @@
-//! Modal view builders
+//! モーダルビュー定義
+//!
+//! Slackモーダル（ダイアログ）の構造を定義します。
+//!
+//! ## 責務
+//!
+//! ユーザーが情報を入力するためのモーダルフォームをBlock Kit形式で構築します。
+//! 各モーダルは、フォーム要素（テキスト入力、日付選択、セレクトメニューなど）を
+//! 組み合わせて定義されます。
+//!
+//! ## モジュール
+//!
+//! - `registration`: メールアドレス登録モーダル
+//! - `reservation`: リソース予約作成モーダル（動的に内容が変わる）
+//! - `update`: リソース予約更新モーダル
+//! - `result`: 結果表示モーダル（成功・失敗）
 
-mod registration;
-mod reservation;
-
-pub use registration::create_register_email_modal;
-pub use reservation::create_reserve_modal;
+pub mod registration;
+pub mod reservation;
+pub mod result;
+pub mod update;

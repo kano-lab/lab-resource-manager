@@ -133,14 +133,18 @@ impl GoogleCalendarUsageRepository {
             .and_then(|c| c.email.as_ref())
             .ok_or_else(|| RepositoryError::Unknown("作成者情報がありません".to_string()))?;
 
-        // creatorがサービスアカウントの場合はattendeesから実際のユーザーを取得
+        // creatorがサービスアカウントの場合はdescriptionから実際のユーザーを取得
         let owner_email = if owner_email == &self.service_account_email {
             event
-                .attendees
+                .description
                 .as_ref()
-                .and_then(|attendees| attendees.first())
-                .and_then(|attendee| attendee.email.as_ref())
-                .unwrap_or(owner_email) // attendeesが不正な場合はサービスアカウントをフォールバック
+                .and_then(|desc| {
+                    // "予約者: user@example.com" の形式から抽出
+                    desc.lines()
+                        .next()
+                        .and_then(|line| line.strip_prefix("予約者: "))
+                })
+                .unwrap_or(owner_email) // descriptionから取得できない場合はサービスアカウントをフォールバック
         } else {
             owner_email
         };
@@ -167,7 +171,11 @@ impl GoogleCalendarUsageRepository {
         let title = event.summary.as_ref().unwrap_or(&default_title);
         let items = self.parse_resources(title, resource_context)?;
 
-        let notes = event.description.clone();
+        // descriptionから備考を抽出（"予約者: xxx"の行を除外）
+        let notes = event.description.as_ref().and_then(|desc| {
+            // "予約者: xxx\n\n備考" の形式から備考部分を抽出
+            desc.split_once("\n\n").map(|(_, notes)| notes.to_string())
+        });
 
         ResourceUsage::new(id, user, time_period, items, notes).map_err(RepositoryError::from)
     }
@@ -294,9 +302,18 @@ impl GoogleCalendarUsageRepository {
             Resource::Room { name } => name.clone(),
         };
 
+        // descriptionに予約者情報を含める
+        let description = {
+            let mut desc = format!("予約者: {}", usage.owner_email().as_str());
+            if let Some(notes) = usage.notes() {
+                desc.push_str(&format!("\n\n{}", notes));
+            }
+            desc
+        };
+
         let mut event = Event {
             summary: Some(summary),
-            description: usage.notes().cloned(),
+            description: Some(description),
             start: Some(google_calendar3::api::EventDateTime {
                 date_time: Some(usage.time_period().start()),
                 ..Default::default()
@@ -305,11 +322,8 @@ impl GoogleCalendarUsageRepository {
                 date_time: Some(usage.time_period().end()),
                 ..Default::default()
             }),
-            // ゲスト（attendees）として実際のユーザーを登録
-            attendees: Some(vec![google_calendar3::api::EventAttendee {
-                email: Some(usage.owner_email().as_str().to_string()),
-                ..Default::default()
-            }]),
+            // NOTE: attendeesを追加するとDomain-Wide Delegationが必要になるため、
+            // 予約者情報はdescriptionに含めています
             ..Default::default()
         };
 
