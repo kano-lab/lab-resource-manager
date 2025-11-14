@@ -8,10 +8,7 @@ pub struct SlackBlockBuilder;
 
 impl SlackBlockBuilder {
     /// ボタン付きメッセージブロックを構築（JSON形式）
-    pub fn build_message_with_buttons(
-        message: &str,
-        usage_id: &str,
-    ) -> serde_json::Value {
+    pub fn build_message_with_buttons(message: &str, usage_id: &str) -> serde_json::Value {
         json!([
             {
                 "type": "section",

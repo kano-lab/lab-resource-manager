@@ -66,7 +66,10 @@ pub fn get_selected_option_text(
     for (_block_id, actions_map) in values.iter() {
         for (action_id, value) in actions_map.iter() {
             if action_id.to_string() == action_id_str {
-                return value.selected_option.as_ref().map(|opt| opt.text.text.clone());
+                return value
+                    .selected_option
+                    .as_ref()
+                    .map(|opt| opt.text.text.clone());
             }
         }
     }
@@ -149,13 +152,12 @@ pub fn get_selected_options(
 ///
 /// # 引数
 /// * `view_submission` - ビュー送信イベント
-pub fn get_private_metadata(view_submission: &SlackInteractionViewSubmissionEvent) -> Option<String> {
+pub fn get_private_metadata(
+    view_submission: &SlackInteractionViewSubmissionEvent,
+) -> Option<String> {
     let SlackView::Modal(modal_view) = &view_submission.view.view else {
         return None;
     };
 
-    modal_view
-        .private_metadata
-        .as_ref()
-        .map(|s| s.to_string())
+    modal_view.private_metadata.as_ref().map(|s| s.to_string())
 }

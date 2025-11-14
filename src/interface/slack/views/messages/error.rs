@@ -15,7 +15,10 @@ pub fn create_simple(message: impl Into<String>) -> SlackMessageContent {
 /// # 引数
 /// * `title` - Title of the error
 /// * `details` - Additional error details
-pub fn create_with_details(title: impl Into<String>, details: impl Into<String>) -> SlackMessageContent {
+pub fn create_with_details(
+    title: impl Into<String>,
+    details: impl Into<String>,
+) -> SlackMessageContent {
     let title_str = title.into();
     let details_str = details.into();
 
@@ -23,12 +26,8 @@ pub fn create_with_details(title: impl Into<String>, details: impl Into<String>)
         .with_text(format!("❌ {}", title_str))
         .with_blocks(vec![
             SlackBlock::Section(
-                SlackSectionBlock::new()
-                    .with_text(md!(format!("*❌ {}*", title_str)))
+                SlackSectionBlock::new().with_text(md!(format!("*❌ {}*", title_str))),
             ),
-            SlackBlock::Section(
-                SlackSectionBlock::new()
-                    .with_text(md!(details_str))
-            ),
+            SlackBlock::Section(SlackSectionBlock::new().with_text(md!(details_str))),
         ])
 }

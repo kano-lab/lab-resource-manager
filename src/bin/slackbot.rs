@@ -197,7 +197,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .clone();
 
         // Socket Modeには即座に応答を返すため、処理を非同期タスクでspawn
-                tokio::spawn(async move {
+        tokio::spawn(async move {
             let result = app.route_interaction(event.clone()).await;
 
             match result {
@@ -218,7 +218,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     None
                                 };
 
-                                let mut request = SlackApiViewsUpdateRequest::new(update_response.view);
+                                let mut request =
+                                    SlackApiViewsUpdateRequest::new(update_response.view);
                                 request.view_id = Some(view_id.clone());
                                 request.hash = hash;
 
@@ -230,17 +231,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         SlackViewSubmissionResponse::Push(push_response) => {
                             // Get trigger_id from event
-                            if let SlackInteractionEvent::ViewSubmission(vs) = &event {
-                                if let Some(trigger_id) = &vs.trigger_id {
-                                    match session.views_push(
-                                        &SlackApiViewsPushRequest::new(
-                                            trigger_id.clone(),
-                                            push_response.view,
-                                        )
-                                    ).await {
-                                        Ok(_) => println!("✅ ビューをpushしました"),
-                                        Err(e) => eprintln!("❌ ビューpushエラー: {}", e),
-                                    }
+                            if let SlackInteractionEvent::ViewSubmission(vs) = &event
+                                && let Some(trigger_id) = &vs.trigger_id
+                            {
+                                match session
+                                    .views_push(&SlackApiViewsPushRequest::new(
+                                        trigger_id.clone(),
+                                        push_response.view,
+                                    ))
+                                    .await
+                                {
+                                    Ok(_) => println!("✅ ビューをpushしました"),
+                                    Err(e) => eprintln!("❌ ビューpushエラー: {}", e),
                                 }
                             }
                         }
@@ -272,7 +274,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let slack_client_for_env = Arc::new(SlackClient::new(SlackClientHyperConnector::new()?));
     let listener_environment = Arc::new(
-        SlackClientEventsListenerEnvironment::new(slack_client_for_env).with_user_state(app.clone()),
+        SlackClientEventsListenerEnvironment::new(slack_client_for_env)
+            .with_user_state(app.clone()),
     );
 
     let socket_mode_listener = SlackClientSocketModeListener::new(

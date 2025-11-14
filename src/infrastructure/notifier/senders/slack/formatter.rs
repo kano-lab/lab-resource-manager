@@ -1,9 +1,9 @@
 //! Slackメッセージフォーマット機能
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
+use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::aggregates::resource_usage::service::{format_resources, format_time_period};
 use crate::domain::aggregates::resource_usage::value_objects::Resource;
-use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::ports::notifier::NotificationEvent;
 use crate::infrastructure::notifier::senders::sender::NotificationContext;
 

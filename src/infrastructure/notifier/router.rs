@@ -87,6 +87,7 @@ impl NotificationRouter {
             timezone: config.timezone(),
         };
 
+        #[allow(deprecated)]
         match config {
             NotificationConfig::Slack {
                 bot_token,

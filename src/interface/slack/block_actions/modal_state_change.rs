@@ -26,19 +26,22 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     // Determine new values based on action
     let new_resource_type = if action_id == ACTION_RESERVE_RESOURCE_TYPE {
-        action.selected_option.as_ref().and_then(|opt| match &opt.text {
-            SlackBlockText::Plain(plain) => {
-                let text_val = plain.text.as_str();
-                if text_val == "GPU Server" {
-                    Some("gpu")
-                } else if text_val == "Room" {
-                    Some("room")
-                } else {
-                    None
+        action
+            .selected_option
+            .as_ref()
+            .and_then(|opt| match &opt.text {
+                SlackBlockText::Plain(plain) => {
+                    let text_val = plain.text.as_str();
+                    if text_val == "GPU Server" {
+                        Some("gpu")
+                    } else if text_val == "Room" {
+                        Some("room")
+                    } else {
+                        None
+                    }
                 }
-            }
-            _ => None,
-        })
+                _ => None,
+            })
     } else {
         None
     };

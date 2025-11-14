@@ -66,9 +66,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
                 result::create_error_modal("登録失敗", format!("登録に失敗しました\n\n{}", e));
 
             Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse {
-                    view: error_modal,
-                },
+                SlackViewSubmissionUpdateResponse { view: error_modal },
             )))
         }
     }

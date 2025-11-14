@@ -1,15 +1,15 @@
 //! リソース予約モーダル送信ハンドラ
 
-use crate::domain::aggregates::resource_usage::value_objects::resource::{Gpu, Resource};
 use crate::domain::aggregates::resource_usage::value_objects::TimePeriod;
+use crate::domain::aggregates::resource_usage::value_objects::resource::{Gpu, Resource};
 use crate::domain::ports::repositories::ResourceUsageRepository;
-use crate::interface::slack::parsers::datetime::parse_datetime;
-use crate::interface::slack::parsers::resource::parse_device_id;
-use crate::interface::slack::views::modals::result;
 use crate::interface::slack::adapters::user_resolver;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use crate::interface::slack::extractors::form_data;
+use crate::interface::slack::parsers::datetime::parse_datetime;
+use crate::interface::slack::parsers::resource::parse_device_id;
+use crate::interface::slack::views::modals::result;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
@@ -26,8 +26,9 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     let config = &app.resource_config;
 
     // Extract form values
-    let resource_type = form_data::get_selected_option_text(view_submission, ACTION_RESERVE_RESOURCE_TYPE)
-        .ok_or("リソースタイプが選択されていません")?;
+    let resource_type =
+        form_data::get_selected_option_text(view_submission, ACTION_RESERVE_RESOURCE_TYPE)
+            .ok_or("リソースタイプが選択されていません")?;
 
     let resource_type_val = if resource_type == "GPU Server" {
         "gpu"
@@ -37,8 +38,10 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         &resource_type
     };
 
-    let server_name = form_data::get_selected_option_text(view_submission, ACTION_RESERVE_SERVER_SELECT);
-    let room_name = form_data::get_selected_option_text(view_submission, ACTION_RESERVE_ROOM_SELECT);
+    let server_name =
+        form_data::get_selected_option_text(view_submission, ACTION_RESERVE_SERVER_SELECT);
+    let room_name =
+        form_data::get_selected_option_text(view_submission, ACTION_RESERVE_ROOM_SELECT);
     let device_ids = form_data::get_selected_options(view_submission, ACTION_RESERVE_DEVICES);
 
     let start_date = form_data::get_selected_date(view_submission, ACTION_RESERVE_START_DATE)
@@ -55,7 +58,8 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     info!("📊 抽出完了");
 
     // Get user email
-    let owner_email = user_resolver::resolve_user_email(&view_submission.user.id, identity_repo).await?;
+    let owner_email =
+        user_resolver::resolve_user_email(&view_submission.user.id, identity_repo).await?;
     info!("  → ユーザー: {}", owner_email);
 
     // Parse datetime
@@ -125,7 +129,10 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
             // 成功モーダルを返す
             let success_modal = result::create_success_modal(
                 "予約完了",
-                format!("リソースの予約が完了しました\n予約ID: {}", usage_id.as_str())
+                format!(
+                    "リソースの予約が完了しました\n予約ID: {}",
+                    usage_id.as_str()
+                ),
             );
 
             Ok(Some(SlackViewSubmissionResponse::Update(
@@ -140,13 +147,11 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
             // エラーモーダルを返す
             let error_modal = result::create_error_modal(
                 "予約失敗",
-                format!("予約の作成に失敗しました\n\n{}", e)
+                format!("予約の作成に失敗しました\n\n{}", e),
             );
 
             Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse {
-                    view: error_modal,
-                },
+                SlackViewSubmissionUpdateResponse { view: error_modal },
             )))
         }
     }

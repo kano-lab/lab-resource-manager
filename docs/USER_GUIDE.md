@@ -24,7 +24,7 @@ Enter **the Gmail address you normally use with Google Calendar**.
 
 #### Method 1: From Slack
 
-```
+```text
 /reserve
 ```
 
@@ -38,7 +38,7 @@ You can also reserve by directly creating events in Google Calendar.
 
 Write the **device numbers you want to use** in the event title.
 
-```
+```text
 Examples:
 0        → Use device 0 only
 0-2      → Use devices 0,1,2
@@ -52,7 +52,7 @@ If you want to add notes, write them in the event description field.
 
 No need to specify device numbers. Just write a normal title.
 
-```
+```text
 Example: Lab Meeting
 ```
 

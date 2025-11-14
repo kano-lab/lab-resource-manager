@@ -2,12 +2,12 @@
 
 use crate::domain::aggregates::resource_usage::value_objects::{TimePeriod, UsageId};
 use crate::domain::ports::repositories::ResourceUsageRepository;
-use crate::interface::slack::parsers::datetime::parse_datetime;
-use crate::interface::slack::views::modals::result;
 use crate::interface::slack::adapters::user_resolver;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use crate::interface::slack::extractors::form_data;
+use crate::interface::slack::parsers::datetime::parse_datetime;
+use crate::interface::slack::views::modals::result;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
@@ -30,7 +30,8 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     info!("  → 更新対象の予約ID: {}", usage_id_str);
 
     // Get user email (for authorization check)
-    let owner_email = user_resolver::resolve_user_email(&view_submission.user.id, identity_repo).await?;
+    let owner_email =
+        user_resolver::resolve_user_email(&view_submission.user.id, identity_repo).await?;
     info!("  → ユーザー: {}", owner_email);
 
     // Extract form values (only date/time fields, resources cannot be changed)
@@ -76,7 +77,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
             // 成功モーダルを返す
             let success_modal = result::create_success_modal(
                 "更新完了",
-                format!("予約を更新しました\n予約ID: {}", usage_id.as_str())
+                format!("予約を更新しました\n予約ID: {}", usage_id.as_str()),
             );
 
             Ok(Some(SlackViewSubmissionResponse::Update(
@@ -91,13 +92,11 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
             // エラーモーダルを返す
             let error_modal = result::create_error_modal(
                 "更新失敗",
-                format!("予約の更新に失敗しました\n\n{}", e)
+                format!("予約の更新に失敗しました\n\n{}", e),
             );
 
             Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse {
-                    view: error_modal,
-                },
+                SlackViewSubmissionUpdateResponse { view: error_modal },
             )))
         }
     }

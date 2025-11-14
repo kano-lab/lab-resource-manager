@@ -16,9 +16,9 @@ pub fn create_processing_modal(title: impl Into<String>, message: impl Into<Stri
     SlackView::Modal(SlackModalView {
         callback_id: Some("result_processing".into()),
         title: pt!(title_str),
-        blocks: vec![SlackBlock::Section(SlackSectionBlock::new().with_text(
-            md!(format!("⏳ {}", message_str)),
-        ))],
+        blocks: vec![SlackBlock::Section(
+            SlackSectionBlock::new().with_text(md!(format!("⏳ {}", message_str))),
+        )],
         close: Some(pt!("閉じる")),
         submit: None,
         private_metadata: None,
@@ -41,9 +41,9 @@ pub fn create_success_modal(title: impl Into<String>, message: impl Into<String>
     SlackView::Modal(SlackModalView {
         callback_id: Some("result_success".into()),
         title: pt!(title_str),
-        blocks: vec![SlackBlock::Section(SlackSectionBlock::new().with_text(
-            md!(format!("✅ {}", message_str)),
-        ))],
+        blocks: vec![SlackBlock::Section(
+            SlackSectionBlock::new().with_text(md!(format!("✅ {}", message_str))),
+        )],
         close: Some(pt!("閉じる")),
         submit: None,
         private_metadata: None,
@@ -66,9 +66,9 @@ pub fn create_error_modal(title: impl Into<String>, error_message: impl Into<Str
     SlackView::Modal(SlackModalView {
         callback_id: Some("result_error".into()),
         title: pt!(title_str),
-        blocks: vec![SlackBlock::Section(SlackSectionBlock::new().with_text(
-            md!(format!("❌ {}", error_str)),
-        ))],
+        blocks: vec![SlackBlock::Section(
+            SlackSectionBlock::new().with_text(md!(format!("❌ {}", error_str))),
+        )],
         close: Some(pt!("閉じる")),
         submit: None,
         private_metadata: None,
