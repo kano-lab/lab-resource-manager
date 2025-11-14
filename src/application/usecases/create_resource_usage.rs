@@ -39,7 +39,6 @@ impl<R: ResourceUsageRepository> CreateResourceUsageUseCase<R> {
     /// 作成されたResourceUsageのID
     ///
     /// # Errors
-    /// - 開始時刻が過去の場合
     /// - 指定期間と重複するリソース使用がある場合
     /// - リポジトリエラー
     pub async fn execute(
@@ -49,17 +48,22 @@ impl<R: ResourceUsageRepository> CreateResourceUsageUseCase<R> {
         resources: Vec<Resource>,
         notes: Option<String>,
     ) -> Result<UsageId, ApplicationError> {
-        // 開始時刻が過去でないことを確認
-        // if time_period.start() < Utc::now() {
-        //     return Err(ApplicationError::InvalidTimePeriod(
-        //         "開始時刻が過去です".to_string(),
-        //     ));
-        // }
-
         // 競合チェック
         self.conflict_checker
             .check_conflicts(self.repository.as_ref(), &time_period, &resources, None)
-            .await?;
+            .await
+            .map_err(|e| {
+                // ResourceConflictErrorかどうかをチェックしてダウンキャスト
+                if let Some(conflict_err) = e.downcast_ref::<crate::domain::services::resource_usage::errors::ResourceConflictError>() {
+                    ApplicationError::ResourceConflict {
+                        resource_description: conflict_err.resource_description.clone(),
+                        conflicting_usage_id: conflict_err.conflicting_usage_id.as_str().to_string(),
+                    }
+                } else {
+                    // その他のエラー（RepositoryErrorなど）
+                    ApplicationError::Repository(crate::domain::ports::repositories::RepositoryError::Unknown(e.to_string()))
+                }
+            })?;
 
         // 空のIDで新しいResourceUsageを作成（Google Calendarが自動採番）
         let usage = ResourceUsage::new(

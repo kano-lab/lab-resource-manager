@@ -4,6 +4,7 @@ use crate::domain::ports::{
     notifier::NotificationError, repositories::RepositoryError,
     resource_collection_access::ResourceCollectionAccessError,
 };
+use crate::domain::services::resource_usage::errors::ResourceConflictError;
 use std::fmt;
 
 /// Application層で発生するエラーの列挙型
@@ -39,9 +40,6 @@ pub enum ApplicationError {
         conflicting_usage_id: String,
     },
 
-    /// 無効な時間枠エラー
-    InvalidTimePeriod(String),
-
     /// 認可エラー（権限不足）
     Unauthorized(String),
 }
@@ -76,9 +74,6 @@ impl fmt::Display for ApplicationError {
                     resource_description, conflicting_usage_id
                 )
             }
-            ApplicationError::InvalidTimePeriod(msg) => {
-                write!(f, "無効な時間枠: {}", msg)
-            }
             ApplicationError::Unauthorized(msg) => {
                 write!(f, "権限不足: {}", msg)
             }
@@ -96,7 +91,6 @@ impl std::error::Error for ApplicationError {
             ApplicationError::IdentityLink(e) => Some(e),
             ApplicationError::ExternalSystemAlreadyLinked { .. } => None,
             ApplicationError::ResourceConflict { .. } => None,
-            ApplicationError::InvalidTimePeriod(_) => None,
             ApplicationError::Unauthorized(_) => None,
         }
     }
@@ -117,6 +111,15 @@ impl From<ResourceUsageError> for ApplicationError {
 impl From<IdentityLinkError> for ApplicationError {
     fn from(e: IdentityLinkError) -> Self {
         ApplicationError::IdentityLink(e)
+    }
+}
+
+impl From<ResourceConflictError> for ApplicationError {
+    fn from(e: ResourceConflictError) -> Self {
+        ApplicationError::ResourceConflict {
+            resource_description: e.resource_description,
+            conflicting_usage_id: e.conflicting_usage_id.as_str().to_string(),
+        }
     }
 }
 
