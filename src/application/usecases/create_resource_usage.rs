@@ -64,7 +64,7 @@ impl<R: ResourceUsageRepository> CreateResourceUsageUseCase<R> {
                 ) => ApplicationError::Repository(repo_err),
             })?;
 
-        // 空のIDで新しいResourceUsageを作成（Google Calendarが自動採番）
+        // 空のIDで新しいResourceUsageを作成（リポジトリが自動採番）
         let usage = ResourceUsage::new(
             UsageId::new("".to_string()),
             owner_email,
@@ -73,8 +73,8 @@ impl<R: ResourceUsageRepository> CreateResourceUsageUseCase<R> {
             notes,
         )?;
 
-        // 保存して生成されたIDを取得
-        let generated_id = self.repository.save(&usage).await?;
+        // 作成して生成されたIDを取得
+        let generated_id = self.repository.create(&usage).await?;
 
         Ok(generated_id)
     }

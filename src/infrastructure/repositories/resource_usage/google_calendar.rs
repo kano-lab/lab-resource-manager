@@ -517,72 +517,55 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             .collect())
     }
 
-    async fn save(&self, usage: &ResourceUsage) -> Result<UsageId, RepositoryError> {
+    async fn create(&self, usage: &ResourceUsage) -> Result<UsageId, RepositoryError> {
+        let calendar_id = self.get_calendar_id_for_usage(usage)?;
+        let event = self.create_event_from_usage(usage)?;
+
+        // 新規作成
+        let (_response, created_event) = self
+            .hub
+            .events()
+            .insert(event, &calendar_id)
+            .doit()
+            .await
+            .map_err(|e| {
+                RepositoryError::ConnectionError(format!("イベント作成に失敗: {}", e))
+            })?;
+
+        // 生成されたIDを返す
+        let generated_id = created_event.id.ok_or_else(|| {
+            RepositoryError::Unknown("作成されたイベントにIDがありません".to_string())
+        })?;
+        Ok(UsageId::new(generated_id))
+    }
+
+    async fn update(&self, usage: &ResourceUsage) -> Result<(), RepositoryError> {
         let calendar_id = self.get_calendar_id_for_usage(usage)?;
         let event = self.create_event_from_usage(usage)?;
         let event_id = usage.id().as_str();
 
-        // IDが空の場合は新規作成、存在する場合は更新
         if event_id.is_empty() {
-            // 新規作成
-            let (_response, created_event) = self
-                .hub
-                .events()
-                .insert(event, &calendar_id)
-                .doit()
-                .await
-                .map_err(|e| {
-                    RepositoryError::ConnectionError(format!("イベント作成に失敗: {}", e))
-                })?;
-
-            // 生成されたIDを返す
-            let generated_id = created_event.id.ok_or_else(|| {
-                RepositoryError::Unknown("作成されたイベントにIDがありません".to_string())
-            })?;
-            Ok(UsageId::new(generated_id))
-        } else {
-            // 既存のイベントを更新（楽観的アプローチ）
-            // 存在しない場合は404エラーになるため、その場合は作成する
-            match self
-                .hub
-                .events()
-                .update(event.clone(), &calendar_id, event_id)
-                .doit()
-                .await
-            {
-                Ok(_) => {
-                    // 更新成功 - 既存のIDを返す
-                    Ok(usage.id().clone())
-                }
-                Err(e) => {
-                    // 404エラーの場合は新規作成を試みる
-                    let error_msg = e.to_string();
-                    if error_msg.contains("404") || error_msg.contains("Not Found") {
-                        let (_response, created_event) = self
-                            .hub
-                            .events()
-                            .insert(event, &calendar_id)
-                            .doit()
-                            .await
-                            .map_err(|e| {
-                                RepositoryError::ConnectionError(format!("イベント作成に失敗: {}", e))
-                            })?;
-
-                        // 生成されたIDを返す
-                        let generated_id = created_event.id.ok_or_else(|| {
-                            RepositoryError::Unknown("作成されたイベントにIDがありません".to_string())
-                        })?;
-                        Ok(UsageId::new(generated_id))
-                    } else {
-                        // その他のエラー
-                        Err(RepositoryError::ConnectionError(format!(
-                            "イベント更新に失敗: {}",
-                            e
-                        )))
-                    }
-                }
-            }
+            return Err(RepositoryError::Unknown(
+                "更新にはIDが必要です".to_string(),
+            ));
         }
+
+        // 既存のイベントを更新
+        self.hub
+            .events()
+            .update(event, &calendar_id, event_id)
+            .doit()
+            .await
+            .map_err(|e| {
+                let error_msg = e.to_string();
+                if error_msg.contains("404") || error_msg.contains("Not Found") {
+                    RepositoryError::NotFound
+                } else {
+                    RepositoryError::ConnectionError(format!("イベント更新に失敗: {}", e))
+                }
+            })?;
+
+        Ok(())
     }
 
     async fn delete(&self, id: &UsageId) -> Result<(), RepositoryError> {

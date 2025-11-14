@@ -68,10 +68,39 @@ impl ResourceUsageRepository for MockUsageRepository {
         Ok(owned)
     }
 
-    async fn save(&self, usage: &ResourceUsage) -> Result<UsageId, RepositoryError> {
+    async fn create(&self, usage: &ResourceUsage) -> Result<UsageId, RepositoryError> {
         let mut storage = self.storage.lock().unwrap();
-        storage.insert(usage.id().as_str().to_string(), usage.clone());
-        Ok(usage.id().clone())
+
+        // テスト用の簡易的なID生成（タイムスタンプベース）
+        let generated_id = if usage.id().as_str().is_empty() {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            UsageId::new(format!("mock-{}", timestamp))
+        } else {
+            usage.id().clone()
+        };
+
+        storage.insert(generated_id.as_str().to_string(), usage.clone());
+        Ok(generated_id)
+    }
+
+    async fn update(&self, usage: &ResourceUsage) -> Result<(), RepositoryError> {
+        let mut storage = self.storage.lock().unwrap();
+        let id = usage.id().as_str();
+
+        if id.is_empty() {
+            return Err(RepositoryError::Unknown("更新にはIDが必要です".to_string()));
+        }
+
+        if !storage.contains_key(id) {
+            return Err(RepositoryError::NotFound);
+        }
+
+        storage.insert(id.to_string(), usage.clone());
+        Ok(())
     }
 
     async fn delete(&self, id: &UsageId) -> Result<(), RepositoryError> {

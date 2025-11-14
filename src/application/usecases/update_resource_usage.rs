@@ -95,8 +95,8 @@ impl<R: ResourceUsageRepository> UpdateResourceUsageUseCase<R> {
             usage.update_notes(notes);
         }
 
-        // 保存（更新時はIDは変わらないが、戻り値を受け取る）
-        let _ = self.repository.save(&usage).await?;
+        // 更新
+        self.repository.update(&usage).await?;
 
         Ok(())
     }
