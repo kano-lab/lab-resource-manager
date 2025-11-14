@@ -52,17 +52,16 @@ impl<R: ResourceUsageRepository> CreateResourceUsageUseCase<R> {
         self.conflict_checker
             .check_conflicts(self.repository.as_ref(), &time_period, &resources, None)
             .await
-            .map_err(|e| {
-                // ResourceConflictErrorかどうかをチェックしてダウンキャスト
-                if let Some(conflict_err) = e.downcast_ref::<crate::domain::services::resource_usage::errors::ResourceConflictError>() {
-                    ApplicationError::ResourceConflict {
-                        resource_description: conflict_err.resource_description.clone(),
-                        conflicting_usage_id: conflict_err.conflicting_usage_id.as_str().to_string(),
-                    }
-                } else {
-                    // その他のエラー（RepositoryErrorなど）
-                    ApplicationError::Repository(crate::domain::ports::repositories::RepositoryError::Unknown(e.to_string()))
-                }
+            .map_err(|e| match e {
+                crate::domain::services::resource_usage::errors::ConflictCheckError::Conflict(
+                    conflict_err,
+                ) => ApplicationError::ResourceConflict {
+                    resource_description: conflict_err.resource_description.clone(),
+                    conflicting_usage_id: conflict_err.conflicting_usage_id.as_str().to_string(),
+                },
+                crate::domain::services::resource_usage::errors::ConflictCheckError::Repository(
+                    repo_err,
+                ) => ApplicationError::Repository(repo_err),
             })?;
 
         // 空のIDで新しいResourceUsageを作成（Google Calendarが自動採番）
@@ -74,9 +73,9 @@ impl<R: ResourceUsageRepository> CreateResourceUsageUseCase<R> {
             notes,
         )?;
 
-        // 保存
-        self.repository.save(&usage).await?;
+        // 保存して生成されたIDを取得
+        let generated_id = self.repository.save(&usage).await?;
 
-        Ok(usage.id().clone())
+        Ok(generated_id)
     }
 }

@@ -75,17 +75,16 @@ impl<R: ResourceUsageRepository> UpdateResourceUsageUseCase<R> {
                     Some(usage.id()),
                 )
                 .await
-                .map_err(|e| {
-                    // ResourceConflictErrorかどうかをチェックしてダウンキャスト
-                    if let Some(conflict_err) = e.downcast_ref::<crate::domain::services::resource_usage::errors::ResourceConflictError>() {
-                        ApplicationError::ResourceConflict {
-                            resource_description: conflict_err.resource_description.clone(),
-                            conflicting_usage_id: conflict_err.conflicting_usage_id.as_str().to_string(),
-                        }
-                    } else {
-                        // その他のエラー（RepositoryErrorなど）
-                        ApplicationError::Repository(crate::domain::ports::repositories::RepositoryError::Unknown(e.to_string()))
-                    }
+                .map_err(|e| match e {
+                    crate::domain::services::resource_usage::errors::ConflictCheckError::Conflict(
+                        conflict_err,
+                    ) => ApplicationError::ResourceConflict {
+                        resource_description: conflict_err.resource_description.clone(),
+                        conflicting_usage_id: conflict_err.conflicting_usage_id.as_str().to_string(),
+                    },
+                    crate::domain::services::resource_usage::errors::ConflictCheckError::Repository(
+                        repo_err,
+                    ) => ApplicationError::Repository(repo_err),
                 })?;
 
             usage.update_time_period(new_period);
@@ -96,8 +95,8 @@ impl<R: ResourceUsageRepository> UpdateResourceUsageUseCase<R> {
             usage.update_notes(notes);
         }
 
-        // 保存
-        self.repository.save(&usage).await?;
+        // 保存（更新時はIDは変わらないが、戻り値を受け取る）
+        let _ = self.repository.save(&usage).await?;
 
         Ok(())
     }

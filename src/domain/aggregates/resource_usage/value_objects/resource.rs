@@ -1,3 +1,5 @@
+use std::fmt;
+
 /// GPU仕様
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Gpu {
@@ -37,6 +39,16 @@ impl Gpu {
     }
 }
 
+impl fmt::Display for Gpu {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} GPU#{} ({})",
+            self.server, self.device_number, self.model
+        )
+    }
+}
+
 /// リソースの種類
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Resource {
@@ -56,6 +68,15 @@ impl Resource {
             (Resource::Gpu(id1), Resource::Gpu(id2)) => id1 == id2,
             (Resource::Room { name: name1 }, Resource::Room { name: name2 }) => name1 == name2,
             _ => false,
+        }
+    }
+}
+
+impl fmt::Display for Resource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Resource::Gpu(gpu) => write!(f, "{}", gpu),
+            Resource::Room { name } => write!(f, "部屋: {}", name),
         }
     }
 }
