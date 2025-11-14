@@ -38,7 +38,10 @@ pub trait ResourceUsageRepository {
     ) -> Result<Vec<ResourceUsage>, RepositoryError>;
 
     /// ResourceUsageを保存
-    async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError>;
+    ///
+    /// # Returns
+    /// 保存されたResourceUsageのID（新規作成時はAPIが生成したID、更新時は既存のID）
+    async fn save(&self, usage: &ResourceUsage) -> Result<UsageId, RepositoryError>;
 
     /// ResourceUsageを削除
     async fn delete(&self, id: &UsageId) -> Result<(), RepositoryError>;

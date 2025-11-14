@@ -68,10 +68,10 @@ impl ResourceUsageRepository for MockUsageRepository {
         Ok(owned)
     }
 
-    async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError> {
+    async fn save(&self, usage: &ResourceUsage) -> Result<UsageId, RepositoryError> {
         let mut storage = self.storage.lock().unwrap();
         storage.insert(usage.id().as_str().to_string(), usage.clone());
-        Ok(())
+        Ok(usage.id().clone())
     }
 
     async fn delete(&self, id: &UsageId) -> Result<(), RepositoryError> {
