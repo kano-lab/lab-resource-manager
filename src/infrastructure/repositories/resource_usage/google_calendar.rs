@@ -399,12 +399,6 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         }
     }
 
-    async fn find_all(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        // find_futureと同じ実装だが、時間フィルタリングなし
-        // 現状ではfind_futureと同じにする（過去のイベントは通常管理対象外）
-        self.find_future().await
-    }
-
     async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
         let events = self.fetch_future_events().await?;
 

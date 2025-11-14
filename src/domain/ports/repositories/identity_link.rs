@@ -23,10 +23,4 @@ pub trait IdentityLinkRepository: Send + Sync {
 
     /// IdentityLinkを保存
     async fn save(&self, identity_link: IdentityLink) -> Result<(), RepositoryError>;
-
-    /// すべてのIdentityLinkを取得
-    async fn find_all(&self) -> Result<Vec<IdentityLink>, RepositoryError>;
-
-    /// IdentityLinkを削除
-    async fn delete(&self, email: &EmailAddress) -> Result<(), RepositoryError>;
 }

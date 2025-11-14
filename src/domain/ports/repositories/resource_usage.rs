@@ -14,9 +14,6 @@ pub trait ResourceUsageRepository {
     /// IDでResourceUsageを検索
     async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError>;
 
-    /// すべてのResourceUsageを取得
-    async fn find_all(&self) -> Result<Vec<ResourceUsage>, RepositoryError>;
-
     /// 未来のリソース使用状況を取得する（進行中および今後予定されているもの）
     ///
     /// このメソッドは、終了時刻が現在時刻より後のリソース使用状況を返します。
