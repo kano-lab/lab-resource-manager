@@ -9,3 +9,5 @@
 pub mod router;
 /// 通知送信実装
 pub mod senders;
+
+pub use router::NotificationRouter;
