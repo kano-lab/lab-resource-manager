@@ -15,7 +15,11 @@ pub enum NotificationConfig {
         /// チャンネルID (C01234567...)
         #[serde(default)]
         channel_id: Option<String>,
-        /// Webhook URL (レガシー、bot_tokenが優先される)
+        /// Webhook URL (非推奨: bot_token+channel_idを使用してください)
+        ///
+        /// このフィールドは非推奨です。代わりに`bot_token`と`channel_id`を使用してください。
+        /// Webhook URLではインタラクティブなボタンが動作しません。
+        #[deprecated(note = "Webhook URLは非推奨です。bot_token+channel_idを使用してください")]
         #[serde(default)]
         webhook_url: Option<String>,
         /// タイムゾーン（オプション）
