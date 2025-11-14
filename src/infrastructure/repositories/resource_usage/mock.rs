@@ -37,11 +37,6 @@ impl ResourceUsageRepository for MockUsageRepository {
         Ok(storage.get(id.as_str()).cloned())
     }
 
-    async fn find_all(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        let storage = self.storage.lock().unwrap();
-        Ok(storage.values().cloned().collect())
-    }
-
     async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
         let storage = self.storage.lock().unwrap();
         Ok(storage.values().cloned().collect())
@@ -58,6 +53,19 @@ impl ResourceUsageRepository for MockUsageRepository {
             .cloned()
             .collect();
         Ok(overlapping)
+    }
+
+    async fn find_by_owner(
+        &self,
+        owner_email: &crate::domain::common::EmailAddress,
+    ) -> Result<Vec<ResourceUsage>, RepositoryError> {
+        let storage = self.storage.lock().unwrap();
+        let owned: Vec<ResourceUsage> = storage
+            .values()
+            .filter(|usage| usage.owner_email() == owner_email)
+            .cloned()
+            .collect();
+        Ok(owned)
     }
 
     async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError> {
