@@ -74,7 +74,19 @@ impl<R: ResourceUsageRepository> UpdateResourceUsageUseCase<R> {
                     usage.resources(),
                     Some(usage.id()),
                 )
-                .await?;
+                .await
+                .map_err(|e| {
+                    // ResourceConflictErrorかどうかをチェックしてダウンキャスト
+                    if let Some(conflict_err) = e.downcast_ref::<crate::domain::services::resource_usage::errors::ResourceConflictError>() {
+                        ApplicationError::ResourceConflict {
+                            resource_description: conflict_err.resource_description.clone(),
+                            conflicting_usage_id: conflict_err.conflicting_usage_id.as_str().to_string(),
+                        }
+                    } else {
+                        // その他のエラー（RepositoryErrorなど）
+                        ApplicationError::Repository(crate::domain::ports::repositories::RepositoryError::Unknown(e.to_string()))
+                    }
+                })?;
 
             usage.update_time_period(new_period);
         }
