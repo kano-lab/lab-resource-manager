@@ -8,6 +8,8 @@ use tokio_util::task::TaskTracker;
 
 /// 操作をバックグラウンドで実行し、response URL経由で結果を送信
 ///
+/// 結果はエフェメラルメッセージ（コマンド実行ユーザーのみ表示）として送信されます。
+///
 /// # 引数
 /// * `task_tracker` - TaskTracker for managing background tasks
 /// * `http_client` - HTTP client for sending follow-up messages
@@ -32,7 +34,7 @@ where
             Err(err) => err,
         };
 
-        messages::send_followup(&http_client, &response_url, message).await;
+        messages::send_ephemeral(&http_client, &response_url, message).await;
     });
 
     SlackCommandEventResponse::new(SlackMessageContent::new().with_text("⏳ 処理中...".to_string()))
