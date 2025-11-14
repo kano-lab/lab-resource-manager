@@ -46,30 +46,17 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
             info!("✅ ユーザー登録成功: {}", email.as_str());
 
             // 成功時は予約モーダルをpush
-            if let Some(config) = &app.resource_config {
-                let initial_server = config.servers.first().map(|s| s.name.as_str());
-                let reserve_modal =
-                    reservation::create_reserve_modal(config, None, initial_server, None);
+            let config = &app.resource_config;
+            let initial_server = config.servers.first().map(|s| s.name.as_str());
+            let reserve_modal =
+                reservation::create_reserve_modal(config, None, initial_server, None);
 
-                info!("📋 予約モーダルをpushします...");
-                Ok(Some(SlackViewSubmissionResponse::Push(
-                    SlackViewSubmissionPushResponse {
-                        view: reserve_modal,
-                    },
-                )))
-            } else {
-                // 設定がない場合は成功メッセージのみ
-                let success_modal = result::create_success_modal(
-                    "登録完了",
-                    format!("メールアドレスを登録しました\n\n{}", email.as_str()),
-                );
-
-                Ok(Some(SlackViewSubmissionResponse::Update(
-                    SlackViewSubmissionUpdateResponse {
-                        view: success_modal,
-                    },
-                )))
-            }
+            info!("📋 予約モーダルをpushします...");
+            Ok(Some(SlackViewSubmissionResponse::Push(
+                SlackViewSubmissionPushResponse {
+                    view: reserve_modal,
+                },
+            )))
         }
         Err(e) => {
             error!("❌ ユーザー登録に失敗: {}", e);

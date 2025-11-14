@@ -26,26 +26,11 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     info!("🔄 予約更新要求: usage_id={}", usage_id_str);
 
-    // Check dependencies
-    let config = app
-        .resource_config
-        .as_ref()
-        .ok_or("ResourceConfigが設定されていません")?;
-
-    let slack_client = app
-        .slack_client
-        .as_ref()
-        .ok_or("Slackクライアントが設定されていません")?;
-
-    let bot_token = app
-        .bot_token
-        .as_ref()
-        .ok_or("Bot tokenが設定されていません")?;
-
-    let identity_repo = app
-        .identity_repo
-        .as_ref()
-        .ok_or("IdentityRepositoryが設定されていません")?;
+    // Get dependencies
+    let config = &app.resource_config;
+    let slack_client = &app.slack_client;
+    let bot_token = &app.bot_token;
+    let identity_repo = &app.identity_repo;
 
     let trigger_id = &block_actions.trigger_id;
 

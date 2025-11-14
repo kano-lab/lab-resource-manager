@@ -18,16 +18,9 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
     info!("🔍 予約更新データを抽出中...");
 
-    // Check dependencies
-    let update_usage_usecase = app
-        .update_usage_usecase
-        .as_ref()
-        .ok_or("UpdateUsageUseCaseが設定されていません")?;
-
-    let identity_repo = app
-        .identity_repo
-        .as_ref()
-        .ok_or("IdentityRepositoryが設定されていません")?;
+    // Get dependencies
+    let update_usage_usecase = &app.update_usage_usecase;
+    let identity_repo = &app.identity_repo;
 
     // Get usage_id from private_metadata
     let usage_id_str = form_data::get_private_metadata(view_submission)

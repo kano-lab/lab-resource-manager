@@ -19,21 +19,10 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     let action_id = action.action_id.to_string();
     info!("🔄 モーダル更新トリガー検出: {}", action_id);
 
-    // Check dependencies
-    let config = app
-        .resource_config
-        .as_ref()
-        .ok_or("ResourceConfigが設定されていません")?;
-
-    let slack_client = app
-        .slack_client
-        .as_ref()
-        .ok_or("Slackクライアントが設定されていません")?;
-
-    let bot_token = app
-        .bot_token
-        .as_ref()
-        .ok_or("Bot tokenが設定されていません")?;
+    // Get dependencies
+    let config = &app.resource_config;
+    let slack_client = &app.slack_client;
+    let bot_token = &app.bot_token;
 
     // Determine new values based on action
     let new_resource_type = if action_id == ACTION_RESERVE_RESOURCE_TYPE {

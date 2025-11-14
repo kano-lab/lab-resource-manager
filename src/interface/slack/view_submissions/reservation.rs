@@ -20,21 +20,10 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
     info!("🔍 予約フォームから値を抽出中...");
 
-    // Check dependencies
-    let create_usage_usecase = app
-        .create_usage_usecase
-        .as_ref()
-        .ok_or("CreateUsageUseCaseが設定されていません")?;
-
-    let identity_repo = app
-        .identity_repo
-        .as_ref()
-        .ok_or("IdentityRepositoryが設定されていません")?;
-
-    let config = app
-        .resource_config
-        .as_ref()
-        .ok_or("ResourceConfigが設定されていません")?;
+    // Get dependencies
+    let create_usage_usecase = &app.create_usage_usecase;
+    let identity_repo = &app.identity_repo;
+    let config = &app.resource_config;
 
     // Extract form values
     let resource_type = form_data::get_selected_option_text(view_submission, ACTION_RESERVE_RESOURCE_TYPE)

@@ -19,46 +19,34 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     let user_id = &event.user_id;
     let trigger_id = &event.trigger_id;
 
-    // Check required dependencies
-    let config = app
-        .resource_config
-        .as_ref()
-        .ok_or("リソース設定が読み込まれていません")?;
-
-    let slack_client = app
-        .slack_client
-        .as_ref()
-        .ok_or("Slackクライアントが初期化されていません")?;
-
-    let bot_token = app
-        .bot_token
-        .as_ref()
-        .ok_or("Bot tokenが設定されていません")?;
+    // Get dependencies
+    let config = &app.resource_config;
+    let slack_client = &app.slack_client;
+    let bot_token = &app.bot_token;
+    let identity_repo = &app.identity_repo;
 
     // Check if user is linked
-    if let Some(identity_repo) = &app.identity_repo {
-        let is_linked = user_resolver::is_user_linked(user_id, identity_repo).await;
+    let is_linked = user_resolver::is_user_linked(user_id, identity_repo).await;
 
-        if !is_linked {
-            // Unlinked: Show email registration modal
-            info!(
-                "ユーザー {} は未リンク。メールアドレス登録モーダルを表示します",
-                user_id
-            );
-
-            let modal = registration::create();
-            modals::open(slack_client, bot_token, trigger_id, modal).await?;
-
-            info!("✅ メールアドレス登録モーダルを開きました");
-            return Ok(SlackCommandEventResponse::new(SlackMessageContent::new()));
-        }
-
-        // Linked: Show reservation modal
+    if !is_linked {
+        // Unlinked: Show email registration modal
         info!(
-            "ユーザー {} はリンク済み。予約モーダルを表示します",
+            "ユーザー {} は未リンク。メールアドレス登録モーダルを表示します",
             user_id
         );
+
+        let modal = registration::create();
+        modals::open(slack_client, bot_token, trigger_id, modal).await?;
+
+        info!("✅ メールアドレス登録モーダルを開きました");
+        return Ok(SlackCommandEventResponse::new(SlackMessageContent::new()));
     }
+
+    // Linked: Show reservation modal
+    info!(
+        "ユーザー {} はリンク済み。予約モーダルを表示します",
+        user_id
+    );
 
     // Create and open reservation modal
     let initial_server = config.servers.first().map(|s| s.name.as_str());

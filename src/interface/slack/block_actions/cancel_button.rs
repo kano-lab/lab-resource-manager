@@ -25,16 +25,9 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     info!("🗑️ 予約キャンセル要求: usage_id={}", usage_id_str);
 
-    // Check dependencies
-    let delete_usage_usecase = app
-        .delete_usage_usecase
-        .as_ref()
-        .ok_or("DeleteUsageUseCaseが設定されていません")?;
-
-    let identity_repo = app
-        .identity_repo
-        .as_ref()
-        .ok_or("IdentityRepositoryが設定されていません")?;
+    // Get dependencies
+    let delete_usage_usecase = &app.delete_usage_usecase;
+    let identity_repo = &app.identity_repo;
 
     // Get user email
     let owner_email = user_resolver::resolve_user_email(&user.id, identity_repo).await?;

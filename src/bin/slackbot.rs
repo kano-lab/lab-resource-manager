@@ -112,15 +112,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bot_token = env::var("SLACK_BOT_TOKEN").expect("環境変数 SLACK_BOT_TOKEN が必要です");
     let bot_token = SlackApiToken::new(bot_token.into());
 
-    // SlackAppの作成（builderパターン）
+    // SlackAppの作成
     let slack_client = Arc::new(SlackClient::new(SlackClientHyperConnector::new()?));
-    let app = Arc::new(
-        SlackApp::new(grant_access_usecase)
-            .with_resource_usage(usage_repository.clone(), identity_repo.clone())
-            .with_resource_config(config_arc.clone())
-            .with_slack_client(slack_client)
-            .with_bot_token(bot_token),
-    );
+    let app = Arc::new(SlackApp::new(
+        grant_access_usecase,
+        usage_repository.clone(),
+        identity_repo.clone(),
+        config_arc.clone(),
+        slack_client,
+        bot_token,
+    ));
     println!("✅ Slack App を初期化しました");
 
     // 通知機能のセットアップ
@@ -203,10 +204,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(Some(response)) => {
                     println!("📤 ビュー応答を送信中...");
 
-                    let Some(token) = app.bot_token.as_ref() else {
-                        eprintln!("❌ Bot tokenが設定されていません");
-                        return;
-                    };
+                    let token = &app.bot_token;
                     let session = client.open_session(token);
 
                     match response {
