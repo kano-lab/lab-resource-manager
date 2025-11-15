@@ -19,6 +19,8 @@ pub(super) struct ExternalId {
 pub(super) struct IdMapper {
     file_path: PathBuf,
     mappings: Arc<Mutex<HashMap<String, ExternalId>>>,
+    /// 逆引きマップ: event_id -> domain_id (O(1)検索用)
+    reverse_mappings: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl IdMapper {
@@ -30,9 +32,16 @@ impl IdMapper {
             HashMap::new()
         };
 
+        // 逆引きマップを構築
+        let reverse_mappings: HashMap<String, String> = mappings
+            .iter()
+            .map(|(domain_id, external_id)| (external_id.event_id.clone(), domain_id.clone()))
+            .collect();
+
         Ok(Self {
             file_path,
             mappings: Arc::new(Mutex::new(mappings)),
+            reverse_mappings: Arc::new(Mutex::new(reverse_mappings)),
         })
     }
 
@@ -43,8 +52,19 @@ impl IdMapper {
         external_id: ExternalId,
     ) -> Result<(), RepositoryError> {
         let mut mappings = self.mappings.lock().unwrap();
+        let mut reverse_mappings = self.reverse_mappings.lock().unwrap();
+
+        // 既存のマッピングがある場合は逆引きマップから削除
+        if let Some(old_external_id) = mappings.get(domain_id) {
+            reverse_mappings.remove(&old_external_id.event_id);
+        }
+
+        // 新しいマッピングを追加
+        reverse_mappings.insert(external_id.event_id.clone(), domain_id.to_string());
         mappings.insert(domain_id.to_string(), external_id);
+
         drop(mappings);
+        drop(reverse_mappings);
 
         self.save_to_file()?;
         Ok(())
@@ -61,20 +81,24 @@ impl IdMapper {
 
     /// Event ID から Domain ID を取得（逆引き）
     pub(super) fn get_domain_id(&self, event_id: &str) -> Result<Option<String>, RepositoryError> {
-        let mappings = self.mappings.lock().unwrap();
-        for (domain_id, external_id) in mappings.iter() {
-            if external_id.event_id == event_id {
-                return Ok(Some(domain_id.clone()));
-            }
-        }
-        Ok(None)
+        let reverse_mappings = self.reverse_mappings.lock().unwrap();
+        Ok(reverse_mappings.get(event_id).cloned())
     }
 
     /// マッピングを削除
     pub(super) fn delete_mapping(&self, domain_id: &str) -> Result<(), RepositoryError> {
         let mut mappings = self.mappings.lock().unwrap();
+        let mut reverse_mappings = self.reverse_mappings.lock().unwrap();
+
+        // 逆引きマップからも削除
+        if let Some(external_id) = mappings.get(domain_id) {
+            reverse_mappings.remove(&external_id.event_id);
+        }
+
         mappings.remove(domain_id);
+
         drop(mappings);
+        drop(reverse_mappings);
 
         self.save_to_file()?;
         Ok(())

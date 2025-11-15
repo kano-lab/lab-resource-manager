@@ -24,11 +24,18 @@ impl UsageId {
     /// 既存のID文字列からUsageIdを再構築
     ///
     /// リポジトリから読み込んだデータを復元する際に使用します。
+    /// 入力文字列が有効なUUID形式であることを検証します。
     ///
     /// # Arguments
-    /// * `id` - ID文字列
-    pub fn from_string(id: String) -> Self {
-        Self(id)
+    /// * `id` - UUID形式のID文字列
+    ///
+    /// # Errors
+    /// 入力文字列が有効なUUID形式でない場合、エラーメッセージを返します。
+    pub fn from_string(id: String) -> Result<Self, String> {
+        // UUID形式のバリデーション
+        uuid::Uuid::parse_str(&id)
+            .map(|_| Self(id))
+            .map_err(|e| format!("Invalid UUID format: {}", e))
     }
 
     /// 文字列表現を取得

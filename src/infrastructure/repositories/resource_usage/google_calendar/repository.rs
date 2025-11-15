@@ -139,7 +139,8 @@ impl GoogleCalendarUsageRepository {
             // マッピングが見つからない場合（レガシーデータ）はevent_idをそのまま使用
             event_id.clone()
         });
-        let id = UsageId::from_string(domain_id);
+        let id = UsageId::from_string(domain_id)
+            .map_err(|e| RepositoryError::Unknown(format!("Invalid UsageId format: {}", e)))?;
 
         // owner_emailの決定ロジック
         let owner_email = event
@@ -391,46 +392,55 @@ impl GoogleCalendarUsageRepository {
         }
     }
 
-    /// すべてのカレンダーから特定のIDのイベントを検索
-    async fn find_event_across_calendars(
-        &self,
-        event_id: &str,
-    ) -> Result<Option<(Event, String)>, RepositoryError> {
+    /// カレンダーIDからリソースコンテキスト（サーバー名または部屋名）を取得
+    fn get_resource_context(&self, calendar_id: &str) -> Result<String, RepositoryError> {
         // サーバーカレンダーから検索
         for server in &self.config.servers {
-            if let Some(event) = self
-                .fetch_event_from_calendar(&server.calendar_id, event_id)
-                .await?
-            {
-                return Ok(Some((event, server.name.clone())));
+            if server.calendar_id == calendar_id {
+                return Ok(server.name.clone());
             }
         }
 
         // 部屋カレンダーから検索
         for room in &self.config.rooms {
-            if let Some(event) = self
-                .fetch_event_from_calendar(&room.calendar_id, event_id)
-                .await?
-            {
-                return Ok(Some((event, room.name.clone())));
+            if room.calendar_id == calendar_id {
+                return Ok(room.name.clone());
             }
         }
 
-        Ok(None)
+        Err(RepositoryError::Unknown(format!(
+            "カレンダーIDに対応するリソースが見つかりません: {}",
+            calendar_id
+        )))
     }
 }
 
 #[async_trait]
 impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
-        let event_id = id.as_str();
+        let domain_id = id.as_str();
 
-        if let Some((event, context)) = self.find_event_across_calendars(event_id).await? {
-            let usage = self.parse_event(event, &context)?;
-            Ok(Some(usage))
-        } else {
-            Ok(None)
-        }
+        // Domain ID から外部ID を取得
+        let external_id = match self.id_mapper.get_external_id(domain_id)? {
+            Some(id) => id,
+            None => return Ok(None), // マッピングが見つからない場合はNone
+        };
+
+        // 特定のカレンダーから直接イベントを取得
+        let event = match self
+            .fetch_event_from_calendar(&external_id.calendar_id, &external_id.event_id)
+            .await?
+        {
+            Some(event) => event,
+            None => return Ok(None), // イベントが見つからない場合はNone
+        };
+
+        // リソースコンテキストを取得
+        let resource_context = self.get_resource_context(&external_id.calendar_id)?;
+
+        // イベントをパース
+        let usage = self.parse_event(event, &resource_context)?;
+        Ok(Some(usage))
     }
 
     async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
@@ -492,27 +502,68 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     }
 
     async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError> {
-        let calendar_id = self.get_calendar_id_for_usage(usage)?;
+        let new_calendar_id = self.get_calendar_id_for_usage(usage)?;
         let event = self.create_event_from_usage(usage)?;
         let domain_id = usage.id().as_str();
 
         // Domain IDから外部IDを検索
         if let Some(external_id) = self.id_mapper.get_external_id(domain_id)? {
-            // 既存 → 更新
-            self.hub
-                .events()
-                .update(event, &external_id.calendar_id, &external_id.event_id)
-                .doit()
-                .await
-                .map_err(|e| {
-                    RepositoryError::ConnectionError(format!("イベント更新に失敗: {}", e))
+            // 既存イベント
+            if external_id.calendar_id == new_calendar_id {
+                // 同じカレンダー → 更新
+                self.hub
+                    .events()
+                    .update(event, &external_id.calendar_id, &external_id.event_id)
+                    .doit()
+                    .await
+                    .map_err(|e| {
+                        RepositoryError::ConnectionError(format!("イベント更新に失敗: {}", e))
+                    })?;
+            } else {
+                // カレンダーが変更された → 古いカレンダーから削除し、新しいカレンダーに作成
+                // 古いイベントを削除
+                self.hub
+                    .events()
+                    .delete(&external_id.calendar_id, &external_id.event_id)
+                    .doit()
+                    .await
+                    .map_err(|e| {
+                        RepositoryError::ConnectionError(format!("古いイベントの削除に失敗: {}", e))
+                    })?;
+
+                // 新しいカレンダーにイベントを作成
+                let (_response, created_event) = self
+                    .hub
+                    .events()
+                    .insert(event, &new_calendar_id)
+                    .doit()
+                    .await
+                    .map_err(|e| {
+                        RepositoryError::ConnectionError(format!(
+                            "新しいカレンダーへのイベント作成に失敗: {}",
+                            e
+                        ))
+                    })?;
+
+                // 新しいEvent IDを取得してマッピングを更新
+                let new_event_id = created_event.id.ok_or_else(|| {
+                    RepositoryError::Unknown("作成されたイベントにIDがありません".to_string())
                 })?;
+
+                self.id_mapper.save_mapping(
+                    domain_id,
+                    ExternalId {
+                        calendar_id: new_calendar_id,
+                        event_id: new_event_id,
+                    },
+                )?;
+            }
         } else {
             // 新規 → 作成
             let (_response, created_event) = self
                 .hub
                 .events()
-                .insert(event, &calendar_id)
+                .insert(event, &new_calendar_id)
                 .doit()
                 .await
                 .map_err(|e| {
@@ -527,7 +578,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             self.id_mapper.save_mapping(
                 domain_id,
                 ExternalId {
-                    calendar_id: calendar_id.clone(),
+                    calendar_id: new_calendar_id,
                     event_id,
                 },
             )?;

@@ -143,7 +143,7 @@ mod tests {
         let end = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
         let time_period = TimePeriod::new(start, end).unwrap();
         let usage = ResourceUsage::reconstruct(
-            UsageId::from_string("test-id".to_string()),
+            UsageId::from_string("550e8400-e29b-41d4-a716-446655440000".to_string()).unwrap(),
             email,
             time_period,
             resources,
@@ -183,7 +183,7 @@ mod tests {
         let end = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
         let time_period = TimePeriod::new(start, end).unwrap();
         let usage = ResourceUsage::reconstruct(
-            UsageId::from_string("test-id".to_string()),
+            UsageId::from_string("550e8400-e29b-41d4-a716-446655440000".to_string()).unwrap(),
             email,
             time_period,
             resources,
@@ -220,7 +220,7 @@ mod tests {
         let end = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
         let time_period = TimePeriod::new(start, end).unwrap();
         let usage = ResourceUsage::reconstruct(
-            UsageId::from_string("test-id".to_string()),
+            UsageId::from_string("550e8400-e29b-41d4-a716-446655440000".to_string()).unwrap(),
             email,
             time_period,
             resources,
