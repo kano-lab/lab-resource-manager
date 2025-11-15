@@ -1,7 +1,6 @@
 /// リソース使用予定の識別子
 ///
 /// ドメイン層で管理する一意なID（UUID v4）。
-/// 外部システム（Google Calendarなど）のIDとのマッピングはインフラ層で行う。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UsageId(String);
 

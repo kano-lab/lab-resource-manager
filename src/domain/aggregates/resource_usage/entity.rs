@@ -15,7 +15,7 @@ pub struct ResourceUsage {
 }
 
 impl ResourceUsage {
-    /// 新しいリソース使用予定を作成する（UUID自動生成）
+    /// 新しいリソース使用予定を作成する
     ///
     /// # Arguments
     /// * `owner_email` - 所有者のメールアドレス
@@ -36,7 +36,7 @@ impl ResourceUsage {
         }
 
         Ok(Self {
-            id: UsageId::new(), // UUIDを自動生成
+            id: UsageId::new(),
             owner_email,
             time_period,
             resources,
