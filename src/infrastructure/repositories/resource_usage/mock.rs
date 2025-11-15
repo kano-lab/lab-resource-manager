@@ -70,7 +70,6 @@ impl ResourceUsageRepository for MockUsageRepository {
 
     async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError> {
         let mut storage = self.storage.lock().unwrap();
-        // UUID戦略なので、常に有効なIDが存在する
         storage.insert(usage.id().as_str().to_string(), usage.clone());
         Ok(())
     }
