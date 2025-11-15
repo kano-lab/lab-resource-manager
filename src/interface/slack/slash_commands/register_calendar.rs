@@ -22,15 +22,9 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     if text.is_empty() {
         return Ok(SlackCommandEventResponse::new(
             SlackMessageContent::new()
-                .with_text("⚠️  このコマンドは非推奨です。代わりに `/reserve` コマンドを使用してください。\n\n使い方: `/register-calendar <your-email@gmail.com>`".to_string()),
+                .with_text("使い方: `/register-calendar <your-email@gmail.com>`".to_string()),
         ));
     }
-
-    // Log deprecation warning
-    info!(
-        "⚠️  非推奨コマンド /register-calendar が使用されました: user={}",
-        user_id
-    );
 
     let grant_access_usecase = app.grant_access_usecase.clone();
     let email_str = text.to_string();
@@ -50,7 +44,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
                 .map_err(|e| format!("❌ カレンダー登録に失敗: {}", e))?;
 
             Ok(format!(
-                "✅ 登録完了！カレンダーへのアクセス権を付与しました: {}\n\n⚠️  今後は `/reserve` コマンドを使用してください。このコマンドは非推奨です。",
+                "✅ 登録完了！カレンダーへのアクセス権を付与しました: {}",
                 email.as_str()
             ))
         },

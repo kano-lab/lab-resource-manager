@@ -25,4 +25,3 @@
 //! - `modals`: モーダル操作（開く、更新）
 
 pub mod messages;
-pub mod modals;

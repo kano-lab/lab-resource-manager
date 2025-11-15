@@ -35,29 +35,4 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
             )),
         }
     }
-
-    /// インタラクションイベントをルーティング
-    ///
-    /// # 引数
-    /// * `event` - Slackからのインタラクションイベント（ボタンクリック、モーダル送信など）
-    ///
-    /// # 戻り値
-    /// View Submissionの場合はレスポンス（結果モーダルなど）を返す
-    pub async fn route_interaction(
-        &self,
-        event: SlackInteractionEvent,
-    ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
-        info!("🔘 インタラクションイベントを受信（未実装）");
-
-        match &event {
-            SlackInteractionEvent::ViewClosed(_) => {
-                info!("  → ViewClosedイベント（無視）");
-                Ok(None)
-            }
-            _ => {
-                info!("  → インタラクションイベント（未実装）");
-                Ok(None)
-            }
-        }
-    }
 }
