@@ -27,7 +27,7 @@ pub async fn handle(
     let grant_access_usecase = app.grant_access_usecase.clone();
     let email_str = text.to_string();
 
-    // Execute in background
+    // バックグラウンドで実行
     Ok(background_task::execute_with_response(
         &app.task_tracker,
         app.http_client.clone(),
