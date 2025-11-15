@@ -10,12 +10,14 @@ use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use google_calendar3::{
-    api::Event, hyper_rustls::{HttpsConnector, HttpsConnectorBuilder},
+    CalendarHub,
+    api::Event,
+    hyper_rustls::{HttpsConnector, HttpsConnectorBuilder},
     hyper_util::{
         client::legacy::{Client, connect::HttpConnector},
         rt::TokioExecutor,
     },
-    yup_oauth2, CalendarHub,
+    yup_oauth2,
 };
 use std::sync::Arc;
 
@@ -55,8 +57,9 @@ impl GoogleCalendarUsageRepository {
         let hub = CalendarHub::new(client, auth);
 
         // ID マッピングの初期化
-        let id_mapper =
-            IdMapper::new(std::path::PathBuf::from("data/google_calendar_mappings.json"))?;
+        let id_mapper = IdMapper::new(std::path::PathBuf::from(
+            "data/google_calendar_mappings.json",
+        ))?;
 
         Ok(Self {
             hub,
