@@ -8,5 +8,6 @@
     "headings": true,
     "strict": false,
     "stern": false
-  }
+  },
+  "ignores": ["review.md"]
 }
