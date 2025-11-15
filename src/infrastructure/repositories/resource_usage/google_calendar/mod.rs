@@ -1,3 +1,5 @@
+mod id_mapper;
+
 use crate::domain::aggregates::resource_usage::{
     entity::ResourceUsage,
     factory::ResourceFactory,
@@ -6,19 +8,17 @@ use crate::domain::aggregates::resource_usage::{
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{RepositoryError, ResourceUsageRepository};
 use crate::infrastructure::config::ResourceConfig;
-use crate::infrastructure::repositories::resource_usage::id_mapper::{IdMapper, JsonFileIdMapper};
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use google_calendar3::{
-    CalendarHub,
-    api::Event,
-    hyper_rustls::{HttpsConnector, HttpsConnectorBuilder},
+    api::Event, hyper_rustls::{HttpsConnector, HttpsConnectorBuilder},
     hyper_util::{
         client::legacy::{Client, connect::HttpConnector},
         rt::TokioExecutor,
     },
-    yup_oauth2,
+    yup_oauth2, CalendarHub,
 };
+use id_mapper::{ExternalId, IdMapper};
 use std::sync::Arc;
 
 /// Google Calendar APIを使用したResourceUsageリポジトリ実装
@@ -26,7 +26,7 @@ pub struct GoogleCalendarUsageRepository {
     hub: CalendarHub<HttpsConnector<HttpConnector>>,
     config: ResourceConfig,
     service_account_email: String,
-    id_mapper: Arc<dyn IdMapper>,
+    id_mapper: Arc<IdMapper>,
 }
 
 impl GoogleCalendarUsageRepository {
@@ -57,9 +57,8 @@ impl GoogleCalendarUsageRepository {
         let hub = CalendarHub::new(client, auth);
 
         // ID マッピングの初期化
-        let id_mapper = JsonFileIdMapper::new(std::path::PathBuf::from(
-            "data/resource_usage_mappings.json",
-        ))?;
+        let id_mapper =
+            IdMapper::new(std::path::PathBuf::from("data/google_calendar_mappings.json"))?;
 
         Ok(Self {
             hub,
@@ -496,12 +495,12 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         let event = self.create_event_from_usage(usage)?;
         let domain_id = usage.id().as_str();
 
-        // Domain IDからEvent IDを検索
-        if let Some(mapping) = self.id_mapper.get_event_id(domain_id)? {
+        // Domain IDから外部IDを検索
+        if let Some(external_id) = self.id_mapper.get_external_id(domain_id)? {
             // 既存 → 更新
             self.hub
                 .events()
-                .update(event, &calendar_id, &mapping.event_id)
+                .update(event, &external_id.calendar_id, &external_id.event_id)
                 .doit()
                 .await
                 .map_err(|e| {
@@ -524,8 +523,13 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
                 RepositoryError::Unknown("作成されたイベントにIDがありません".to_string())
             })?;
 
-            self.id_mapper
-                .save_mapping(domain_id, "google_calendar", &event_id, &calendar_id)?;
+            self.id_mapper.save_mapping(
+                domain_id,
+                ExternalId {
+                    calendar_id: calendar_id.clone(),
+                    event_id,
+                },
+            )?;
         }
 
         Ok(())
@@ -534,16 +538,16 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     async fn delete(&self, id: &UsageId) -> Result<(), RepositoryError> {
         let domain_id = id.as_str();
 
-        // Domain IDからEvent IDとCalendar IDを取得
-        let mapping = self
+        // Domain IDから外部IDを取得
+        let external_id = self
             .id_mapper
-            .get_event_id(domain_id)?
+            .get_external_id(domain_id)?
             .ok_or(RepositoryError::NotFound)?;
 
         // イベントを削除
         self.hub
             .events()
-            .delete(&mapping.calendar_id, &mapping.event_id)
+            .delete(&external_id.calendar_id, &external_id.event_id)
             .doit()
             .await
             .map_err(|e| RepositoryError::ConnectionError(format!("イベント削除に失敗: {}", e)))?;
