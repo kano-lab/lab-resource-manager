@@ -64,18 +64,13 @@ impl<R: ResourceUsageRepository> CreateResourceUsageUseCase<R> {
                 ) => ApplicationError::Repository(repo_err),
             })?;
 
-        // 空のIDで新しいResourceUsageを作成（リポジトリが自動採番）
-        let usage = ResourceUsage::new(
-            UsageId::new("".to_string()),
-            owner_email,
-            time_period,
-            resources,
-            notes,
-        )?;
+        // 新しいResourceUsageを作成（UUID自動生成）
+        let usage = ResourceUsage::new(owner_email, time_period, resources, notes)?;
 
-        // 作成して生成されたIDを取得
-        let generated_id = self.repository.create(&usage).await?;
+        // 保存
+        self.repository.save(&usage).await?;
 
-        Ok(generated_id)
+        // 生成されたIDを返す
+        Ok(usage.id().clone())
     }
 }

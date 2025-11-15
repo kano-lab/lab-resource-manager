@@ -96,7 +96,7 @@ impl<R: ResourceUsageRepository> UpdateResourceUsageUseCase<R> {
         }
 
         // 更新
-        self.repository.update(&usage).await?;
+        self.repository.save(&usage).await?;
 
         Ok(())
     }

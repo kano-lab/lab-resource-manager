@@ -142,8 +142,8 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
         let time_period = TimePeriod::new(start, end).unwrap();
-        let usage = ResourceUsage::new(
-            UsageId::new("test-id".to_string()),
+        let usage = ResourceUsage::reconstruct(
+            UsageId::from_string("test-id".to_string()),
             email,
             time_period,
             resources,
@@ -182,8 +182,8 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
         let time_period = TimePeriod::new(start, end).unwrap();
-        let usage = ResourceUsage::new(
-            UsageId::new("test-id".to_string()),
+        let usage = ResourceUsage::reconstruct(
+            UsageId::from_string("test-id".to_string()),
             email,
             time_period,
             resources,
@@ -219,8 +219,8 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
         let time_period = TimePeriod::new(start, end).unwrap();
-        let usage = ResourceUsage::new(
-            UsageId::new("test-id".to_string()),
+        let usage = ResourceUsage::reconstruct(
+            UsageId::from_string("test-id".to_string()),
             email,
             time_period,
             resources,

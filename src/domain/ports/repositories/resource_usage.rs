@@ -37,21 +37,14 @@ pub trait ResourceUsageRepository {
         owner_email: &EmailAddress,
     ) -> Result<Vec<ResourceUsage>, RepositoryError>;
 
-    /// 新しいResourceUsageを作成
+    /// ResourceUsageを保存（新規作成または更新）
     ///
-    /// # Returns
-    /// APIが生成したResourceUsageのID
+    /// Domain ID (UUID) を持つResourceUsageを保存します。
+    /// マッピングが存在する場合は更新、存在しない場合は新規作成します。
     ///
     /// # Errors
     /// - リポジトリエラー
-    async fn create(&self, usage: &ResourceUsage) -> Result<UsageId, RepositoryError>;
-
-    /// 既存のResourceUsageを更新
-    ///
-    /// # Errors
-    /// - 指定されたIDのResourceUsageが見つからない場合
-    /// - リポジトリエラー
-    async fn update(&self, usage: &ResourceUsage) -> Result<(), RepositoryError>;
+    async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError>;
 
     /// ResourceUsageを削除
     async fn delete(&self, id: &UsageId) -> Result<(), RepositoryError>;
