@@ -48,7 +48,8 @@ calendar_id = "your-calendar-id@group.calendar.google.com"  # リポジトリ実
 # リソースごとに通知先を設定
 [[servers.notifications]]
 type = "slack"  # 通知実装の選択
-webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+bot_token = "xoxb-YOUR-BOT-TOKEN"
+channel_id = "C01234567..."
 # オプション: 通知のタイムゾーンを設定（IANA形式）
 # 指定しない場合はシステムのローカルタイムゾーンで表示されます
 # timezone = "Asia/Tokyo"
@@ -72,7 +73,8 @@ calendar_id = "room-calendar-id@group.calendar.google.com"
 
 [[rooms.notifications]]
 type = "slack"
-webhook_url = "https://hooks.slack.com/services/YOUR/ROOM/WEBHOOK"
+bot_token = "xoxb-YOUR-BOT-TOKEN"
+channel_id = "C01234567..."
 # timezone = "Europe/London"
 ```
 
