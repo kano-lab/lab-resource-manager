@@ -139,8 +139,7 @@ impl GoogleCalendarUsageRepository {
             // マッピングが見つからない場合（レガシーデータ）はevent_idをそのまま使用
             event_id.clone()
         });
-        let id = UsageId::from_string(domain_id)
-            .map_err(|e| RepositoryError::Unknown(format!("Invalid UsageId format: {}", e)))?;
+        let id = UsageId::from_string(domain_id);
 
         // owner_emailの決定ロジック
         let owner_email = event

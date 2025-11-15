@@ -1,6 +1,7 @@
 /// リソース使用予定の識別子
 ///
-/// ドメイン層で管理する一意なID（UUID v4）。
+/// ドメイン層で管理する一意なID。
+/// デフォルトではUUID v4を生成しますが、外部システムのIDも受け入れます。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UsageId(String);
 
@@ -24,18 +25,11 @@ impl UsageId {
     /// 既存のID文字列からUsageIdを再構築
     ///
     /// リポジトリから読み込んだデータを復元する際に使用します。
-    /// 入力文字列が有効なUUID形式であることを検証します。
     ///
     /// # Arguments
-    /// * `id` - UUID形式のID文字列
-    ///
-    /// # Errors
-    /// 入力文字列が有効なUUID形式でない場合、エラーメッセージを返します。
-    pub fn from_string(id: String) -> Result<Self, String> {
-        // UUID形式のバリデーション
-        uuid::Uuid::parse_str(&id)
-            .map(|_| Self(id))
-            .map_err(|e| format!("Invalid UUID format: {}", e))
+    /// * `id` - ID文字列
+    pub fn from_string(id: String) -> Self {
+        Self(id)
     }
 
     /// 文字列表現を取得
