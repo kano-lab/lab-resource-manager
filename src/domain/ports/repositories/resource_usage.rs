@@ -37,7 +37,13 @@ pub trait ResourceUsageRepository {
         owner_email: &EmailAddress,
     ) -> Result<Vec<ResourceUsage>, RepositoryError>;
 
-    /// ResourceUsageを保存
+    /// ResourceUsageを保存（新規作成または更新）
+    ///
+    /// Domain ID (UUID) を持つResourceUsageを保存します。
+    /// マッピングが存在する場合は更新、存在しない場合は新規作成します。
+    ///
+    /// # Errors
+    /// - リポジトリエラー
     async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError>;
 
     /// ResourceUsageを削除

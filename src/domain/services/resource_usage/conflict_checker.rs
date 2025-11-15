@@ -1,6 +1,6 @@
 use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod, UsageId};
 use crate::domain::ports::repositories::ResourceUsageRepository;
-use crate::domain::services::resource_usage::errors::ResourceConflictError;
+use crate::domain::services::resource_usage::errors::{ConflictCheckError, ResourceConflictError};
 
 /// リソース競合チェックサービス
 ///
@@ -33,7 +33,7 @@ impl ResourceConflictChecker {
         time_period: &TimePeriod,
         resources: &[Resource],
         exclude_usage_id: Option<&UsageId>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), ConflictCheckError> {
         // 指定期間と重複する予約を検索
         let overlapping = repository.find_overlapping(time_period).await?;
 
@@ -50,8 +50,8 @@ impl ResourceConflictChecker {
                 // 既存予約のリソースと競合チェック
                 for existing_resource in existing_usage.resources() {
                     if new_resource.conflicts_with(existing_resource) {
-                        return Err(Box::new(ResourceConflictError::new(
-                            format!("{:?}", new_resource),
+                        return Err(ConflictCheckError::Conflict(ResourceConflictError::new(
+                            new_resource.to_string(),
                             existing_usage.id().clone(),
                         )));
                     }

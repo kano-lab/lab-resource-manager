@@ -1,3 +1,4 @@
+use super::id_mapper::{ExternalId, IdMapper};
 use crate::domain::aggregates::resource_usage::{
     entity::ResourceUsage,
     factory::ResourceFactory,
@@ -18,12 +19,14 @@ use google_calendar3::{
     },
     yup_oauth2,
 };
+use std::sync::Arc;
 
 /// Google Calendar APIを使用したResourceUsageリポジトリ実装
 pub struct GoogleCalendarUsageRepository {
     hub: CalendarHub<HttpsConnector<HttpConnector>>,
     config: ResourceConfig,
     service_account_email: String,
+    id_mapper: Arc<IdMapper>,
 }
 
 impl GoogleCalendarUsageRepository {
@@ -53,10 +56,17 @@ impl GoogleCalendarUsageRepository {
 
         let hub = CalendarHub::new(client, auth);
 
+        // ID マッピングの初期化
+        // TODO(#41): マッピングファイルパスを設定ファイルまたは環境変数から読み込む
+        let id_mapper = IdMapper::new(std::path::PathBuf::from(
+            "data/google_calendar_mappings.json",
+        ))?;
+
         Ok(Self {
             hub,
             config,
             service_account_email,
+            id_mapper: Arc::new(id_mapper),
         })
     }
 
@@ -124,7 +134,13 @@ impl GoogleCalendarUsageRepository {
         event: Event,
         resource_context: &str,
     ) -> Result<ResourceUsage, RepositoryError> {
-        let id = UsageId::new(event.id.clone().unwrap_or_default());
+        // Event ID から Domain ID を取得
+        let event_id = event.id.clone().unwrap_or_default();
+        let domain_id = self.id_mapper.get_domain_id(&event_id)?.unwrap_or_else(|| {
+            // マッピングが見つからない場合（レガシーデータ）はevent_idをそのまま使用
+            event_id.clone()
+        });
+        let id = UsageId::from_string(domain_id);
 
         // owner_emailの決定ロジック
         let owner_email = event
@@ -144,7 +160,12 @@ impl GoogleCalendarUsageRepository {
                         .next()
                         .and_then(|line| line.strip_prefix("予約者: "))
                 })
-                .unwrap_or(owner_email) // descriptionから取得できない場合はサービスアカウントをフォールバック
+                .ok_or_else(|| {
+                    RepositoryError::Unknown(
+                        "サービスアカウントで作成されたイベントのdescriptionにユーザー情報がありません"
+                            .to_string(),
+                    )
+                })?
         } else {
             owner_email
         };
@@ -177,7 +198,8 @@ impl GoogleCalendarUsageRepository {
             desc.split_once("\n\n").map(|(_, notes)| notes.to_string())
         });
 
-        ResourceUsage::new(id, user, time_period, items, notes).map_err(RepositoryError::from)
+        ResourceUsage::reconstruct(id, user, time_period, items, notes)
+            .map_err(RepositoryError::from)
     }
 
     /// メールアドレスからEmailAddressを作成
@@ -219,7 +241,9 @@ impl GoogleCalendarUsageRepository {
     }
 
     /// ResourcesからGPUデバイス仕様文字列を生成
-    /// 例: \[GPU(0), GPU(1), GPU(5)\] -> "0-1,5"
+    ///
+    /// GPUリソースからデバイス番号を抽出してソートし、
+    /// カンマ区切りの文字列として返す（例: "0,1,5,7"）
     fn format_gpu_spec(&self, resources: &[Resource]) -> Option<String> {
         let mut device_numbers: Vec<u32> = resources
             .iter()
@@ -235,44 +259,53 @@ impl GoogleCalendarUsageRepository {
 
         device_numbers.sort_unstable();
 
-        // 連続する番号を範囲表記に変換
-        let mut result = Vec::new();
-        let mut i = 0;
-        while i < device_numbers.len() {
-            let start = device_numbers[i];
-            let mut end = start;
-
-            // 連続する番号を探す
-            while i + 1 < device_numbers.len() && device_numbers[i + 1] == end + 1 {
-                i += 1;
-                end = device_numbers[i];
-            }
-
-            // 範囲表記または単一番号
-            if start == end {
-                result.push(start.to_string());
-            } else if start + 1 == end {
-                // 2つだけの場合は範囲表記を使わない
-                result.push(start.to_string());
-                result.push(end.to_string());
-            } else {
-                result.push(format!("{}-{}", start, end));
-            }
-
-            i += 1;
-        }
-
-        Some(result.join(","))
+        Some(
+            device_numbers
+                .iter()
+                .map(|n| n.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        )
     }
 
     /// ResourceUsageから適切なカレンダーIDを取得
+    ///
+    /// # 前提条件
+    /// このメソッドは、ResourceUsage内のすべてのリソースが同一のカレンダーに属することを前提としています。
+    /// （例: すべてGPU、またはすべて部屋）
+    /// 混在している場合はエラーを返します。
     fn get_calendar_id_for_usage(&self, usage: &ResourceUsage) -> Result<String, RepositoryError> {
         let resources = usage.resources();
         if resources.is_empty() {
             return Err(RepositoryError::Unknown("リソースが空です".to_string()));
         }
 
-        match &resources[0] {
+        // すべてのリソースが同じタイプ（GPU or Room）であることを検証
+        let first_resource = &resources[0];
+        let all_same_type = match first_resource {
+            Resource::Gpu(first_gpu) => {
+                // すべてのリソースがGPUで、同じサーバーに属することを確認
+                let server_name = first_gpu.server();
+                resources
+                    .iter()
+                    .all(|r| matches!(r, Resource::Gpu(gpu) if gpu.server() == server_name))
+            }
+            Resource::Room { name: first_name } => {
+                // すべてのリソースが同じ部屋であることを確認
+                resources
+                    .iter()
+                    .all(|r| matches!(r, Resource::Room { name } if name == first_name))
+            }
+        };
+
+        if !all_same_type {
+            return Err(RepositoryError::Unknown(
+                "複数の異なるリソースタイプまたは異なるカレンダーに属するリソースが混在しています"
+                    .to_string(),
+            ));
+        }
+
+        match first_resource {
             Resource::Gpu(gpu) => {
                 let server = self.config.get_server(gpu.server()).ok_or_else(|| {
                     RepositoryError::Unknown(format!("サーバーが見つかりません: {}", gpu.server()))
@@ -294,7 +327,12 @@ impl GoogleCalendarUsageRepository {
     }
 
     /// ResourceUsageをGoogle Calendar Eventに変換
+    ///
+    /// # 前提条件
+    /// このメソッドは、get_calendar_id_for_usageで検証済みのResourceUsageを受け取ることを前提としています。
+    /// すなわち、すべてのリソースが同一のカレンダーに属していることが保証されています。
     fn create_event_from_usage(&self, usage: &ResourceUsage) -> Result<Event, RepositoryError> {
+        // 注: get_calendar_id_for_usageで検証済みのため、resources()[0]は安全に使用できる
         let summary = match &usage.resources()[0] {
             Resource::Gpu(_) => self.format_gpu_spec(usage.resources()).ok_or_else(|| {
                 RepositoryError::Unknown("GPUデバイス仕様の生成に失敗しました".to_string())
@@ -302,7 +340,7 @@ impl GoogleCalendarUsageRepository {
             Resource::Room { name } => name.clone(),
         };
 
-        // descriptionに予約者情報を含める
+        // descriptionに予約者情報と備考を含める
         let description = {
             let mut desc = format!("予約者: {}", usage.owner_email().as_str());
             if let Some(notes) = usage.notes() {
@@ -311,7 +349,7 @@ impl GoogleCalendarUsageRepository {
             desc
         };
 
-        let mut event = Event {
+        Ok(Event {
             summary: Some(summary),
             description: Some(description),
             start: Some(google_calendar3::api::EventDateTime {
@@ -324,15 +362,9 @@ impl GoogleCalendarUsageRepository {
             }),
             // NOTE: attendeesを追加するとDomain-Wide Delegationが必要になるため、
             // 予約者情報はdescriptionに含めています
+            // NOTE: Event IDはGoogle Calendar側で自動生成され、id_mapperで管理されます
             ..Default::default()
-        };
-
-        // 既存のIDがある場合は設定（更新時）
-        if !usage.id().as_str().is_empty() {
-            event.id = Some(usage.id().as_str().to_string());
-        }
-
-        Ok(event)
+        })
     }
 
     /// 特定のカレンダーから特定のIDのイベントを取得
@@ -344,8 +376,12 @@ impl GoogleCalendarUsageRepository {
         match self.hub.events().get(calendar_id, event_id).doit().await {
             Ok((_response, event)) => Ok(Some(event)),
             Err(e) => {
-                // 404エラーの場合はNoneを返す
-                if e.to_string().contains("404") {
+                // HTTPステータスコード404の場合はNoneを返す
+                // google_calendar3のエラーは構造化されていないため、
+                // エラーメッセージから404を検出する
+                // TODO(#41): 文字列マッチングは脆弱。構造化されたエラー型またはHTTPステータスコードを直接チェック
+                let error_msg = e.to_string();
+                if error_msg.contains("404") || error_msg.contains("Not Found") {
                     Ok(None)
                 } else {
                     Err(RepositoryError::ConnectionError(format!(
@@ -357,46 +393,55 @@ impl GoogleCalendarUsageRepository {
         }
     }
 
-    /// すべてのカレンダーから特定のIDのイベントを検索
-    async fn find_event_across_calendars(
-        &self,
-        event_id: &str,
-    ) -> Result<Option<(Event, String)>, RepositoryError> {
+    /// カレンダーIDからリソースコンテキスト（サーバー名または部屋名）を取得
+    fn get_resource_context(&self, calendar_id: &str) -> Result<String, RepositoryError> {
         // サーバーカレンダーから検索
         for server in &self.config.servers {
-            if let Some(event) = self
-                .fetch_event_from_calendar(&server.calendar_id, event_id)
-                .await?
-            {
-                return Ok(Some((event, server.name.clone())));
+            if server.calendar_id == calendar_id {
+                return Ok(server.name.clone());
             }
         }
 
         // 部屋カレンダーから検索
         for room in &self.config.rooms {
-            if let Some(event) = self
-                .fetch_event_from_calendar(&room.calendar_id, event_id)
-                .await?
-            {
-                return Ok(Some((event, room.name.clone())));
+            if room.calendar_id == calendar_id {
+                return Ok(room.name.clone());
             }
         }
 
-        Ok(None)
+        Err(RepositoryError::Unknown(format!(
+            "カレンダーIDに対応するリソースが見つかりません: {}",
+            calendar_id
+        )))
     }
 }
 
 #[async_trait]
 impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
-        let event_id = id.as_str();
+        let domain_id = id.as_str();
 
-        if let Some((event, context)) = self.find_event_across_calendars(event_id).await? {
-            let usage = self.parse_event(event, &context)?;
-            Ok(Some(usage))
-        } else {
-            Ok(None)
-        }
+        // Domain ID から外部ID を取得
+        let external_id = match self.id_mapper.get_external_id(domain_id)? {
+            Some(id) => id,
+            None => return Ok(None), // マッピングが見つからない場合はNone
+        };
+
+        // 特定のカレンダーから直接イベントを取得
+        let event = match self
+            .fetch_event_from_calendar(&external_id.calendar_id, &external_id.event_id)
+            .await?
+        {
+            Some(event) => event,
+            None => return Ok(None), // イベントが見つからない場合はNone
+        };
+
+        // リソースコンテキストを取得
+        let resource_context = self.get_resource_context(&external_id.calendar_id)?;
+
+        // イベントをパース
+        let usage = self.parse_event(event, &resource_context)?;
+        Ok(Some(usage))
     }
 
     async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
@@ -415,6 +460,16 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         Ok(usages)
     }
 
+    /// 指定期間と重複するResourceUsageを検索
+    ///
+    /// # パフォーマンスに関する注意
+    /// 現在の実装では、すべての未来のイベントを取得してからメモリ上でフィルタリングしています。
+    /// Google Calendar APIには時間範囲での検索機能がありますが、複数カレンダーにまたがる
+    /// 検索を効率的に行うための十分なクエリ機能がないため、この実装を採用しています。
+    ///
+    /// 将来的な改善案:
+    /// - 各カレンダーに対して時間範囲クエリを並列実行
+    /// - 結果のキャッシング（短時間の重複チェックに有効）
     async fn find_overlapping(
         &self,
         time_period: &TimePeriod,
@@ -426,6 +481,16 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             .collect())
     }
 
+    /// 特定のユーザーが所有するResourceUsageを検索
+    ///
+    /// # パフォーマンスに関する注意
+    /// 現在の実装では、すべての未来のイベントを取得してからメモリ上でフィルタリングしています。
+    /// Google Calendar APIには所有者による検索機能がありますが、複数カレンダーにまたがる
+    /// 検索と、descriptionフィールドからの所有者抽出が必要なため、この実装を採用しています。
+    ///
+    /// 将来的な改善案:
+    /// - ユーザーごとのイベントキャッシング
+    /// - 定期的なバックグラウンド同期によるローカルインデックス構築
     async fn find_by_owner(
         &self,
         owner_email: &EmailAddress,
@@ -438,80 +503,111 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     }
 
     async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError> {
-        let calendar_id = self.get_calendar_id_for_usage(usage)?;
+        let new_calendar_id = self.get_calendar_id_for_usage(usage)?;
         let event = self.create_event_from_usage(usage)?;
-        let event_id = usage.id().as_str();
+        let domain_id = usage.id().as_str();
 
-        // IDが空の場合は新規作成、存在する場合は更新
-        if event_id.is_empty() {
-            // 新規作成
-            self.hub
-                .events()
-                .insert(event, &calendar_id)
-                .doit()
-                .await
-                .map_err(|e| {
-                    RepositoryError::ConnectionError(format!("イベント作成に失敗: {}", e))
-                })?;
-        } else {
-            // 既存のイベントが存在するか確認
-            if self.find_event_across_calendars(event_id).await?.is_some() {
-                // 更新
+        // Domain IDから外部IDを検索
+        if let Some(external_id) = self.id_mapper.get_external_id(domain_id)? {
+            // 既存イベント
+            if external_id.calendar_id == new_calendar_id {
+                // 同じカレンダー → 更新
                 self.hub
                     .events()
-                    .update(event, &calendar_id, event_id)
+                    .update(event, &external_id.calendar_id, &external_id.event_id)
                     .doit()
                     .await
                     .map_err(|e| {
                         RepositoryError::ConnectionError(format!("イベント更新に失敗: {}", e))
                     })?;
             } else {
-                // IDが指定されているが存在しない場合は新規作成
+                // カレンダーが変更された → 古いカレンダーから削除し、新しいカレンダーに作成
+                // 古いイベントを削除
                 self.hub
                     .events()
-                    .insert(event, &calendar_id)
+                    .delete(&external_id.calendar_id, &external_id.event_id)
                     .doit()
                     .await
                     .map_err(|e| {
-                        RepositoryError::ConnectionError(format!("イベント作成に失敗: {}", e))
+                        RepositoryError::ConnectionError(format!("古いイベントの削除に失敗: {}", e))
                     })?;
+
+                // 新しいカレンダーにイベントを作成
+                let (_response, created_event) = self
+                    .hub
+                    .events()
+                    .insert(event, &new_calendar_id)
+                    .doit()
+                    .await
+                    .map_err(|e| {
+                        RepositoryError::ConnectionError(format!(
+                            "新しいカレンダーへのイベント作成に失敗: {}",
+                            e
+                        ))
+                    })?;
+
+                // 新しいEvent IDを取得してマッピングを更新
+                let new_event_id = created_event.id.ok_or_else(|| {
+                    RepositoryError::Unknown("作成されたイベントにIDがありません".to_string())
+                })?;
+
+                self.id_mapper.save_mapping(
+                    domain_id,
+                    ExternalId {
+                        calendar_id: new_calendar_id,
+                        event_id: new_event_id,
+                    },
+                )?;
             }
+        } else {
+            // 新規 → 作成
+            let (_response, created_event) = self
+                .hub
+                .events()
+                .insert(event, &new_calendar_id)
+                .doit()
+                .await
+                .map_err(|e| {
+                    RepositoryError::ConnectionError(format!("イベント作成に失敗: {}", e))
+                })?;
+
+            // Event IDを取得してマッピングを保存
+            let event_id = created_event.id.ok_or_else(|| {
+                RepositoryError::Unknown("作成されたイベントにIDがありません".to_string())
+            })?;
+
+            self.id_mapper.save_mapping(
+                domain_id,
+                ExternalId {
+                    calendar_id: new_calendar_id,
+                    event_id,
+                },
+            )?;
         }
 
         Ok(())
     }
 
     async fn delete(&self, id: &UsageId) -> Result<(), RepositoryError> {
-        let event_id = id.as_str();
+        let domain_id = id.as_str();
 
-        // すべてのカレンダーから検索
-        if let Some((_, context)) = self.find_event_across_calendars(event_id).await? {
-            // カレンダーIDを取得
-            let calendar_id =
-                if let Some(server) = self.config.servers.iter().find(|s| s.name == context) {
-                    &server.calendar_id
-                } else if let Some(room) = self.config.rooms.iter().find(|r| r.name == context) {
-                    &room.calendar_id
-                } else {
-                    return Err(RepositoryError::Unknown(format!(
-                        "カレンダーが見つかりません: {}",
-                        context
-                    )));
-                };
+        // Domain IDから外部IDを取得
+        let external_id = self
+            .id_mapper
+            .get_external_id(domain_id)?
+            .ok_or(RepositoryError::NotFound)?;
 
-            // イベントを削除
-            self.hub
-                .events()
-                .delete(calendar_id, event_id)
-                .doit()
-                .await
-                .map_err(|e| {
-                    RepositoryError::ConnectionError(format!("イベント削除に失敗: {}", e))
-                })?;
+        // イベントを削除
+        self.hub
+            .events()
+            .delete(&external_id.calendar_id, &external_id.event_id)
+            .doit()
+            .await
+            .map_err(|e| RepositoryError::ConnectionError(format!("イベント削除に失敗: {}", e)))?;
 
-            Ok(())
-        } else {
-            Err(RepositoryError::NotFound)
-        }
+        // マッピングを削除
+        self.id_mapper.delete_mapping(domain_id)?;
+
+        Ok(())
     }
 }

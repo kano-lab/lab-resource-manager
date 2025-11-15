@@ -18,7 +18,6 @@ impl ResourceUsage {
     /// 新しいリソース使用予定を作成する
     ///
     /// # Arguments
-    /// * `id` - 使用予定ID
     /// * `owner_email` - 所有者のメールアドレス
     /// * `time_period` - 使用期間
     /// * `resources` - 使用するリソースのリスト
@@ -27,6 +26,36 @@ impl ResourceUsage {
     /// # Errors
     /// リソースが空の場合、`ResourceUsageError::NoResourceItems`を返す
     pub fn new(
+        owner_email: EmailAddress,
+        time_period: TimePeriod,
+        resources: Vec<Resource>,
+        notes: Option<String>,
+    ) -> Result<Self, ResourceUsageError> {
+        if resources.is_empty() {
+            return Err(ResourceUsageError::NoResourceItems);
+        }
+
+        Ok(Self {
+            id: UsageId::new(),
+            owner_email,
+            time_period,
+            resources,
+            notes,
+        })
+    }
+
+    /// リポジトリからの再構築用（既存IDを指定）
+    ///
+    /// # Arguments
+    /// * `id` - 既存の使用予定ID
+    /// * `owner_email` - 所有者のメールアドレス
+    /// * `time_period` - 使用期間
+    /// * `resources` - 使用するリソースのリスト
+    /// * `notes` - 備考（オプション）
+    ///
+    /// # Errors
+    /// リソースが空の場合、`ResourceUsageError::NoResourceItems`を返す
+    pub fn reconstruct(
         id: UsageId,
         owner_email: EmailAddress,
         time_period: TimePeriod,

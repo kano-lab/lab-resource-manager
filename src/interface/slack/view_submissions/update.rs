@@ -26,7 +26,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     let usage_id_str = form_data::get_private_metadata(view_submission)
         .ok_or("usage_idが見つかりません（private_metadataが空です）")?;
 
-    let usage_id = UsageId::new(usage_id_str.clone());
+    let usage_id = UsageId::from_string(usage_id_str.clone());
     info!("  → 更新対象の予約ID: {}", usage_id_str);
 
     // Get user email (for authorization check)

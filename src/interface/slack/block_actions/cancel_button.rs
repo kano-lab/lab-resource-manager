@@ -33,7 +33,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     let owner_email = user_resolver::resolve_user_email(&user.id, identity_repo).await?;
 
     // Delete reservation
-    let usage_id = UsageId::new(usage_id_str.to_string());
+    let usage_id = UsageId::from_string(usage_id_str.to_string());
     delete_usage_usecase
         .execute(
             &usage_id,
