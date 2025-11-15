@@ -50,7 +50,9 @@ impl SlackSender {
 
         let post_chat_req = SlackApiChatPostMessageRequest::new(
             channel_id.into(),
-            SlackMessageContent::new().with_text(message).with_blocks(blocks),
+            SlackMessageContent::new()
+                .with_text(message)
+                .with_blocks(blocks),
         );
 
         session
