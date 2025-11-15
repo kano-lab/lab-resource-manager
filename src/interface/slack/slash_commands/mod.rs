@@ -21,4 +21,3 @@
 
 pub mod link_user;
 pub mod register_calendar;
-pub mod reserve;

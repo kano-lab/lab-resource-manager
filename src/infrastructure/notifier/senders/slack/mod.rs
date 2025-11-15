@@ -17,7 +17,6 @@ pub use formatter::SlackMessageFormatter;
 pub struct SlackNotificationConfig {
     pub bot_token: Option<String>,
     pub channel_id: Option<String>,
-    pub webhook_url: Option<String>,
 }
 
 /// Slack経由でメッセージを送信する（Bot Token or Webhook）
@@ -66,28 +65,6 @@ impl SlackSender {
 
         Ok(())
     }
-
-    /// Webhook方式でメッセージを送信（レガシー）
-    async fn send_via_webhook(
-        &self,
-        webhook_url: &str,
-        message: String,
-        blocks_json: serde_json::Value,
-    ) -> Result<(), NotificationError> {
-        let payload = serde_json::json!({
-            "text": message,  // フォールバック用
-            "blocks": blocks_json
-        });
-
-        self.client
-            .post(webhook_url)
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| NotificationError::SendFailure(format!("Slack Webhook送信失敗: {}", e)))?;
-
-        Ok(())
-    }
 }
 
 #[async_trait]
@@ -115,19 +92,14 @@ impl Sender for SlackSender {
 
         let blocks_json = SlackBlockBuilder::build_message_with_buttons(&message, usage_id);
 
-        // bot_tokenがあればAPI経由、なければWebhook経由
+        // Bot Token方式（インタラクティブボタン対応）
         if let (Some(bot_token), Some(channel_id)) = (&config.bot_token, &config.channel_id) {
-            // Bot Token方式（インタラクティブボタン対応）
             let blocks = SlackBlockBuilder::json_to_slack_blocks(blocks_json);
             self.send_via_bot_token(bot_token, channel_id, message, blocks)
                 .await?;
-        } else if let Some(webhook_url) = &config.webhook_url {
-            // Webhook方式（レガシー、ボタンは動作しない）
-            self.send_via_webhook(webhook_url, message, blocks_json)
-                .await?;
         } else {
             return Err(NotificationError::SendFailure(
-                "bot_token+channel_id または webhook_url が設定されていません".to_string(),
+                "bot_token と channel_id が設定されていません".to_string(),
             ));
         }
 

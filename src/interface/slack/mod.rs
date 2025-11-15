@@ -34,18 +34,11 @@
 //! | Messages API | `slack_client/messages.rs` |
 //! | Block Kit | `views/` |
 
-pub mod adapters;
 pub mod app;
 pub mod async_execution;
-pub mod block_actions;
-pub mod constants;
-pub mod extractors;
 pub mod gateway;
-pub mod parsers;
 pub mod slack_client;
 pub mod slash_commands;
-pub mod view_submissions;
-pub mod views;
 
 // 主要な型を再エクスポート
 pub use app::SlackApp;
