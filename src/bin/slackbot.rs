@@ -19,16 +19,25 @@
 //! - `GOOGLE_SERVICE_ACCOUNT_KEY`: Google サービスアカウントJSONキーのパス (必須)
 //! - `RESOURCE_CONFIG`: リソース設定ファイルのパス (デフォルト: config/resources.toml)
 use lab_resource_manager::{
-    application::usecases::grant_user_resource_access::GrantUserResourceAccessUseCase,
+    application::usecases::{
+        grant_user_resource_access::GrantUserResourceAccessUseCase,
+        notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase,
+    },
     infrastructure::{
-        config::load_config, repositories::identity_link::JsonFileIdentityLinkRepository,
+        config::load_config,
+        notifier::NotificationRouter,
+        repositories::{
+            identity_link::JsonFileIdentityLinkRepository,
+            resource_usage::google_calendar::GoogleCalendarUsageRepository,
+        },
         resource_collection_access::GoogleCalendarAccessService,
     },
-    interface::slack::{SlackBot, SlackCommandHandler},
+    interface::slack::SlackApp,
 };
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -90,14 +99,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     // コマンドハンドラとBotの作成
-    let command_handler = Arc::new(SlackCommandHandler::new(grant_access_usecase));
+    let config_arc = Arc::new(config);
 
-    let bot = Arc::new(
-        SlackBot::new(command_handler)
-            .await
-            .map_err(|e| format!("Slack Bot の作成に失敗しました: {}", e))?,
+    // GoogleCalendarRepositoryの初期化
+    let usage_repository = Arc::new(
+        GoogleCalendarUsageRepository::new(&service_account_key, config_arc.as_ref().clone())
+            .await?,
     );
-    println!("✅ Slack Bot を初期化しました");
+    println!("✅ GoogleCalendarUsageRepository を初期化しました");
+
+    // Tokenの読み込み
+    let bot_token = env::var("SLACK_BOT_TOKEN").expect("環境変数 SLACK_BOT_TOKEN が必要です");
+    let bot_token = SlackApiToken::new(bot_token.into());
+
+    // SlackAppの作成
+    let slack_client = Arc::new(SlackClient::new(SlackClientHyperConnector::new()?));
+    let app = Arc::new(SlackApp::new(
+        grant_access_usecase,
+        usage_repository.clone(),
+        identity_repo.clone(),
+        config_arc.clone(),
+        slack_client,
+        bot_token,
+    ));
+    println!("✅ Slack App を初期化しました");
+
+    // 通知機能のセットアップ
+    let notifier = NotificationRouter::new(config_arc.as_ref().clone(), identity_repo.clone());
+
+    // 別のリポジトリインスタンスを作成（ポーリング用）
+    let polling_repository =
+        GoogleCalendarUsageRepository::new(&service_account_key, config_arc.as_ref().clone())
+            .await?;
+
+    let notify_usecase = NotifyFutureResourceUsageChangesUseCase::new(polling_repository, notifier)
+        .await
+        .map_err(|e| format!("通知UseCaseの初期化に失敗: {}", e))?;
+
+    let notify_usecase = Arc::new(notify_usecase);
+    println!("✅ 通知機能を初期化しました");
 
     // Socket Modeのセットアップ
     let app_token =
@@ -119,15 +159,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
         println!("📩 コマンドを受信しました: {}", event.command);
 
-        // Botを状態から取得
-        let bot = state
+        // Appを状態から取得
+        let app = state
             .read()
             .await
-            .get_user_state::<Arc<SlackBot>>()
-            .ok_or("Bot の状態が見つかりません")?
+            .get_user_state::<Arc<SlackApp<GoogleCalendarUsageRepository>>>()
+            .ok_or("App の状態が見つかりません")?
             .clone();
 
-        match bot.handle_command(event).await {
+        match app.route_slash_command(event).await {
             Ok(response) => {
                 println!("✅ コマンドを正常に処理しました");
                 Ok(response)
@@ -141,11 +181,101 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let socket_mode_callbacks =
-        SlackSocketModeListenerCallbacks::new().with_command_events(handle_command_event);
+    // インタラクションハンドラ関数
+    async fn handle_interaction_event(
+        event: SlackInteractionEvent,
+        client: Arc<SlackHyperClient>,
+        state: SlackClientEventsUserState,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        println!("🔘 インタラクションを受信しました");
 
+        let app = state
+            .read()
+            .await
+            .get_user_state::<Arc<SlackApp<GoogleCalendarUsageRepository>>>()
+            .ok_or("App の状態が見つかりません")?
+            .clone();
+
+        // Socket Modeには即座に応答を返すため、処理を非同期タスクでspawn
+        tokio::spawn(async move {
+            let result = app.route_interaction(event.clone()).await;
+
+            match result {
+                Ok(Some(response)) => {
+                    println!("📤 ビュー応答を送信中...");
+
+                    let token = &app.bot_token;
+                    let session = client.open_session(token);
+
+                    match response {
+                        SlackViewSubmissionResponse::Update(update_response) => {
+                            // Get the view ID from the event
+                            if let SlackInteractionEvent::ViewSubmission(vs) = &event {
+                                let view_id = &vs.view.state_params.id;
+                                let hash = if let SlackView::Modal(modal) = &vs.view.view {
+                                    modal.hash.clone()
+                                } else {
+                                    None
+                                };
+
+                                let mut request =
+                                    SlackApiViewsUpdateRequest::new(update_response.view);
+                                request.view_id = Some(view_id.clone());
+                                request.hash = hash;
+
+                                match session.views_update(&request).await {
+                                    Ok(_) => println!("✅ ビューを更新しました"),
+                                    Err(e) => eprintln!("❌ ビュー更新エラー: {}", e),
+                                }
+                            }
+                        }
+                        SlackViewSubmissionResponse::Push(push_response) => {
+                            // Get trigger_id from event
+                            if let SlackInteractionEvent::ViewSubmission(vs) = &event
+                                && let Some(trigger_id) = &vs.trigger_id
+                            {
+                                match session
+                                    .views_push(&SlackApiViewsPushRequest::new(
+                                        trigger_id.clone(),
+                                        push_response.view,
+                                    ))
+                                    .await
+                                {
+                                    Ok(_) => println!("✅ ビューをpushしました"),
+                                    Err(e) => eprintln!("❌ ビューpushエラー: {}", e),
+                                }
+                            }
+                        }
+                        SlackViewSubmissionResponse::Clear(_) => {
+                            // Not implemented for now
+                            println!("⚠️ Clear responseは未実装です");
+                        }
+                        _ => {}
+                    }
+
+                    println!("✅ インタラクションを正常に処理しました");
+                }
+                Ok(None) => {
+                    println!("✅ インタラクションを正常に処理しました（応答なし）");
+                }
+                Err(e) => {
+                    eprintln!("❌ インタラクション処理エラー: {}", e);
+                }
+            }
+        });
+
+        // Socket Modeには即座に応答を返す
+        Ok(())
+    }
+
+    let socket_mode_callbacks = SlackSocketModeListenerCallbacks::new()
+        .with_command_events(handle_command_event)
+        .with_interaction_events(handle_interaction_event);
+
+    let slack_client_for_env = Arc::new(SlackClient::new(SlackClientHyperConnector::new()?));
     let listener_environment = Arc::new(
-        SlackClientEventsListenerEnvironment::new(bot.client()).with_user_state(bot.clone()),
+        SlackClientEventsListenerEnvironment::new(slack_client_for_env)
+            .with_user_state(app.clone()),
     );
 
     let socket_mode_listener = SlackClientSocketModeListener::new(
@@ -163,12 +293,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Slack Socket Mode に接続しました！");
     println!("🎉 Bot がスラッシュコマンドを待機しています");
     println!();
+
+    // ポーリング間隔（デフォルト: 60秒）
+    let polling_interval_secs: u64 = env::var("POLLING_INTERVAL")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(60);
+    println!(
+        "🔍 カレンダー監視を開始します（間隔: {}秒）",
+        polling_interval_secs
+    );
+    println!();
     println!("Bot を停止するには Ctrl+C を押してください");
 
-    // プロセスを実行し続ける
-    socket_mode_listener.serve().await;
+    // バックグラウンドでポーリングタスクを実行
+    let polling_handle = {
+        let notify_usecase = notify_usecase.clone();
+        tokio::spawn(async move {
+            let interval = Duration::from_secs(polling_interval_secs);
+            loop {
+                match notify_usecase.poll_once().await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("❌ ポーリングエラー: {}", e);
+                    }
+                }
+                tokio::time::sleep(interval).await;
+            }
+        })
+    };
 
-    println!("\n👋 シャットダウンしています...");
+    // Socket Mode リスナーとポーリングタスクを並行実行
+    tokio::select! {
+        _ = socket_mode_listener.serve() => {
+            println!("\n🔌 Socket Mode リスナーが終了しました");
+        }
+        _ = tokio::signal::ctrl_c() => {
+            println!("\n👋 シャットダウンシグナルを受信しました");
+        }
+    }
+
+    // ポーリングタスクを停止
+    polling_handle.abort();
+
+    println!("👋 シャットダウンしています...");
 
     Ok(())
 }

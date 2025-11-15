@@ -1,18 +1,4 @@
 services:
-  watcher:
-    build:
-      context: .
-      target: watcher
-    volumes:
-      - ./config:/app/config:ro
-      - ./data:/app/data
-      - ./secrets:/app/secrets:ro
-    environment:
-      - RUST_LOG=info
-    env_file:
-      - .env
-    restart: unless-stopped
-
   slackbot:
     build:
       context: .
