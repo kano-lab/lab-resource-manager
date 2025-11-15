@@ -4,7 +4,6 @@ mod block_builder;
 mod formatter;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use slack_morphism::prelude::*;
 
 use crate::domain::ports::notifier::NotificationError;
@@ -19,9 +18,8 @@ pub struct SlackNotificationConfig {
     pub channel_id: Option<String>,
 }
 
-/// Slack経由でメッセージを送信する（Bot Token or Webhook）
+/// Slack経由でメッセージを送信する（Bot Token方式）
 pub struct SlackSender {
-    client: Client,
     slack_client: SlackClient<SlackClientHyperHttpsConnector>,
 }
 
@@ -35,7 +33,6 @@ impl SlackSender {
     /// 新しいSlackSenderを作成
     pub fn new() -> Self {
         Self {
-            client: Client::new(),
             slack_client: SlackClient::new(SlackClientHyperConnector::new().unwrap()),
         }
     }
