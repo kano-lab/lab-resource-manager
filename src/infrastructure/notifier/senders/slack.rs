@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 use slack_morphism::prelude::*;
+use tracing::error;
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
@@ -33,7 +34,10 @@ impl SlackSender {
     /// 新しいSlackSenderを作成
     pub fn new() -> Self {
         Self {
-            slack_client: SlackClient::new(SlackClientHyperConnector::new().unwrap()),
+            slack_client: SlackClient::new(
+                SlackClientHyperConnector::new()
+                    .expect("Failed to initialize Slack HTTP connector"),
+            ),
         }
     }
 
@@ -143,7 +147,10 @@ impl SlackSender {
             }
         ]);
 
-        serde_json::from_value(blocks_json).unwrap_or_else(|_| vec![])
+        serde_json::from_value(blocks_json).unwrap_or_else(|e| {
+            error!("Failed to deserialize Slack blocks: {}", e);
+            vec![]
+        })
     }
 }
 
