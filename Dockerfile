@@ -3,7 +3,7 @@ FROM rust:1.90 AS builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-RUN cargo build --release --bin watcher --bin slackbot
+RUN cargo build --release --bin slackbot
 
 # Base runtime stage with minimal dependencies
 # Note: Ubuntu 24.04 is required for GLIBC 2.38 support
@@ -13,10 +13,6 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
-# Watcher service stage
-FROM runtime-base AS watcher
-COPY --from=builder /app/target/release/watcher /usr/local/bin/watcher
-CMD ["watcher"]
 
 # Slackbot service stage
 FROM runtime-base AS slackbot

@@ -87,18 +87,15 @@ impl NotificationRouter {
             timezone: config.timezone(),
         };
 
-        #[allow(deprecated)]
         match config {
             NotificationConfig::Slack {
                 bot_token,
                 channel_id,
-                webhook_url,
                 ..
             } => {
                 let slack_config = SlackNotificationConfig {
                     bot_token: bot_token.clone(),
                     channel_id: channel_id.clone(),
-                    webhook_url: webhook_url.clone(),
                 };
                 self.slack_sender.send(&slack_config, context).await
             }

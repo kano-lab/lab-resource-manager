@@ -18,7 +18,7 @@ pub struct NotificationContext<'a> {
 /// 共通インターフェースを定義します。
 ///
 /// # Associated Type
-/// * `Config` - 送信に必要な設定の型（webhook URL, email address等）
+/// * `Config` - 送信に必要な設定の型（bot token, channel ID, email address等）
 #[async_trait]
 pub trait Sender: Send + Sync {
     /// 送信に必要な設定の型

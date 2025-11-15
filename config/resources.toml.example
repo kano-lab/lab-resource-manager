@@ -8,7 +8,8 @@ calendar_id = "hoge@group.calendar.google.com"
 # 通知設定(複数設定可能)
 [[servers.notifications]]
 type = "slack"
-webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+bot_token = "xoxb-YOUR-BOT-TOKEN"
+channel_id = "C01234567..."
 # タイムゾーンを指定（オプション）
 # 指定しない場合はシステムのローカルタイムゾーン（ボットが動作しているコンピュータの時間）で表示されます
 # IANA形式のタイムゾーン名を使用（例: "Asia/Tokyo", "America/New_York", "Europe/London"）
@@ -35,7 +36,8 @@ calendar_id = "hoge@group.calendar.google.com"
 
 [[servers.notifications]]
 type = "slack"
-webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+bot_token = "xoxb-YOUR-BOT-TOKEN"
+channel_id = "C01234567..."
 
 [[servers.devices]]
 id = 0
@@ -53,5 +55,6 @@ calendar_id = "hoge@group.calendar.google.com"
 
 [[rooms.notifications]]
 type = "slack"
-webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+bot_token = "xoxb-YOUR-BOT-TOKEN"
+channel_id = "C01234567..."
 # timezone = "Asia/Tokyo"

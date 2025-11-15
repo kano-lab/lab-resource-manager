@@ -10,18 +10,9 @@ pub enum NotificationConfig {
     /// Slack通知設定
     Slack {
         /// Bot Token (xoxb-...)
-        #[serde(default)]
-        bot_token: Option<String>,
+        bot_token: String,
         /// チャンネルID (C01234567...)
-        #[serde(default)]
-        channel_id: Option<String>,
-        /// Webhook URL (非推奨: bot_token+channel_idを使用してください)
-        ///
-        /// このフィールドは非推奨です。代わりに`bot_token`と`channel_id`を使用してください。
-        /// Webhook URLではインタラクティブなボタンが動作しません。
-        #[deprecated(note = "Webhook URLは非推奨です。bot_token+channel_idを使用してください")]
-        #[serde(default)]
-        webhook_url: Option<String>,
+        channel_id: String,
         /// タイムゾーン（オプション）
         #[serde(default)]
         timezone: Option<String>,
