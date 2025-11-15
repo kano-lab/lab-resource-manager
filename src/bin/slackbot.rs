@@ -101,13 +101,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // コマンドハンドラとBotの作成
     let config_arc = Arc::new(config);
 
-    // GoogleCalendarRepositoryの初期化
-    let usage_repository = Arc::new(
-        GoogleCalendarUsageRepository::new(&service_account_key, config_arc.as_ref().clone())
-            .await?,
-    );
-    println!("✅ GoogleCalendarUsageRepository を初期化しました");
-
     // Tokenの読み込み
     let bot_token = env::var("SLACK_BOT_TOKEN").expect("環境変数 SLACK_BOT_TOKEN が必要です");
     let bot_token = SlackApiToken::new(bot_token.into());
@@ -116,9 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let slack_client = Arc::new(SlackClient::new(SlackClientHyperConnector::new()?));
     let app = Arc::new(SlackApp::new(
         grant_access_usecase,
-        usage_repository.clone(),
         identity_repo.clone(),
-        config_arc.clone(),
         slack_client,
         bot_token,
     ));
@@ -163,7 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let app = state
             .read()
             .await
-            .get_user_state::<Arc<SlackApp<GoogleCalendarUsageRepository>>>()
+            .get_user_state::<Arc<SlackApp>>()
             .ok_or("App の状態が見つかりません")?
             .clone();
 
@@ -181,96 +172,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // インタラクションハンドラ関数
-    async fn handle_interaction_event(
-        event: SlackInteractionEvent,
-        client: Arc<SlackHyperClient>,
-        state: SlackClientEventsUserState,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        println!("🔘 インタラクションを受信しました");
-
-        let app = state
-            .read()
-            .await
-            .get_user_state::<Arc<SlackApp<GoogleCalendarUsageRepository>>>()
-            .ok_or("App の状態が見つかりません")?
-            .clone();
-
-        // Socket Modeには即座に応答を返すため、処理を非同期タスクでspawn
-        tokio::spawn(async move {
-            let result = app.route_interaction(event.clone()).await;
-
-            match result {
-                Ok(Some(response)) => {
-                    println!("📤 ビュー応答を送信中...");
-
-                    let token = &app.bot_token;
-                    let session = client.open_session(token);
-
-                    match response {
-                        SlackViewSubmissionResponse::Update(update_response) => {
-                            // Get the view ID from the event
-                            if let SlackInteractionEvent::ViewSubmission(vs) = &event {
-                                let view_id = &vs.view.state_params.id;
-                                let hash = if let SlackView::Modal(modal) = &vs.view.view {
-                                    modal.hash.clone()
-                                } else {
-                                    None
-                                };
-
-                                let mut request =
-                                    SlackApiViewsUpdateRequest::new(update_response.view);
-                                request.view_id = Some(view_id.clone());
-                                request.hash = hash;
-
-                                match session.views_update(&request).await {
-                                    Ok(_) => println!("✅ ビューを更新しました"),
-                                    Err(e) => eprintln!("❌ ビュー更新エラー: {}", e),
-                                }
-                            }
-                        }
-                        SlackViewSubmissionResponse::Push(push_response) => {
-                            // Get trigger_id from event
-                            if let SlackInteractionEvent::ViewSubmission(vs) = &event
-                                && let Some(trigger_id) = &vs.trigger_id
-                            {
-                                match session
-                                    .views_push(&SlackApiViewsPushRequest::new(
-                                        trigger_id.clone(),
-                                        push_response.view,
-                                    ))
-                                    .await
-                                {
-                                    Ok(_) => println!("✅ ビューをpushしました"),
-                                    Err(e) => eprintln!("❌ ビューpushエラー: {}", e),
-                                }
-                            }
-                        }
-                        SlackViewSubmissionResponse::Clear(_) => {
-                            // Not implemented for now
-                            println!("⚠️ Clear responseは未実装です");
-                        }
-                        _ => {}
-                    }
-
-                    println!("✅ インタラクションを正常に処理しました");
-                }
-                Ok(None) => {
-                    println!("✅ インタラクションを正常に処理しました（応答なし）");
-                }
-                Err(e) => {
-                    eprintln!("❌ インタラクション処理エラー: {}", e);
-                }
-            }
-        });
-
-        // Socket Modeには即座に応答を返す
-        Ok(())
-    }
-
     let socket_mode_callbacks = SlackSocketModeListenerCallbacks::new()
-        .with_command_events(handle_command_event)
-        .with_interaction_events(handle_interaction_event);
+        .with_command_events(handle_command_event);
 
     let slack_client_for_env = Arc::new(SlackClient::new(SlackClientHyperConnector::new()?));
     let listener_environment = Arc::new(

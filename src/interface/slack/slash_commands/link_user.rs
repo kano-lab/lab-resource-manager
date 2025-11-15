@@ -2,7 +2,6 @@
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::async_execution::background_task;
 use slack_morphism::prelude::*;
@@ -10,8 +9,8 @@ use slack_morphism::prelude::*;
 /// /link-user スラッシュコマンドを処理
 ///
 /// 別のSlackユーザーをメールアドレスに紐付け（管理者コマンド）
-pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
-    app: &SlackApp<R>,
+pub async fn handle(
+    app: &SlackApp,
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
     let text = event.text.as_deref().unwrap_or("");

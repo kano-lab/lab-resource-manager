@@ -1,18 +1,16 @@
-//! /register-calendar コマンドハンドラ（非推奨）
+//! /register-calendar コマンドハンドラ
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::async_execution::background_task;
 use slack_morphism::prelude::*;
-use tracing::info;
 
-/// /register-calendar スラッシュコマンドを処理（非推奨）
+/// /register-calendar スラッシュコマンドを処理
 ///
 /// メールアドレスを登録し、バックグラウンドでカレンダーアクセス権を付与
-pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
-    app: &SlackApp<R>,
+pub async fn handle(
+    app: &SlackApp,
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
     let text = event.text.as_deref().unwrap_or("");

@@ -14,14 +14,11 @@
 //!
 //! | Slack API | このモジュール |
 //! |-----------|---------------|
-//! | `views.open` | `modals::open()` |
-//! | `views.update` | `modals::update()` |
 //! | `chat.postMessage` | `messages::send_followup()` |
 //! | `chat.postEphemeral` | `messages::send_ephemeral()` |
 //!
 //! ## モジュール
 //!
 //! - `messages`: メッセージ送信（通常メッセージ、エフェメラルメッセージ）
-//! - `modals`: モーダル操作（開く、更新）
 
 pub mod messages;

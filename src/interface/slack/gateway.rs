@@ -2,12 +2,11 @@
 //!
 //! 受信したSlackイベントを適切なハンドラにルーティング
 
-use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use slack_morphism::prelude::*;
 use tracing::info;
 
-impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
+impl SlackApp {
     /// スラッシュコマンドイベントをルーティング
     ///
     /// # 引数
