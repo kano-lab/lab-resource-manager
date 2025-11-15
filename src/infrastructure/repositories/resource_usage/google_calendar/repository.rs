@@ -57,6 +57,7 @@ impl GoogleCalendarUsageRepository {
         let hub = CalendarHub::new(client, auth);
 
         // ID マッピングの初期化
+        // TODO(#41): マッピングファイルパスを設定ファイルまたは環境変数から読み込む
         let id_mapper = IdMapper::new(std::path::PathBuf::from(
             "data/google_calendar_mappings.json",
         ))?;
@@ -378,6 +379,7 @@ impl GoogleCalendarUsageRepository {
                 // HTTPステータスコード404の場合はNoneを返す
                 // google_calendar3のエラーは構造化されていないため、
                 // エラーメッセージから404を検出する
+                // TODO(#41): 文字列マッチングは脆弱。構造化されたエラー型またはHTTPステータスコードを直接チェック
                 let error_msg = e.to_string();
                 if error_msg.contains("404") || error_msg.contains("Not Found") {
                     Ok(None)

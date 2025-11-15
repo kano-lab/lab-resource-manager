@@ -106,6 +106,7 @@ impl IdMapper {
 
     /// ファイルから全データを読み込み
     fn load_from_file(file_path: &PathBuf) -> Result<HashMap<String, ExternalId>, RepositoryError> {
+        // TODO(#41): 同期的I/Oを非同期化 (tokio::fs) またはキャッシング戦略を検討
         let content = std::fs::read_to_string(file_path).map_err(|e| {
             RepositoryError::ConnectionError(format!("マッピングファイルの読み込みに失敗: {}", e))
         })?;
@@ -128,6 +129,7 @@ impl IdMapper {
         let json = serde_json::to_string_pretty(&*mappings)
             .map_err(|e| RepositoryError::Unknown(format!("JSONのシリアライズに失敗: {}", e)))?;
 
+        // TODO(#41): 同期的I/Oを非同期化 (tokio::fs) またはキャッシング戦略を検討
         std::fs::write(&self.file_path, json).map_err(|e| {
             RepositoryError::ConnectionError(format!("マッピングファイルの書き込みに失敗: {}", e))
         })?;
