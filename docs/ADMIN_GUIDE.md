@@ -48,7 +48,8 @@ calendar_id = "your-calendar-id@group.calendar.google.com"  # Repository impleme
 # Configure notification destinations per resource
 [[servers.notifications]]
 type = "slack"  # Notifier implementation selection
-webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+bot_token = "xoxb-YOUR-BOT-TOKEN"
+channel_id = "C01234567..."
 # Optional: Configure timezone for notifications (IANA format)
 # If not specified, notifications will show times in the system's local timezone
 # timezone = "Asia/Tokyo"
@@ -72,7 +73,8 @@ calendar_id = "room-calendar-id@group.calendar.google.com"
 
 [[rooms.notifications]]
 type = "slack"
-webhook_url = "https://hooks.slack.com/services/YOUR/ROOM/WEBHOOK"
+bot_token = "xoxb-YOUR-BOT-TOKEN"
+channel_id = "C01234567..."
 # timezone = "Europe/London"
 ```
 

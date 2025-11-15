@@ -9,8 +9,10 @@ use std::fs;
 pub enum NotificationConfig {
     /// Slack通知設定
     Slack {
-        /// Webhook URL
-        webhook_url: String,
+        /// Bot Token (xoxb-...)
+        bot_token: String,
+        /// チャンネルID (C01234567...)
+        channel_id: String,
         /// タイムゾーン（オプション）
         #[serde(default)]
         timezone: Option<String>,
