@@ -14,8 +14,8 @@ use crate::infrastructure::notifier::senders::sender::{NotificationContext, Send
 
 /// Slack通知設定
 pub struct SlackNotificationConfig {
-    pub bot_token: Option<String>,
-    pub channel_id: Option<String>,
+    pub bot_token: String,
+    pub channel_id: String,
 }
 
 /// Slack経由でメッセージを送信する（Bot Token方式）
@@ -159,15 +159,7 @@ impl Sender for SlackSender {
         let blocks = Self::build_message_blocks(&message);
 
         // Bot Token方式
-        if let (Some(bot_token), Some(channel_id)) = (&config.bot_token, &config.channel_id) {
-            self.send_via_bot_token(bot_token, channel_id, message, blocks)
-                .await?;
-        } else {
-            return Err(NotificationError::SendFailure(
-                "bot_token と channel_id が設定されていません".to_string(),
-            ));
-        }
-
-        Ok(())
+        self.send_via_bot_token(&config.bot_token, &config.channel_id, message, blocks)
+            .await
     }
 }

@@ -148,9 +148,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _client: Arc<SlackHyperClient>,
         state: SlackClientEventsUserState,
     ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
-        println!("📩 コマンドを受信しました: {}", event.command);
-
-        // Appを状態から取得
         let app = state
             .read()
             .await
@@ -159,21 +156,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .clone();
 
         match app.route_slash_command(event).await {
-            Ok(response) => {
-                println!("✅ コマンドを正常に処理しました");
-                Ok(response)
-            }
-            Err(e) => {
-                eprintln!("❌ コマンド処理エラー: {}", e);
-                Ok(SlackCommandEventResponse::new(
-                    SlackMessageContent::new().with_text(format!("エラー: {}", e)),
-                ))
-            }
+            Ok(response) => Ok(response),
+            Err(e) => Ok(SlackCommandEventResponse::new(
+                SlackMessageContent::new().with_text(format!("エラー: {}", e)),
+            )),
         }
     }
 
-    let socket_mode_callbacks = SlackSocketModeListenerCallbacks::new()
-        .with_command_events(handle_command_event);
+    let socket_mode_callbacks =
+        SlackSocketModeListenerCallbacks::new().with_command_events(handle_command_event);
 
     let slack_client_for_env = Arc::new(SlackClient::new(SlackClientHyperConnector::new()?));
     let listener_environment = Arc::new(
