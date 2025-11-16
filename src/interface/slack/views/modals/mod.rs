@@ -16,4 +16,3 @@
 
 pub mod link_user;
 pub mod registration;
-pub mod result;
