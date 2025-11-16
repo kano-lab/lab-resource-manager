@@ -29,7 +29,5 @@ pub async fn handle(
     modals::open(&app.slack_client, &app.bot_token, &event.trigger_id, modal).await?;
 
     // 空のレスポンスを返す（モーダルが開かれたことをSlackに伝える）
-    Ok(SlackCommandEventResponse::new(
-        SlackMessageContent::new(),
-    ))
+    Ok(SlackCommandEventResponse::new(SlackMessageContent::new()))
 }

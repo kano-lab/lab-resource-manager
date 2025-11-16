@@ -28,12 +28,11 @@ pub async fn handle(
 
     // Register user
     let registration_result = match &email_result {
-        Ok(email) => {
-            app.grant_access_usecase
-                .execute(ExternalSystem::Slack, user_id.to_string(), email.clone())
-                .await
-                .map_err(|e| e.into())
-        }
+        Ok(email) => app
+            .grant_access_usecase
+            .execute(ExternalSystem::Slack, user_id.to_string(), email.clone())
+            .await
+            .map_err(|e| e.into()),
         Err(e) => Err(Box::new(e.clone()) as Box<dyn std::error::Error + Send + Sync>),
     };
 
@@ -44,8 +43,14 @@ pub async fn handle(
         // エフェメラルメッセージで結果を送信
         let message_text = match registration_result {
             Ok(_) => {
-                info!("✅ ユーザー登録成功: {}", email_result.as_ref().unwrap().as_str());
-                format!("✅ メールアドレス {} を登録しました", email_result.as_ref().unwrap().as_str())
+                info!(
+                    "✅ ユーザー登録成功: {}",
+                    email_result.as_ref().unwrap().as_str()
+                );
+                format!(
+                    "✅ メールアドレス {} を登録しました",
+                    email_result.as_ref().unwrap().as_str()
+                )
             }
             Err(e) => {
                 error!("❌ ユーザー登録に失敗: {}", e);

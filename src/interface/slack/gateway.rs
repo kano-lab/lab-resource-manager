@@ -3,10 +3,7 @@
 //! 受信したSlackイベントを適切なハンドラにルーティング
 
 use crate::interface::slack::app::SlackApp;
-use crate::interface::slack::constants::{
-    CALLBACK_LINK_USER,
-    CALLBACK_REGISTER_EMAIL,
-};
+use crate::interface::slack::constants::{CALLBACK_LINK_USER, CALLBACK_REGISTER_EMAIL};
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
@@ -100,5 +97,4 @@ impl SlackApp {
             }
         }
     }
-
 }

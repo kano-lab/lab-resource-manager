@@ -24,24 +24,20 @@ pub async fn handle(
         .ok_or("ユーザーが選択されていません")?;
 
     // メールアドレスを抽出
-    let email_value = extract_form_data::get_plain_text_input(view_submission, ACTION_LINK_EMAIL_INPUT)
-        .ok_or("メールアドレスが入力されていません")?;
+    let email_value =
+        extract_form_data::get_plain_text_input(view_submission, ACTION_LINK_EMAIL_INPUT)
+            .ok_or("メールアドレスが入力されていません")?;
 
     // メールアドレスのバリデーション
     let email_result = EmailAddress::new(email_value.trim().to_string());
 
     // ユーザーをリンク
     let link_result = match &email_result {
-        Ok(email) => {
-            app.grant_access_usecase
-                .execute(
-                    ExternalSystem::Slack,
-                    target_user_id.clone(),
-                    email.clone(),
-                )
-                .await
-                .map_err(|e| e.into())
-        }
+        Ok(email) => app
+            .grant_access_usecase
+            .execute(ExternalSystem::Slack, target_user_id.clone(), email.clone())
+            .await
+            .map_err(|e| e.into()),
         Err(e) => Err(Box::new(e.clone()) as Box<dyn std::error::Error + Send + Sync>),
     };
 
@@ -52,7 +48,11 @@ pub async fn handle(
         // エフェメラルメッセージで結果を送信
         let message_text = match link_result {
             Ok(_) => {
-                info!("✅ ユーザーリンク成功: {} -> {}", target_user_id, email_result.as_ref().unwrap().as_str());
+                info!(
+                    "✅ ユーザーリンク成功: {} -> {}",
+                    target_user_id,
+                    email_result.as_ref().unwrap().as_str()
+                );
                 format!(
                     "✅ ユーザー <@{}> をメールアドレス {} に紐付けました",
                     target_user_id,

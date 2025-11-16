@@ -14,10 +14,7 @@ pub fn create_success(title: &str, message: &str) -> SlackView {
             .with_block_id("success_message".into()),
     )];
 
-    SlackView::Modal(
-        SlackModalView::new(pt!(title), blocks)
-            .with_close(pt!("閉じる")),
-    )
+    SlackView::Modal(SlackModalView::new(pt!(title), blocks).with_close(pt!("閉じる")))
 }
 
 /// 失敗モーダルを作成
@@ -32,8 +29,5 @@ pub fn create_error(title: &str, error_message: &str) -> SlackView {
             .with_block_id("error_message".into()),
     )];
 
-    SlackView::Modal(
-        SlackModalView::new(pt!(title), blocks)
-            .with_close(pt!("閉じる")),
-    )
+    SlackView::Modal(SlackModalView::new(pt!(title), blocks).with_close(pt!("閉じる")))
 }

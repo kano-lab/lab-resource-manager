@@ -45,7 +45,5 @@ pub fn create_confirmation_modal(
         SlackSectionBlock::new().with_text(md!(format!("✅ {}", message.into()))),
     )];
 
-    SlackView::Modal(
-        SlackModalView::new(pt!(title.into()), blocks).with_close(pt!("閉じる")),
-    )
+    SlackView::Modal(SlackModalView::new(pt!(title.into()), blocks).with_close(pt!("閉じる")))
 }
