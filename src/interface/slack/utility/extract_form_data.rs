@@ -41,10 +41,7 @@ pub fn get_selected_option_value(
     for (_block_id, actions_map) in values.iter() {
         for (action_id, value) in actions_map.iter() {
             if action_id.to_string() == action_id_str {
-                return value
-                    .selected_option
-                    .as_ref()
-                    .map(|opt| opt.text.text.clone());
+                return value.selected_option.as_ref().map(|opt| opt.value.clone());
             }
         }
     }

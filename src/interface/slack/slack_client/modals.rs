@@ -9,10 +9,10 @@ use tracing::{error, info};
 /// モーダルビューを開く
 ///
 /// # 引数
-/// * `client` - Slack HTTP client
-/// * `token` - Bot token
-/// * `trigger_id` - トリガーID from the interaction event
-/// * `view` - Modal view to open
+/// * `client` - Slack HTTPクライアント
+/// * `token` - Botトークン
+/// * `trigger_id` - インタラクションイベントからのトリガーID
+/// * `view` - 開くモーダルビュー
 pub async fn open(
     client: &Arc<SlackHyperClient>,
     token: &SlackApiToken,
@@ -39,10 +39,10 @@ pub async fn open(
 /// 既存のモーダルビューを更新
 ///
 /// # 引数
-/// * `client` - Slack HTTP client
-/// * `token` - Bot token
-/// * `view_id` - ID of the view to update
-/// * `view` - New modal view
+/// * `client` - Slack HTTPクライアント
+/// * `token` - Botトークン
+/// * `view_id` - 更新するビューのID
+/// * `view` - 新しいモーダルビュー
 pub async fn update(
     client: &Arc<SlackHyperClient>,
     token: &SlackApiToken,
