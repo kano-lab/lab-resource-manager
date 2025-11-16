@@ -1,84 +1,75 @@
 # User Guide
 
-This guide is for users of the deployed lab-resource-manager system.
+## About This System
 
-## Slack Commands
+A system for reserving and managing lab resources such as GPU servers and rooms.
 
-### Register Your Email Address
+- **Reserve from Slack**
+- **Reserve from Google Calendar**
+- **Get notifications in Slack**
 
-```text
-/register-calendar <your-email@example.com>
-```
+## How to Use
 
-This command links your Slack user with the default implementation (Google Calendar) and grants
-access to Google Calendar resources. We recommend registering the Gmail address you regularly use
-with Google Calendar.
+### 1. Initial Registration (First Time Only)
 
-**Benefits of registration:**
+Run the `/reserve` command in Slack, and an email address input screen will appear.
 
-- Automatically grants edit permissions to Google Calendar resources (GPU servers, meeting rooms, etc.)
-- Enables Slack mentions in reservation notifications
+Enter **the Gmail address you normally use with Google Calendar**.
 
-**Example:**
+- ✅ Access to Google Calendar is automatically granted
+- ✅ Your Slack account is linked
+- ✅ You will be mentioned in reservation notifications
 
-```text
-/register-calendar alice@example.com
-```
+### 2. Making Reservations (Two Methods)
 
-## Resource Reservation Syntax
-
-### Device Specification Format
-
-When reserving resources like GPU servers, you can specify which devices to use in the calendar event title.
-
-#### Basic Specification Methods
-
-- **Single Device**: `0` → Device 0
-- **Range**: `0-2` → Devices 0, 1, 2
-- **Multiple**: `0,2,5` → Devices 0, 2, 5
-- **Mixed**: `0-1,6-7` → Devices 0, 1, 6, 7
-
-#### Reservation Examples
-
-In the Google Calendar event title, write the device specification:
+#### Method 1: From Slack
 
 ```text
-0-2
+/reserve
 ```
 
-This indicates devices 0, 1, and 2 are in use.
+A modal will open where you can select the resource, time period, and devices, then submit.
+
+#### Method 2: From Google Calendar
+
+You can also reserve by directly creating events in Google Calendar.
+
+**For GPU Server Reservations:**
+
+Write the **device numbers you want to use** in the event title.
 
 ```text
-0,3,5
+Examples:
+0        → Use device 0 only
+0-2      → Use devices 0,1,2
+0,3,5    → Use devices 0,3,5
+0-1,6-7  → Use devices 0,1,6,7
 ```
 
-This indicates devices 0, 3, and 5 are in use.
+If you want to add notes, write them in the event description field.
 
-**Note**: The event title should contain only the device specification. If you need to add a
-description, use the event's description field instead.
+**For Room Reservations:**
 
-### Meeting Room Reservations
-
-For meeting room reservations, device specification is not needed. Simply create a Google Calendar
-event as usual.
+No need to specify device numbers. Just write a normal title.
 
 ```text
-Lab Meeting
+Example: Lab Meeting
 ```
 
-## Notifications
+### 3. Updating or Canceling Reservations
 
-The system periodically monitors Google Calendar resource usage and sends notifications to the
-configured Slack channels when changes are detected.
+- **From Slack**: Click the "🔄 Update" or "❌ Cancel" buttons on notification messages
+- **From Google Calendar**: Directly edit or delete calendar events
 
-### Notification Content
+Either way, changes will trigger notifications in Slack.
 
-Notifications include the following information:
+## FAQ
 
-- User's name (with Slack mention if email address is registered)
-- Resource name (GPU server name, meeting room name, etc.)
-- Devices in use (for GPUs)
-- Usage period
+**Q: I don't know whose reservation this is?**
+A: After completing initial registration with `/reserve`, you will be mentioned in your reservation notifications.
 
-When you register your email address with the `/register-calendar` command, you will be automatically mentioned in Slack
-for your reservations, making it easier to notice notifications.
+**Q: I can't see the reservation calendar in Google Calendar**
+A: After completing initial registration with `/reserve`, access will be automatically granted and the calendar will appear.
+
+**Q: The notifications are too noisy**
+A: Mute the Slack notification channel.
