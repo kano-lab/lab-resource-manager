@@ -5,6 +5,7 @@ use crate::domain::common::EmailAddress;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::{ACTION_LINK_EMAIL_INPUT, ACTION_USER_SELECT};
 use crate::interface::slack::utility::extract_form_data;
+use crate::interface::slack::views;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
@@ -51,22 +52,28 @@ pub async fn handle(
         Ok((user_id, email)) => {
             info!("✅ ユーザーリンク成功: {} -> {}", user_id, email.as_str());
 
-            // 成功時はモーダルを閉じる（モーダルが閉じることで成功を示す）
-            Ok(None)
+            // 成功モーダルに遷移
+            let success_view = views::modals::result::create_success(
+                "紐付け完了",
+                &format!(
+                    "ユーザー <@{}> をメールアドレス {} に紐付けました",
+                    user_id,
+                    email.as_str()
+                ),
+            );
+
+            Ok(Some(SlackViewSubmissionResponse::Update(
+                SlackViewSubmissionUpdateResponse { view: success_view },
+            )))
         }
         Err(e) => {
             error!("❌ ユーザーリンクに失敗: {}", e);
 
-            // エラー時はモーダルに表示
-            Ok(Some(SlackViewSubmissionResponse::Errors(
-                SlackViewSubmissionErrorsResponse {
-                    errors: [(
-                        ACTION_LINK_EMAIL_INPUT.to_string(),
-                        format!("紐付けに失敗しました: {}", e),
-                    )]
-                    .into_iter()
-                    .collect(),
-                },
+            // エラーモーダルに遷移
+            let error_view = views::modals::result::create_error("紐付け失敗", &e);
+
+            Ok(Some(SlackViewSubmissionResponse::Update(
+                SlackViewSubmissionUpdateResponse { view: error_view },
             )))
         }
     }
