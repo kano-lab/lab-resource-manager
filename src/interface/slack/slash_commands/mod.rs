@@ -15,7 +15,7 @@
 //!
 //! ## モジュール
 //!
-//! - `link_user`: `/link-user` - ユーザーとメールアドレスの紐付け（管理者用）
+//! - `link_user`: `/link-user` - ユーザーとメールアドレスの紐付け（管理者用、モーダルベース）
 //! - `register_calendar`: `/register-calendar` - メールアドレス登録（モーダルベース）
 
 pub mod link_user;

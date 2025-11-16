@@ -161,3 +161,25 @@ pub fn get_private_metadata(
 
     modal_view.private_metadata.as_ref().map(|s| s.to_string())
 }
+
+/// ユーザー選択から選択されたユーザーIDを取得
+///
+/// # 引数
+/// * `view_submission` - ビュー送信イベント
+/// * `action_id_str` - アクションID文字列
+pub fn get_user_select(
+    view_submission: &SlackInteractionViewSubmissionEvent,
+    action_id_str: &str,
+) -> Option<String> {
+    let state = view_submission.view.state_params.state.as_ref()?;
+    let values = &state.values;
+
+    for (_block_id, actions_map) in values.iter() {
+        for (action_id, value) in actions_map.iter() {
+            if action_id.to_string() == action_id_str {
+                return value.selected_user.as_ref().map(|u| u.to_string());
+            }
+        }
+    }
+    None
+}

@@ -4,19 +4,43 @@ use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::async_execution::background_task;
+use crate::interface::slack::slack_client::modals;
+use crate::interface::slack::views;
 use slack_morphism::prelude::*;
+use tracing::info;
 
 /// /link-user スラッシュコマンドを処理
 ///
-/// 別のSlackユーザーをメールアドレスに紐付け（管理者コマンド）
+/// モーダルを開いて他のユーザーをメールアドレスに紐付けるか、引数で直接紐付ける（後方互換性）
+/// 管理者コマンド
 pub async fn handle(
     app: &SlackApp,
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
     let text = event.text.as_deref().unwrap_or("");
-    let response_url = event.response_url;
 
+    // 引数なし: モーダルを開く
+    if text.is_empty() {
+        info!("🔗 ユーザーリンクモーダルを開きます");
+
+        // ユーザーリンクモーダルを作成
+        let modal = views::modals::link_user::create();
+
+        // モーダルを開く
+        modals::open(&app.slack_client, &app.bot_token, &event.trigger_id, modal).await?;
+
+        // 空のレスポンスを返す（モーダルが開かれたことをSlackに伝える）
+        return Ok(SlackCommandEventResponse::new(
+            SlackMessageContent::new(),
+        ));
+    }
+
+    // 引数あり: 後方互換性のため、直接紐付け処理を実行
+    info!("🔗 ユーザーを直接紐付け");
+
+    let response_url = event.response_url;
     let parts: Vec<&str> = text.split_whitespace().collect();
+
     if parts.len() != 2 {
         return Ok(SlackCommandEventResponse::new(
             SlackMessageContent::new()

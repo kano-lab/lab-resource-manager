@@ -11,5 +11,7 @@
 //! ## モジュール
 //!
 //! - `registration`: メールアドレス登録モーダル
+//! - `link_user`: ユーザーリンクモーダル（管理者用）
 
+pub mod link_user;
 pub mod registration;

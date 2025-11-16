@@ -17,9 +17,12 @@
 //! | callback_id | ハンドラ | 処理内容 |
 //! |-------------|---------|---------|
 //! | `register_email` | `registration` | メールアドレス登録 |
+//! | `link_user` | `link_user` | ユーザーリンク（管理者用） |
 //!
 //! ## モジュール
 //!
 //! - `registration`: メールアドレス登録モーダルの送信処理
+//! - `link_user`: ユーザーリンクモーダルの送信処理
 
+pub mod link_user;
 pub mod registration;

@@ -3,7 +3,7 @@
 //! 受信したSlackイベントを適切なハンドラにルーティング
 
 use crate::interface::slack::app::SlackApp;
-use crate::interface::slack::constants::*;
+use crate::interface::slack::constants::{CALLBACK_LINK_USER, CALLBACK_REGISTER_EMAIL};
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
@@ -85,6 +85,11 @@ impl SlackApp {
                     view_submission,
                 )
                 .await
+            }
+            Some(CALLBACK_LINK_USER) => {
+                info!("  → ユーザーリンクモーダル");
+                crate::interface::slack::view_submissions::link_user::handle(self, view_submission)
+                    .await
             }
             _ => {
                 error!("❌ 不明なcallback_id: {:?}", callback_id);
