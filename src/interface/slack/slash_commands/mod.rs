@@ -16,7 +16,7 @@
 //! ## モジュール
 //!
 //! - `link_user`: `/link-user` - ユーザーとメールアドレスの紐付け（管理者用）
-//! - `register_calendar`: `/register-calendar` - カレンダーアクセス権限の登録
+//! - `register_calendar`: `/register-calendar` - メールアドレス登録（モーダルベース）
 
 pub mod link_user;
 pub mod register_calendar;

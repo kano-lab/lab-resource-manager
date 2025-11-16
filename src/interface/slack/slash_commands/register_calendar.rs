@@ -1,36 +1,44 @@
-//! /register-calendar コマンドハンドラ（非推奨）
+//! /register-calendar コマンドハンドラ
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::async_execution::background_task;
+use crate::interface::slack::slack_client::modals;
+use crate::interface::slack::views;
 use slack_morphism::prelude::*;
 use tracing::info;
 
-/// /register-calendar スラッシュコマンドを処理（非推奨）
+/// /register-calendar スラッシュコマンドを処理
 ///
-/// メールアドレスを登録し、バックグラウンドでカレンダーアクセス権を付与
+/// モーダルを開いてメールアドレスを登録するか、引数で直接登録する（後方互換性）
 pub async fn handle(
     app: &SlackApp,
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
     let text = event.text.as_deref().unwrap_or("");
     let user_id = event.user_id.to_string();
-    let response_url = event.response_url;
 
+    // 引数なし: モーダルを開く
     if text.is_empty() {
+        info!("📧 メールアドレス登録モーダルを開きます: user={}", user_id);
+
+        // メールアドレス登録モーダルを作成
+        let modal = views::modals::registration::create();
+
+        // モーダルを開く
+        modals::open(&app.slack_client, &app.bot_token, &event.trigger_id, modal).await?;
+
+        // 空のレスポンスを返す（モーダルが開かれたことをSlackに伝える）
         return Ok(SlackCommandEventResponse::new(
-            SlackMessageContent::new()
-                .with_text("⚠️  このコマンドは非推奨です。代わりに `/reserve` コマンドを使用してください。\n\n使い方: `/register-calendar <your-email@gmail.com>`".to_string()),
+            SlackMessageContent::new(),
         ));
     }
 
-    // Log deprecation warning
-    info!(
-        "⚠️  非推奨コマンド /register-calendar が使用されました: user={}",
-        user_id
-    );
+    // 引数あり: 後方互換性のため、直接登録処理を実行
+    info!("📧 メールアドレスを直接登録: user={}", user_id);
 
+    let response_url = event.response_url;
     let grant_access_usecase = app.grant_access_usecase.clone();
     let email_str = text.to_string();
 
@@ -49,7 +57,7 @@ pub async fn handle(
                 .map_err(|e| format!("❌ カレンダー登録に失敗: {}", e))?;
 
             Ok(format!(
-                "✅ 登録完了！カレンダーへのアクセス権を付与しました: {}\n\n⚠️  今後は `/reserve` コマンドを使用してください。このコマンドは非推奨です。",
+                "✅ 登録完了！カレンダーへのアクセス権を付与しました: {}",
                 email.as_str()
             ))
         },

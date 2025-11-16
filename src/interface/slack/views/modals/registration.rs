@@ -5,12 +5,13 @@ use slack_morphism::prelude::*;
 
 /// メールアドレス登録モーダルを作成
 ///
-/// リソース予約前にGoogle Calendarメールアドレスを登録するモーダル
+/// `/register-calendar` コマンドなどで使用される、
+/// Google Calendarメールアドレスを登録するモーダル
 pub fn create() -> SlackView {
     let blocks = vec![
         SlackBlock::Section(
             SlackSectionBlock::new()
-                .with_text(md!("リソースを予約するには、Googleカレンダーと連携するためのメールアドレスを登録する必要があります。"))
+                .with_text(md!("Googleカレンダーと連携するためのメールアドレスを登録してください。\n登録されたアドレスに、カレンダーへのアクセス権が自動的に付与されます。"))
         ),
         SlackBlock::Input(
             SlackInputBlock::new(
