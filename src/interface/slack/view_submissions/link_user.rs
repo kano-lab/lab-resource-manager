@@ -62,8 +62,8 @@ pub async fn handle(
                 ),
             );
 
-            Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse { view: success_view },
+            Ok(Some(SlackViewSubmissionResponse::Push(
+                SlackViewSubmissionPushResponse { view: success_view },
             )))
         }
         Err(e) => {
@@ -72,8 +72,8 @@ pub async fn handle(
             // エラーモーダルに遷移
             let error_view = views::modals::result::create_error("紐付け失敗", &e);
 
-            Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse { view: error_view },
+            Ok(Some(SlackViewSubmissionResponse::Push(
+                SlackViewSubmissionPushResponse { view: error_view },
             )))
         }
     }
