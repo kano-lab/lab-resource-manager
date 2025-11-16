@@ -9,8 +9,8 @@
 //!
 //! ## モジュール
 //!
-//! - `extractors`: Slackペイロードからのデータ抽出
+//! - `extract_form_data`: Slackフォームデータの抽出
 //! - `user_resolver`: SlackユーザーIDからメールアドレスへの解決
 
-pub mod extractors;
+pub mod extract_form_data;
 pub mod user_resolver;

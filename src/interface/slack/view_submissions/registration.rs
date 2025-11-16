@@ -4,7 +4,7 @@ use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::ACTION_EMAIL_INPUT;
-use crate::interface::slack::utility::extractors::form_data;
+use crate::interface::slack::utility::extract_form_data;
 use crate::interface::slack::views::messages;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
@@ -23,8 +23,9 @@ pub async fn handle(
         let user_id = view_submission.user.id.to_string();
 
         // Extract email from form
-        let email_value = form_data::get_plain_text_input(view_submission, ACTION_EMAIL_INPUT)
-            .ok_or("メールアドレスが入力されていません")?;
+        let email_value =
+            extract_form_data::get_plain_text_input(view_submission, ACTION_EMAIL_INPUT)
+                .ok_or("メールアドレスが入力されていません")?;
 
         // Validate email
         let email = EmailAddress::new(email_value.trim().to_string())

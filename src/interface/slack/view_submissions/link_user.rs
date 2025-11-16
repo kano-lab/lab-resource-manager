@@ -4,7 +4,7 @@ use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::{ACTION_LINK_EMAIL_INPUT, ACTION_USER_SELECT};
-use crate::interface::slack::utility::extractors::form_data;
+use crate::interface::slack::utility::extract_form_data;
 use crate::interface::slack::views::messages;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
@@ -21,12 +21,13 @@ pub async fn handle(
     // リンク処理を実行
     let link_result = async {
         // ユーザーIDを抽出
-        let target_user_id = form_data::get_user_select(view_submission, ACTION_USER_SELECT)
-            .ok_or("ユーザーが選択されていません")?;
+        let target_user_id =
+            extract_form_data::get_user_select(view_submission, ACTION_USER_SELECT)
+                .ok_or("ユーザーが選択されていません")?;
 
         // メールアドレスを抽出
         let email_value =
-            form_data::get_plain_text_input(view_submission, ACTION_LINK_EMAIL_INPUT)
+            extract_form_data::get_plain_text_input(view_submission, ACTION_LINK_EMAIL_INPUT)
                 .ok_or("メールアドレスが入力されていません")?;
 
         // メールアドレスのバリデーション
