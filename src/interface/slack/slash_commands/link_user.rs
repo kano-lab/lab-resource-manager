@@ -15,6 +15,12 @@ pub async fn handle(
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
     info!("🔗 ユーザーリンクモーダルを開きます");
 
+    // user_id と channel_id のマッピングを保存
+    app.user_channel_map
+        .write()
+        .unwrap()
+        .insert(event.user_id.clone(), event.channel_id.clone());
+
     // ユーザーリンクモーダルを作成
     let modal = views::modals::link_user::create();
 

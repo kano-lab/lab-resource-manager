@@ -13,6 +13,7 @@
 //! - `app`: 依存性注入を備えたアプリケーションコア
 //! - `gateway`: Slackイベントのルーティング（イベント種別に応じたハンドラへの振り分け）
 //! - `slash_commands`: スラッシュコマンドハンドラ（`/register-calendar`、`/link-user`）
+//! - `block_actions`: ブロックアクションハンドラ（モーダル内ボタンクリックなど）
 //! - `view_submissions`: モーダル送信ハンドラ（フォーム送信時の処理）
 //! - `utility`: ユーティリティ関数（データ抽出、ユーザーID解決など）
 //! - `slack_client`: Slack API クライアント（モーダル操作、メッセージ送信）

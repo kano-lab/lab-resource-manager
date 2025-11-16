@@ -1,6 +1,8 @@
 //! メールアドレス登録モーダルビルダー
 
-use crate::interface::slack::constants::{ACTION_EMAIL_INPUT, CALLBACK_REGISTER_EMAIL};
+use crate::interface::slack::constants::{
+    ACTION_EMAIL_INPUT, CALLBACK_REGISTER_EMAIL,
+};
 use slack_morphism::prelude::*;
 
 /// メールアドレス登録モーダルを作成

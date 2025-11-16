@@ -16,6 +16,12 @@ pub async fn handle(
     let user_id = event.user_id.to_string();
     info!("📧 メールアドレス登録モーダルを開きます: user={}", user_id);
 
+    // user_id と channel_id のマッピングを保存
+    app.user_channel_map
+        .write()
+        .unwrap()
+        .insert(event.user_id.clone(), event.channel_id.clone());
+
     // メールアドレス登録モーダルを作成
     let modal = views::modals::registration::create();
 
