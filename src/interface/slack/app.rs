@@ -5,7 +5,8 @@
 use crate::application::usecases::grant_user_resource_access::GrantUserResourceAccessUseCase;
 use crate::domain::ports::repositories::IdentityLinkRepository;
 use slack_morphism::prelude::*;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use tokio_util::task::TaskTracker;
 
 /// 依存性注入を備えたSlackアプリケーション
@@ -21,6 +22,9 @@ pub struct SlackApp {
     // Slackインフラストラクチャ
     pub slack_client: Arc<SlackHyperClient>,
     pub bot_token: SlackApiToken,
+
+    // セッション状態（user_id -> channel_id のマッピング）
+    pub user_channel_map: Arc<RwLock<HashMap<SlackUserId, SlackChannelId>>>,
 
     // ランタイム
     pub task_tracker: TaskTracker,
@@ -46,6 +50,7 @@ impl SlackApp {
             identity_repo,
             slack_client,
             bot_token,
+            user_channel_map: Arc::new(RwLock::new(HashMap::new())),
             task_tracker: TaskTracker::new(),
             http_client: reqwest::Client::new(),
         }
