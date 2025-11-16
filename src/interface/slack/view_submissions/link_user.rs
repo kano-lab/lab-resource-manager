@@ -5,7 +5,6 @@ use crate::domain::common::EmailAddress;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::{ACTION_LINK_EMAIL_INPUT, ACTION_USER_SELECT};
 use crate::interface::slack::utility::extract_form_data;
-use crate::interface::slack::views::messages;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
@@ -52,32 +51,22 @@ pub async fn handle(
         Ok((user_id, email)) => {
             info!("✅ ユーザーリンク成功: {} -> {}", user_id, email.as_str());
 
-            // 成功メッセージをモーダルに表示
-            let success_message = format!(
-                "紐付け完了\n\n<@{}> に {} のカレンダーアクセス権を付与しました。",
-                user_id,
-                email.as_str()
-            );
-            let confirmation_modal =
-                messages::confirmation::create_confirmation_modal("紐付け完了", &success_message);
-
-            Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse {
-                    view: confirmation_modal,
-                },
-            )))
+            // 成功時はモーダルを閉じる（モーダルが閉じることで成功を示す）
+            Ok(None)
         }
         Err(e) => {
             error!("❌ ユーザーリンクに失敗: {}", e);
 
-            // エラーメッセージをモーダルに表示
-            let error_modal = messages::error::create_error_modal(
-                "紐付け失敗",
-                format!("ユーザーの紐付けに失敗しました\n\n{}", e),
-            );
-
-            Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse { view: error_modal },
+            // エラー時はモーダルに表示
+            Ok(Some(SlackViewSubmissionResponse::Errors(
+                SlackViewSubmissionErrorsResponse {
+                    errors: [(
+                        ACTION_LINK_EMAIL_INPUT.to_string(),
+                        format!("紐付けに失敗しました: {}", e),
+                    )]
+                    .into_iter()
+                    .collect(),
+                },
             )))
         }
     }

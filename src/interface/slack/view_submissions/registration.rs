@@ -5,7 +5,6 @@ use crate::domain::common::EmailAddress;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::ACTION_EMAIL_INPUT;
 use crate::interface::slack::utility::extract_form_data;
-use crate::interface::slack::views::messages;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
@@ -45,31 +44,22 @@ pub async fn handle(
         Ok(email) => {
             info!("✅ ユーザー登録成功: {}", email.as_str());
 
-            // 成功メッセージをモーダルに表示
-            let success_message = format!(
-                "登録完了\n\nカレンダーへのアクセス権を付与しました: {}",
-                email.as_str()
-            );
-            let confirmation_modal = messages::confirmation::create_confirmation_modal(
-                "登録完了",
-                &success_message,
-            );
-
-            Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse {
-                    view: confirmation_modal,
-                },
-            )))
+            // 成功時はモーダルを閉じる（モーダルが閉じることで成功を示す）
+            Ok(None)
         }
         Err(e) => {
             error!("❌ ユーザー登録に失敗: {}", e);
 
-            // エラーメッセージをモーダルに表示
-            let error_modal =
-                messages::error::create_error_modal("登録失敗", format!("登録に失敗しました\n\n{}", e));
-
-            Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse { view: error_modal },
+            // エラー時はモーダルに表示
+            Ok(Some(SlackViewSubmissionResponse::Errors(
+                SlackViewSubmissionErrorsResponse {
+                    errors: [(
+                        ACTION_EMAIL_INPUT.to_string(),
+                        format!("登録に失敗しました: {}", e),
+                    )]
+                    .into_iter()
+                    .collect(),
+                },
             )))
         }
     }
