@@ -14,8 +14,7 @@
 //! - `gateway`: Slackイベントのルーティング（イベント種別に応じたハンドラへの振り分け）
 //! - `slash_commands`: スラッシュコマンドハンドラ（`/register-calendar`、`/link-user`）
 //! - `view_submissions`: モーダル送信ハンドラ（フォーム送信時の処理）
-//! - `adapters`: 他レイヤーとの統合（ユーザーID解決など）
-//! - `extractors`: Slackペイロードからのデータ抽出ユーティリティ
+//! - `utility`: ユーティリティ関数（データ抽出、ユーザーID解決など）
 //! - `slack_client`: Slack API クライアント（モーダル操作、メッセージ送信）
 //! - `async_execution`: バックグラウンドタスク管理（非同期処理）
 //! - `views`: UIコンポーネント定義（モーダル、メッセージのビルダー）
@@ -31,14 +30,13 @@
 //! | Messages API | `slack_client/messages.rs` |
 //! | Block Kit | `views/` |
 
-pub mod adapters;
 pub mod app;
 pub mod async_execution;
 pub mod constants;
-pub mod extractors;
 pub mod gateway;
 pub mod slack_client;
 pub mod slash_commands;
+pub mod utility;
 pub mod view_submissions;
 pub mod views;
 

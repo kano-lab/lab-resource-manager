@@ -4,7 +4,7 @@ use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::{ACTION_LINK_EMAIL_INPUT, ACTION_USER_SELECT};
-use crate::interface::slack::extractors::form_data;
+use crate::interface::slack::utility::extractors::form_data;
 use crate::interface::slack::views::messages;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
