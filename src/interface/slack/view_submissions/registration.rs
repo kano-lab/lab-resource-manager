@@ -19,14 +19,11 @@ pub async fn handle(
 
     let user_id = view_submission.user.id.clone();
 
-    // Extract email from form
     let email_value = extract_form_data::get_plain_text_input(view_submission, ACTION_EMAIL_INPUT)
         .ok_or("メールアドレスが入力されていません")?;
 
-    // Validate email
     let email_result = EmailAddress::new(email_value.trim().to_string());
 
-    // Register user
     let registration_result = match &email_result {
         Ok(email) => app
             .grant_access_usecase

@@ -5,7 +5,7 @@ use slack_morphism::prelude::*;
 /// シンプルなエラーメッセージを作成
 ///
 /// # 引数
-/// * `message` - Error message text
+/// * `message` - エラーメッセージのテキスト
 pub fn create_simple(message: impl Into<String>) -> SlackMessageContent {
     SlackMessageContent::new().with_text(format!("❌ {}", message.into()))
 }
@@ -13,8 +13,8 @@ pub fn create_simple(message: impl Into<String>) -> SlackMessageContent {
 /// 詳細付きエラーメッセージを作成
 ///
 /// # 引数
-/// * `title` - Title of the error
-/// * `details` - Additional error details
+/// * `title` - エラーのタイトル
+/// * `details` - 追加のエラー詳細情報
 pub fn create_with_details(
     title: impl Into<String>,
     details: impl Into<String>,
