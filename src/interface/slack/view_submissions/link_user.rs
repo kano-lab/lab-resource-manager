@@ -2,6 +2,7 @@
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
+use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::{ACTION_LINK_EMAIL_INPUT, ACTION_USER_SELECT};
 use crate::interface::slack::utility::extract_form_data;
@@ -11,8 +12,8 @@ use tracing::{error, info};
 /// ユーザーリンクモーダル送信を処理
 ///
 /// 他のユーザーをメールアドレスに紐付け、カレンダーアクセス権を付与（管理者用）
-pub async fn handle(
-    app: &SlackApp,
+pub async fn handle<R: ResourceUsageRepository>(
+    app: &SlackApp<R>,
     view_submission: &SlackInteractionViewSubmissionEvent,
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
     info!("ユーザーリンクを処理中...");

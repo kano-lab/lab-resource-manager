@@ -1,4 +1,4 @@
-//! /register-calendar コマンドハンドラ
+//! /reserve コマンドハンドラ
 
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
@@ -7,15 +7,15 @@ use crate::interface::slack::views;
 use slack_morphism::prelude::*;
 use tracing::info;
 
-/// /register-calendar スラッシュコマンドを処理
+/// /reserve スラッシュコマンドを処理
 ///
-/// メールアドレス登録モーダルを開く
+/// リソース予約モーダルを開く
 pub async fn handle<R: ResourceUsageRepository>(
     app: &SlackApp<R>,
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
     let user_id = event.user_id.to_string();
-    info!("📧 メールアドレス登録モーダルを開きます: user={}", user_id);
+    info!("📅 リソース予約モーダルを開きます: user={}", user_id);
 
     // user_id と channel_id のマッピングを保存
     app.user_channel_map
@@ -23,8 +23,8 @@ pub async fn handle<R: ResourceUsageRepository>(
         .unwrap()
         .insert(event.user_id.clone(), event.channel_id.clone());
 
-    // メールアドレス登録モーダルを作成
-    let modal = views::modals::registration::create();
+    // リソース予約モーダルを作成
+    let modal = views::modals::reserve::create();
 
     // モーダルを開く
     modals::open(&app.slack_client, &app.bot_token, &event.trigger_id, modal).await?;

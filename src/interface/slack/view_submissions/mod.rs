@@ -18,11 +18,14 @@
 //! |-------------|---------|---------|
 //! | `register_email` | `registration` | メールアドレス登録 |
 //! | `link_user` | `link_user` | ユーザーリンク（管理者用） |
+//! | `reserve` | `reserve` | リソース予約 |
 //!
 //! ## モジュール
 //!
 //! - `registration`: メールアドレス登録モーダルの送信処理
 //! - `link_user`: ユーザーリンクモーダルの送信処理
+//! - `reserve`: リソース予約モーダルの送信処理
 
 pub mod link_user;
 pub mod registration;
+pub mod reserve;

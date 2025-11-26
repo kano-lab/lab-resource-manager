@@ -2,6 +2,7 @@
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
+use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::ACTION_EMAIL_INPUT;
 use crate::interface::slack::utility::extract_form_data;
@@ -11,8 +12,8 @@ use tracing::{error, info};
 /// メールアドレス登録モーダル送信を処理
 ///
 /// メールアドレスを登録し、カレンダーアクセス権を付与
-pub async fn handle(
-    app: &SlackApp,
+pub async fn handle<R: ResourceUsageRepository>(
+    app: &SlackApp<R>,
     view_submission: &SlackInteractionViewSubmissionEvent,
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
     info!("メールアドレス登録を処理中...");

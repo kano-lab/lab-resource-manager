@@ -2,12 +2,15 @@
 //!
 //! 受信したSlackイベントを適切なハンドラにルーティング
 
+use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
-use crate::interface::slack::constants::{CALLBACK_LINK_USER, CALLBACK_REGISTER_EMAIL};
+use crate::interface::slack::constants::{
+    CALLBACK_LINK_USER, CALLBACK_REGISTER_EMAIL, CALLBACK_RESERVE,
+};
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
-impl SlackApp {
+impl<R: ResourceUsageRepository> SlackApp<R> {
     /// スラッシュコマンドイベントをルーティング
     ///
     /// # 引数
@@ -29,6 +32,9 @@ impl SlackApp {
             }
             "/link-user" => {
                 crate::interface::slack::slash_commands::link_user::handle(self, event).await
+            }
+            "/reserve" => {
+                crate::interface::slack::slash_commands::reserve::handle(self, event).await
             }
             _ => Ok(SlackCommandEventResponse::new(
                 SlackMessageContent::new().with_text(format!("不明なコマンド: {}", command)),
@@ -89,6 +95,11 @@ impl SlackApp {
             Some(CALLBACK_LINK_USER) => {
                 info!("  → ユーザーリンクモーダル");
                 crate::interface::slack::view_submissions::link_user::handle(self, view_submission)
+                    .await
+            }
+            Some(CALLBACK_RESERVE) => {
+                info!("  → リソース予約モーダル");
+                crate::interface::slack::view_submissions::reserve::handle(self, view_submission)
                     .await
             }
             _ => {
