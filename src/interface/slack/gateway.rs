@@ -3,8 +3,9 @@
 //! 受信したSlackイベントを適切なハンドラにルーティング
 
 use crate::interface::slack::app::SlackApp;
+use crate::interface::slack::constants::{CALLBACK_LINK_USER, CALLBACK_REGISTER_EMAIL};
 use slack_morphism::prelude::*;
-use tracing::info;
+use tracing::{error, info};
 
 impl SlackApp {
     /// スラッシュコマンドイベントをルーティング
@@ -32,6 +33,68 @@ impl SlackApp {
             _ => Ok(SlackCommandEventResponse::new(
                 SlackMessageContent::new().with_text(format!("不明なコマンド: {}", command)),
             )),
+        }
+    }
+
+    /// インタラクションイベントをルーティング
+    ///
+    /// # 引数
+    /// * `event` - Slackからのインタラクションイベント（モーダル送信など）
+    ///
+    /// # 戻り値
+    /// View Submissionの場合はレスポンス（結果モーダルなど）を返す
+    pub async fn route_interaction(
+        &self,
+        event: SlackInteractionEvent,
+    ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
+        info!("🔘 インタラクションイベントを受信");
+
+        match &event {
+            SlackInteractionEvent::ViewSubmission(view_submission) => {
+                self.route_view_submission(view_submission).await
+            }
+            SlackInteractionEvent::ViewClosed(_) => {
+                info!("  → ViewClosedイベント（無視）");
+                Ok(None)
+            }
+            _ => {
+                info!("  → 不明なインタラクションイベント（無視）");
+                Ok(None)
+            }
+        }
+    }
+
+    /// ビュー送信イベントをルーティング（モーダル送信）
+    async fn route_view_submission(
+        &self,
+        view_submission: &SlackInteractionViewSubmissionEvent,
+    ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
+        info!("📝 ビュー送信を処理中");
+
+        // callback_idを抽出してどのモーダルが送信されたかを判定
+        let callback_id = match &view_submission.view.view {
+            SlackView::Modal(modal) => modal.callback_id.as_ref().map(|id| id.to_string()),
+            _ => None,
+        };
+
+        match callback_id.as_deref() {
+            Some(CALLBACK_REGISTER_EMAIL) => {
+                info!("  → メールアドレス登録モーダル");
+                crate::interface::slack::view_submissions::registration::handle(
+                    self,
+                    view_submission,
+                )
+                .await
+            }
+            Some(CALLBACK_LINK_USER) => {
+                info!("  → ユーザーリンクモーダル");
+                crate::interface::slack::view_submissions::link_user::handle(self, view_submission)
+                    .await
+            }
+            _ => {
+                error!("❌ 不明なcallback_id: {:?}", callback_id);
+                Ok(None)
+            }
         }
     }
 }
