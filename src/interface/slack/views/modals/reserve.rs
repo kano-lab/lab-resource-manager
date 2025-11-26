@@ -1,8 +1,8 @@
 //! リソース予約モーダルビルダー
 
 use crate::interface::slack::constants::{
-    ACTION_END_TIME, ACTION_GPU_DEVICE_NUMBER, ACTION_GPU_MODEL, ACTION_GPU_SERVER,
-    ACTION_NOTES, ACTION_RESOURCE_TYPE, ACTION_ROOM_NAME, ACTION_START_TIME, CALLBACK_RESERVE,
+    ACTION_END_TIME, ACTION_GPU_DEVICE_NUMBER, ACTION_GPU_MODEL, ACTION_GPU_SERVER, ACTION_NOTES,
+    ACTION_RESOURCE_TYPE, ACTION_ROOM_NAME, ACTION_START_TIME, CALLBACK_RESERVE,
 };
 use slack_morphism::prelude::*;
 
@@ -12,11 +12,9 @@ use slack_morphism::prelude::*;
 /// GPUまたは部屋のリソースを予約するモーダル
 pub fn create() -> SlackView {
     let blocks = vec![
-        SlackBlock::Section(
-            SlackSectionBlock::new().with_text(md!(
-                "リソースを予約します。\nリソースタイプを選択し、必要な情報を入力してください。"
-            )),
-        ),
+        SlackBlock::Section(SlackSectionBlock::new().with_text(md!(
+            "リソースを予約します。\nリソースタイプを選択し、必要な情報を入力してください。"
+        ))),
         // リソースタイプ選択
         SlackBlock::Input(
             SlackInputBlock::new(
@@ -44,7 +42,10 @@ pub fn create() -> SlackView {
         ),
         SlackBlock::Divider(SlackDividerBlock::new()),
         // GPU用フィールド
-        SlackBlock::Section(SlackSectionBlock::new().with_text(md!("*GPU情報*\nGPUを予約する場合は以下を入力してください"))),
+        SlackBlock::Section(
+            SlackSectionBlock::new()
+                .with_text(md!("*GPU情報*\nGPUを予約する場合は以下を入力してください")),
+        ),
         SlackBlock::Input(
             SlackInputBlock::new(
                 pt!("サーバー名"),
@@ -103,7 +104,9 @@ pub fn create() -> SlackView {
         ),
         SlackBlock::Divider(SlackDividerBlock::new()),
         // 部屋用フィールド
-        SlackBlock::Section(SlackSectionBlock::new().with_text(md!("*部屋情報*\n部屋を予約する場合は以下を入力してください"))),
+        SlackBlock::Section(SlackSectionBlock::new().with_text(md!(
+            "*部屋情報*\n部屋を予約する場合は以下を入力してください"
+        ))),
         SlackBlock::Input(
             SlackInputBlock::new(
                 pt!("部屋名"),

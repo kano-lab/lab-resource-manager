@@ -45,9 +45,8 @@ pub async fn handle<R: ResourceUsageRepository>(
                 .parse()
                 .map_err(|_| "GPUデバイス番号は数値である必要があります")?;
 
-            let model =
-                extract_form_data::get_plain_text_input(view_submission, ACTION_GPU_MODEL)
-                    .ok_or("GPUモデルが入力されていません")?;
+            let model = extract_form_data::get_plain_text_input(view_submission, ACTION_GPU_MODEL)
+                .ok_or("GPUモデルが入力されていません")?;
 
             Resource::Gpu(Gpu::new(server, device_number, model))
         }
@@ -72,8 +71,8 @@ pub async fn handle<R: ResourceUsageRepository>(
     let start_time = DateTime::<Utc>::from_timestamp(start_timestamp, 0)
         .ok_or("開始日時の変換に失敗しました")?;
 
-    let end_time = DateTime::<Utc>::from_timestamp(end_timestamp, 0)
-        .ok_or("終了日時の変換に失敗しました")?;
+    let end_time =
+        DateTime::<Utc>::from_timestamp(end_timestamp, 0).ok_or("終了日時の変換に失敗しました")?;
 
     let time_period = TimePeriod::new(start_time, end_time)?;
 
@@ -83,7 +82,7 @@ pub async fn handle<R: ResourceUsageRepository>(
     // ユーザーのメールアドレスを取得
     let identity_link = app
         .identity_repo
-        .find_by_external_user_id(&ExternalSystem::Slack, &user_id.to_string())
+        .find_by_external_user_id(&ExternalSystem::Slack, user_id.as_ref())
         .await?
         .ok_or("ユーザーが登録されていません。まず /register-calendar を実行してください")?;
 
@@ -92,7 +91,12 @@ pub async fn handle<R: ResourceUsageRepository>(
     // 予約を作成
     let reservation_result = app
         .create_resource_usage_usecase
-        .execute(owner_email.clone(), time_period, vec![resource.clone()], notes)
+        .execute(
+            owner_email.clone(),
+            time_period,
+            vec![resource.clone()],
+            notes,
+        )
         .await;
 
     // channel_id を取得
