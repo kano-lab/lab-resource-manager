@@ -47,8 +47,8 @@ pub async fn handle<R: ResourceUsageRepository>(
     let start_time = DateTime::<Utc>::from_timestamp(start_timestamp, 0)
         .ok_or("開始日時の変換に失敗しました")?;
 
-    let end_time = DateTime::<Utc>::from_timestamp(end_timestamp, 0)
-        .ok_or("終了日時の変換に失敗しました")?;
+    let end_time =
+        DateTime::<Utc>::from_timestamp(end_timestamp, 0).ok_or("終了日時の変換に失敗しました")?;
 
     let time_period = TimePeriod::new(start_time, end_time)?;
 
@@ -58,7 +58,7 @@ pub async fn handle<R: ResourceUsageRepository>(
     // ユーザーのメールアドレスを取得
     let identity_link = app
         .identity_repo
-        .find_by_external_user_id(&ExternalSystem::Slack, &user_id.to_string())
+        .find_by_external_user_id(&ExternalSystem::Slack, user_id.as_ref())
         .await?
         .ok_or("ユーザーが登録されていません。まず /register-calendar を実行してください")?;
 
