@@ -135,17 +135,65 @@ impl SlackSender {
         }
     }
 
-    /// シンプルなメッセージブロックを構築
-    fn build_message_blocks(message: &str) -> Vec<SlackBlock> {
-        let blocks_json = json!([
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": message
+    /// メッセージブロックを構築（イベントに応じてボタンを追加）
+    fn build_message_blocks(message: &str, context: &NotificationContext) -> Vec<SlackBlock> {
+        let usage = Self::extract_usage_from_event(context.event);
+        let usage_id = usage.id().as_str();
+
+        // Deleted イベントの場合はボタンなし
+        let should_add_buttons = matches!(
+            context.event,
+            NotificationEvent::ResourceUsageCreated(_) | NotificationEvent::ResourceUsageUpdated(_)
+        );
+
+        let blocks_json = if should_add_buttons {
+            // ボタン付きブロック
+            json!([
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": message
+                    }
+                },
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {
+                                "type": "plain_text",
+                                "text": "🔄 更新"
+                            },
+                            "style": "primary",
+                            "action_id": "edit_reservation",
+                            "value": usage_id
+                        },
+                        {
+                            "type": "button",
+                            "text": {
+                                "type": "plain_text",
+                                "text": "❌ キャンセル"
+                            },
+                            "style": "danger",
+                            "action_id": "cancel_reservation",
+                            "value": usage_id
+                        }
+                    ]
                 }
-            }
-        ]);
+            ])
+        } else {
+            // シンプルなブロック（Deletedイベント用）
+            json!([
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": message
+                    }
+                }
+            ])
+        };
 
         serde_json::from_value(blocks_json).unwrap_or_else(|e| {
             error!("Failed to deserialize Slack blocks: {}", e);
@@ -165,7 +213,7 @@ impl Sender for SlackSender {
     ) -> Result<(), NotificationError> {
         // メッセージとブロックを構築
         let message = Self::format_message(&context);
-        let blocks = Self::build_message_blocks(&message);
+        let blocks = Self::build_message_blocks(&message, &context);
 
         // Bot Token方式
         self.send_via_bot_token(&config.bot_token, &config.channel_id, message, blocks)

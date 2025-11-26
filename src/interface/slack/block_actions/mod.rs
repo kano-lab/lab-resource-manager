@@ -10,5 +10,9 @@
 //! ## モジュール
 //!
 //! - `modal_state_change`: モーダル状態変更（リソースタイプ、サーバー選択）
+//! - `cancel_button`: 予約キャンセルボタンハンドラ
+//! - `edit_button`: 予約編集ボタンハンドラ
 
+pub mod cancel_button;
+pub mod edit_button;
 pub mod modal_state_change;

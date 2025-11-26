@@ -110,6 +110,11 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
                 crate::interface::slack::view_submissions::reserve::handle(self, view_submission)
                     .await
             }
+            Some(CALLBACK_RESERVE_UPDATE) => {
+                info!("  → リソース予約更新モーダル");
+                crate::interface::slack::view_submissions::update::handle(self, view_submission)
+                    .await
+            }
             _ => {
                 error!("❌ 不明なcallback_id: {:?}", callback_id);
                 Ok(None)
@@ -136,6 +141,38 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         // モーダル内のインタラクションを処理（viewがSome）
         if block_actions.view.is_some() {
             return self.route_modal_interactions(block_actions).await;
+        }
+
+        // メッセージ内のボタンを処理
+        let Some(actions) = &block_actions.actions else {
+            return Ok(());
+        };
+
+        for action in actions {
+            let action_id = action.action_id.to_string();
+            info!("  → アクションID: {}", action_id);
+
+            match action_id.as_str() {
+                ACTION_EDIT_RESERVATION => {
+                    crate::interface::slack::block_actions::edit_button::handle(
+                        self,
+                        block_actions,
+                        action,
+                    )
+                    .await?
+                }
+                ACTION_CANCEL_RESERVATION => {
+                    crate::interface::slack::block_actions::cancel_button::handle(
+                        self,
+                        block_actions,
+                        action,
+                    )
+                    .await?
+                }
+                _ => {
+                    info!("  → 不明なアクション: {}", action_id);
+                }
+            }
         }
 
         Ok(())
