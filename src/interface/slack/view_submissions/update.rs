@@ -8,7 +8,6 @@ use crate::interface::slack::constants::*;
 use crate::interface::slack::utility::{datetime_parser::parse_datetime, extract_form_data};
 use slack_morphism::prelude::*;
 
-
 /// リソース予約更新モーダル送信を処理
 ///
 /// 既存の予約を更新し、エフェメラルメッセージで結果を通知
@@ -16,7 +15,6 @@ pub async fn handle<R: ResourceUsageRepository>(
     app: &SlackApp<R>,
     view_submission: &SlackInteractionViewSubmissionEvent,
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
-
     let user_id = view_submission.user.id.clone();
 
     // private_metadataからusage_idを取得
@@ -29,7 +27,6 @@ pub async fn handle<R: ResourceUsageRepository>(
     } else {
         return Err("モーダルビューが取得できません".into());
     };
-
 
     let usage_id = UsageId::from_string(usage_id_str.clone());
 

@@ -56,7 +56,6 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         &self,
         event: SlackInteractionEvent,
     ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
-
         match &event {
             SlackInteractionEvent::ViewSubmission(view_submission) => {
                 self.route_view_submission(view_submission).await
@@ -65,12 +64,8 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
                 self.route_block_actions(block_actions).await?;
                 Ok(None)
             }
-            SlackInteractionEvent::ViewClosed(_) => {
-                Ok(None)
-            }
-            _ => {
-                Ok(None)
-            }
+            SlackInteractionEvent::ViewClosed(_) => Ok(None),
+            _ => Ok(None),
         }
     }
 
@@ -79,13 +74,11 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         &self,
         view_submission: &SlackInteractionViewSubmissionEvent,
     ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
-
         // callback_idを抽出してどのモーダルが送信されたかを判定
         let callback_id = match &view_submission.view.view {
             SlackView::Modal(modal) => modal.callback_id.as_ref().map(|id| id.to_string()),
             _ => None,
         };
-
 
         match callback_id.as_deref() {
             Some(CALLBACK_REGISTER_EMAIL) => {
@@ -128,7 +121,6 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         &self,
         block_actions: &SlackInteractionBlockActionsEvent,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-
         // モーダル内のインタラクションを処理（viewがSome）
         if block_actions.view.is_some() {
             return self.route_modal_interactions(block_actions).await;
@@ -159,8 +151,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
                     )
                     .await?
                 }
-                _ => {
-                }
+                _ => {}
             }
         }
 
@@ -172,7 +163,6 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         &self,
         block_actions: &SlackInteractionBlockActionsEvent,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-
         let Some(actions) = &block_actions.actions else {
             return Ok(());
         };

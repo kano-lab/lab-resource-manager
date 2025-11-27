@@ -25,7 +25,6 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         return Ok(());
     };
 
-
     // 依存性を取得
     let slack_client = &app.slack_client;
     let bot_token = &app.bot_token;
@@ -53,9 +52,9 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         None,
         initial_server,
         Some(usage_id_str),
-        Some(CALLBACK_RESERVE_UPDATE),  // callback_id
-        Some("予約更新"),                // title
-        Some("更新"),                    // submit_text
+        Some(CALLBACK_RESERVE_UPDATE), // callback_id
+        Some("予約更新"),              // title
+        Some("更新"),                  // submit_text
     );
 
     modals::open(slack_client, bot_token, trigger_id, modal_view).await?;
