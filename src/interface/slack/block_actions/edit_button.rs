@@ -7,7 +7,7 @@ use crate::interface::slack::slack_client::modals;
 use crate::interface::slack::utility::user_resolver;
 use crate::interface::slack::views::modals::{registration, reserve};
 use slack_morphism::prelude::*;
-use tracing::{error, info};
+use tracing::error;
 
 /// 予約編集ボタンのクリックを処理
 pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
@@ -25,7 +25,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         return Ok(());
     };
 
-    info!("🔄 予約更新要求: usage_id={}", usage_id_str);
+    println!("🔄 予約更新要求: usage_id={}", usage_id_str);
 
     // 依存性を取得
     let slack_client = &app.slack_client;
@@ -40,7 +40,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     if !is_linked {
         // 未リンク: メールアドレス登録モーダルを表示
-        info!(
+        println!(
             "ユーザー {} は未リンク。メールアドレス登録モーダルを表示します",
             user.id
         );
@@ -52,7 +52,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     }
 
     // リンク済み: 更新モーダルを開く（usage_idをprivate_metadataに設定）
-    info!("予約更新モーダルを開きます（予約ID: {}）", usage_id_str);
+    println!("予約更新モーダルを開きます（予約ID: {}）", usage_id_str);
 
     // 予約モーダルを作成（更新用のパラメータを渡す）
     let initial_server = config.servers.first().map(|s| s.name.as_str());
@@ -66,10 +66,10 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         Some("更新"),                    // submit_text
     );
 
-    info!("  → 更新モーダルを作成: callback_id={}", CALLBACK_RESERVE_UPDATE);
+    println!("  → 更新モーダルを作成: callback_id={}", CALLBACK_RESERVE_UPDATE);
 
     modals::open(slack_client, bot_token, trigger_id, modal_view).await?;
 
-    info!("✅ 更新モーダルを開きました（予約ID: {}）", usage_id_str);
+    println!("✅ 更新モーダルを開きました（予約ID: {}）", usage_id_str);
     Ok(())
 }

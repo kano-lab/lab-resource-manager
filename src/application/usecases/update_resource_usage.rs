@@ -52,7 +52,7 @@ impl<R: ResourceUsageRepository> UpdateResourceUsageUseCase<R> {
         new_time_period: Option<TimePeriod>,
         new_notes: Option<String>,
     ) -> Result<(), ApplicationError> {
-        tracing::info!("🔄 UpdateResourceUsageUseCase::execute: id={}", id.as_str());
+        println!("🔄 UpdateResourceUsageUseCase::execute: id={}", id.as_str());
 
         // 既存の予約を取得
         let mut usage = self
@@ -61,7 +61,7 @@ impl<R: ResourceUsageRepository> UpdateResourceUsageUseCase<R> {
             .await?
             .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?;
 
-        tracing::info!("  → 取得した予約のID: {}", usage.id().as_str());
+        println!("  → 取得した予約のID: {}", usage.id().as_str());
 
         // 認可チェック
         self.authorization_policy
@@ -100,7 +100,7 @@ impl<R: ResourceUsageRepository> UpdateResourceUsageUseCase<R> {
         }
 
         // 更新
-        tracing::info!("  → save呼び出し: usage.id()={}", usage.id().as_str());
+        println!("  → save呼び出し: usage.id()={}", usage.id().as_str());
         self.repository.save(&usage).await?;
 
         Ok(())

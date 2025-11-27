@@ -6,7 +6,7 @@ use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use slack_morphism::prelude::*;
-use tracing::{error, info};
+use tracing::error;
 
 impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
     /// スラッシュコマンドイベントをルーティング
@@ -21,7 +21,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         event: SlackCommandEvent,
     ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
         let command = event.command.0.as_str();
-        info!("📨 スラッシュコマンドを受信: {}", command);
+        println!("📨 スラッシュコマンドを受信: {}", command);
 
         // user_id -> channel_id マッピングを更新
         self.user_channel_map
@@ -57,7 +57,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         &self,
         event: SlackInteractionEvent,
     ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
-        info!("🔘 インタラクションイベントを受信");
+        println!("🔘 インタラクションイベントを受信");
 
         match &event {
             SlackInteractionEvent::ViewSubmission(view_submission) => {
@@ -68,11 +68,11 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
                 Ok(None)
             }
             SlackInteractionEvent::ViewClosed(_) => {
-                info!("  → ViewClosedイベント（無視）");
+                println!("  → ViewClosedイベント（無視）");
                 Ok(None)
             }
             _ => {
-                info!("  → 不明なインタラクションイベント（無視）");
+                println!("  → 不明なインタラクションイベント（無視）");
                 Ok(None)
             }
         }
@@ -83,7 +83,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         &self,
         view_submission: &SlackInteractionViewSubmissionEvent,
     ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
-        info!("📝 ビュー送信を処理中");
+        println!("📝 ビュー送信を処理中");
 
         // callback_idを抽出してどのモーダルが送信されたかを判定
         let callback_id = match &view_submission.view.view {
@@ -91,11 +91,11 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
             _ => None,
         };
 
-        info!("  → callback_id: {:?}", callback_id);
+        println!("  → callback_id: {:?}", callback_id);
 
         match callback_id.as_deref() {
             Some(CALLBACK_REGISTER_EMAIL) => {
-                info!("  → メールアドレス登録モーダル");
+                println!("  → メールアドレス登録モーダル");
                 crate::interface::slack::view_submissions::registration::handle(
                     self,
                     view_submission,
@@ -103,17 +103,17 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
                 .await
             }
             Some(CALLBACK_LINK_USER) => {
-                info!("  → ユーザーリンクモーダル");
+                println!("  → ユーザーリンクモーダル");
                 crate::interface::slack::view_submissions::link_user::handle(self, view_submission)
                     .await
             }
             Some(CALLBACK_RESERVE_SUBMIT) => {
-                info!("  → 予約モーダル");
+                println!("  → 予約モーダル");
                 crate::interface::slack::view_submissions::reserve::handle(self, view_submission)
                     .await
             }
             Some(CALLBACK_RESERVE_UPDATE) => {
-                info!("  → リソース予約更新モーダル");
+                println!("  → リソース予約更新モーダル");
                 crate::interface::slack::view_submissions::update::handle(self, view_submission)
                     .await
             }
@@ -138,7 +138,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         &self,
         block_actions: &SlackInteractionBlockActionsEvent,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        info!("📋 ブロックアクションを処理中");
+        println!("📋 ブロックアクションを処理中");
 
         // モーダル内のインタラクションを処理（viewがSome）
         if block_actions.view.is_some() {
@@ -152,7 +152,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
 
         for action in actions {
             let action_id = action.action_id.to_string();
-            info!("  → アクションID: {}", action_id);
+            println!("  → アクションID: {}", action_id);
 
             match action_id.as_str() {
                 ACTION_EDIT_RESERVATION => {
@@ -172,7 +172,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
                     .await?
                 }
                 _ => {
-                    info!("  → 不明なアクション: {}", action_id);
+                    println!("  → 不明なアクション: {}", action_id);
                 }
             }
         }
@@ -185,7 +185,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         &self,
         block_actions: &SlackInteractionBlockActionsEvent,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        info!("  → モーダル内のインタラクション");
+        println!("  → モーダル内のインタラクション");
 
         let Some(actions) = &block_actions.actions else {
             return Ok(());
@@ -205,7 +205,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
                 }
                 _ => {
                     // その他のモーダルアクションは送信時に処理
-                    info!("  → アクション {} （送信時に処理）", action_id);
+                    println!("  → アクション {} （送信時に処理）", action_id);
                 }
             }
         }

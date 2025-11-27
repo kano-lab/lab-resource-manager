@@ -147,18 +147,18 @@ impl GoogleCalendarUsageRepository {
         // Event ID から Domain ID を取得
         let event_id = event.id.clone().unwrap_or_default();
 
-        tracing::info!("📝 parse_event: event_id={}", event_id);
+        println!("📝 parse_event: event_id={}", event_id);
 
         let domain_id = match self.id_mapper.get_domain_id(&event_id)? {
             Some(existing_domain_id) => {
-                tracing::info!("  → 既存マッピング発見: domain_id={}", existing_domain_id);
+                println!("  → 既存マッピング発見: domain_id={}", existing_domain_id);
                 existing_domain_id
             }
             None => {
                 // マッピングが見つからない場合、新しいdomain_idを生成してマッピングを作成
                 let new_domain_id = UsageId::new();
 
-                tracing::info!("  → マッピングなし。新しいdomain_idを生成: {}", new_domain_id.as_str());
+                println!("  → マッピングなし。新しいdomain_idを生成: {}", new_domain_id.as_str());
 
                 // 新しいマッピングを保存
                 self.id_mapper.save_mapping(
@@ -169,13 +169,13 @@ impl GoogleCalendarUsageRepository {
                     },
                 )?;
 
-                tracing::info!("  → マッピング保存完了");
+                println!("  → マッピング保存完了");
 
                 new_domain_id.as_str().to_string()
             }
         };
 
-        tracing::info!("  → 使用するdomain_id={}", domain_id);
+        println!("  → 使用するdomain_id={}", domain_id);
 
         let id = UsageId::from_string(domain_id);
 
@@ -542,7 +542,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
         let input_id = id.as_str();
 
-        tracing::info!("🔍 find_by_id: input_id={}", input_id);
+        println!("🔍 find_by_id: input_id={}", input_id);
 
         // まずdomain_idとして外部IDを取得を試みる
         let external_id = match self.id_mapper.get_external_id(input_id)? {
@@ -667,11 +667,11 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         let new_calendar_id = self.get_calendar_id_for_usage(usage)?;
         let domain_id = usage.id().as_str();
 
-        tracing::info!("💾 save: domain_id={}", domain_id);
+        println!("💾 save: domain_id={}", domain_id);
 
         // Domain IDから外部IDを検索
         if let Some(external_id) = self.id_mapper.get_external_id(domain_id)? {
-            tracing::info!("  → 既存イベントとして更新: calendar_id={}, event_id={}", external_id.calendar_id, external_id.event_id);
+            println!("  → 既存イベントとして更新: calendar_id={}, event_id={}", external_id.calendar_id, external_id.event_id);
             // 既存イベント
             if external_id.calendar_id == new_calendar_id {
                 // 同じカレンダー → 更新
@@ -729,7 +729,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             }
         } else {
             // 新規 → 作成
-            tracing::info!("  → 新規イベントとして作成");
+            println!("  → 新規イベントとして作成");
             let event = self.create_event_from_usage(usage)?;
             let (_response, created_event) = self
                 .hub
