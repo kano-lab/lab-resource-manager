@@ -21,7 +21,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     info!("🔍 予約フォームから値を抽出中...");
 
     // Get dependencies
-    let create_usage_usecase = &app.create_usage_usecase;
+    let create_usage_usecase = &app.create_resource_usage_usecase;
     let identity_repo = &app.identity_repo;
     let config = &app.resource_config;
 

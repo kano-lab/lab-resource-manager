@@ -88,12 +88,9 @@ pub fn create_reserve_modal(
         .with_optional(true),
     ));
 
-    // モーダルの作成（usage_idがあれば更新、なければ作成）
-    let (callback_id, title, submit_text) = if usage_id.is_some() {
-        (CALLBACK_UPDATE_SUBMIT, "リソース予約を更新", "更新する")
-    } else {
-        (CALLBACK_RESERVE_SUBMIT, "リソース予約", "予約する")
-    };
+    // モーダルの作成
+    // 注意: 更新機能は別のPRで実装予定のため、常に新規作成モーダルとして扱う
+    let (callback_id, title, submit_text) = (CALLBACK_RESERVE_SUBMIT, "リソース予約", "予約する");
 
     let mut modal_view = SlackModalView::new(pt!(title), blocks)
         .with_callback_id(callback_id.into())

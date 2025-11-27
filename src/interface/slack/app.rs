@@ -2,12 +2,8 @@
 //!
 //! 依存関係を管理し、Slackインタラクションのメインエントリポイントを提供
 
-use crate::application::usecases::{
-    create_resource_usage::CreateResourceUsageUseCase,
-    delete_resource_usage::DeleteResourceUsageUseCase,
-    grant_user_resource_access::GrantUserResourceAccessUseCase,
-    update_resource_usage::UpdateResourceUsageUseCase,
-};
+use crate::application::usecases::create_resource_usage::CreateResourceUsageUseCase;
+use crate::application::usecases::grant_user_resource_access::GrantUserResourceAccessUseCase;
 use crate::domain::ports::repositories::{IdentityLinkRepository, ResourceUsageRepository};
 use crate::infrastructure::config::ResourceConfig;
 use slack_morphism::prelude::*;
@@ -20,9 +16,7 @@ use tokio_util::task::TaskTracker;
 pub struct SlackApp<R: ResourceUsageRepository> {
     // UseCases
     pub grant_access_usecase: Arc<GrantUserResourceAccessUseCase>,
-    pub create_usage_usecase: Arc<CreateResourceUsageUseCase<R>>,
-    pub delete_usage_usecase: Arc<DeleteResourceUsageUseCase<R>>,
-    pub update_usage_usecase: Arc<UpdateResourceUsageUseCase<R>>,
+    pub create_resource_usage_usecase: Arc<CreateResourceUsageUseCase<R>>,
 
     // リポジトリ
     pub identity_repo: Arc<dyn IdentityLinkRepository>,
@@ -44,7 +38,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
     ///
     /// # 引数
     /// * `grant_access_usecase` - ユーザーアクセス権限付与UseCase
-    /// * `repository` - リソース使用リポジトリ
+    /// * `create_resource_usage_usecase` - リソース使用予定作成UseCase
     /// * `identity_repo` - ID紐付けリポジトリ
     /// * `resource_config` - リソース設定
     /// * `slack_client` - Slackクライアント
@@ -52,7 +46,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         grant_access_usecase: Arc<GrantUserResourceAccessUseCase>,
-        repository: Arc<R>,
+        create_resource_usage_usecase: Arc<CreateResourceUsageUseCase<R>>,
         identity_repo: Arc<dyn IdentityLinkRepository>,
         resource_config: Arc<ResourceConfig>,
         slack_client: Arc<SlackHyperClient>,
@@ -60,9 +54,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
     ) -> Self {
         Self {
             grant_access_usecase,
-            create_usage_usecase: Arc::new(CreateResourceUsageUseCase::new(repository.clone())),
-            delete_usage_usecase: Arc::new(DeleteResourceUsageUseCase::new(repository.clone())),
-            update_usage_usecase: Arc::new(UpdateResourceUsageUseCase::new(repository)),
+            create_resource_usage_usecase,
             identity_repo,
             resource_config,
             slack_client,

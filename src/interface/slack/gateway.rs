@@ -107,11 +107,6 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
                 )
                 .await
             }
-            Some(CALLBACK_UPDATE_SUBMIT) => {
-                info!("  → 予約更新モーダル");
-                crate::interface::slack::view_submissions::update::handle(self, view_submission)
-                    .await
-            }
             _ => {
                 error!("❌ 不明なcallback_id: {:?}", callback_id);
                 Ok(None)

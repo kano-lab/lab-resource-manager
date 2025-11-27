@@ -19,16 +19,13 @@
 //! | `register_email` | `registration` | メールアドレス登録 |
 //! | `link_user` | `link_user` | ユーザーリンク（管理者用） |
 //! | `reserve_submit` | `reservation` | リソース予約作成 |
-//! | `update_submit` | `update` | リソース予約更新 |
 //!
 //! ## モジュール
 //!
 //! - `registration`: メールアドレス登録モーダルの送信処理
 //! - `link_user`: ユーザーリンクモーダルの送信処理
 //! - `reservation`: リソース予約作成モーダルの送信処理
-//! - `update`: リソース予約更新モーダルの送信処理
 
 pub mod link_user;
 pub mod registration;
 pub mod reservation;
-pub mod update;

@@ -37,8 +37,6 @@ pub const CALLBACK_REGISTER_EMAIL: &str = "register_email";
 pub const CALLBACK_LINK_USER: &str = "link_user";
 /// 新規予約送信モーダルのコールバックID
 pub const CALLBACK_RESERVE_SUBMIT: &str = "reserve_submit";
-/// 予約更新送信モーダルのコールバックID
-pub const CALLBACK_UPDATE_SUBMIT: &str = "update_submit";
 
 // アクションID - メールアドレス登録モーダル
 /// メールアドレス入力フィールドのアクション
