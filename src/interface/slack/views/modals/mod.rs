@@ -12,7 +12,8 @@
 //!
 //! - `registration`: メールアドレス登録モーダル
 //! - `link_user`: ユーザーリンクモーダル（管理者用）
-//! - `result`: 処理結果モーダル（成功/失敗）
+//! - `reserve`: リソース予約モーダル（`/reserve`コマンドに対応）
 
 pub mod link_user;
 pub mod registration;
+pub mod reserve;

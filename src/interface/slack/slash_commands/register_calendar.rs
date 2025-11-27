@@ -1,26 +1,21 @@
-//! /register-calendar コマンドハンドラ
+//! /register-calendar コマンドハンドラ（非推奨）
 
+use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::slack_client::modals;
 use crate::interface::slack::views;
 use slack_morphism::prelude::*;
 use tracing::info;
 
-/// /register-calendar スラッシュコマンドを処理
+/// /register-calendar スラッシュコマンドを処理（非推奨）
 ///
 /// メールアドレス登録モーダルを開く
-pub async fn handle(
-    app: &SlackApp,
+pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
+    app: &SlackApp<R>,
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
     let user_id = event.user_id.to_string();
     info!("📧 メールアドレス登録モーダルを開きます: user={}", user_id);
-
-    // user_id と channel_id のマッピングを保存
-    app.user_channel_map
-        .write()
-        .unwrap()
-        .insert(event.user_id.clone(), event.channel_id.clone());
 
     // メールアドレス登録モーダルを作成
     let modal = views::modals::registration::create();

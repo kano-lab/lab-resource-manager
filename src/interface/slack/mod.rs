@@ -15,7 +15,7 @@
 //! - `slash_commands`: スラッシュコマンドハンドラ（`/register-calendar`、`/link-user`）
 //! - `block_actions`: ブロックアクションハンドラ（モーダル内ボタンクリックなど）
 //! - `view_submissions`: モーダル送信ハンドラ（フォーム送信時の処理）
-//! - `utility`: ユーティリティ関数（データ抽出、ユーザーID解決など）
+//! - `utility`: ユーティリティ関数
 //! - `slack_client`: Slack API クライアント（モーダル操作、メッセージ送信）
 //! - `async_execution`: バックグラウンドタスク管理（非同期処理）
 //! - `views`: UIコンポーネント定義（モーダル、メッセージのビルダー）
@@ -33,6 +33,7 @@
 
 pub mod app;
 pub mod async_execution;
+pub mod block_actions;
 pub mod constants;
 pub mod gateway;
 pub mod slack_client;
