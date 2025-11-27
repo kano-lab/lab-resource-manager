@@ -731,6 +731,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             // 新規 → 作成
             println!("  → 新規イベントとして作成");
             let event = self.create_event_from_usage(usage)?;
+            println!("  → Google Calendar APIに送信中...");
             let (_response, created_event) = self
                 .hub
                 .events()
@@ -741,18 +742,25 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
                     RepositoryError::ConnectionError(format!("イベント作成に失敗: {}", e))
                 })?;
 
+            println!("  → イベント作成成功");
+
             // Event IDを取得してマッピングを保存
             let event_id = created_event.id.ok_or_else(|| {
                 RepositoryError::Unknown("作成されたイベントにIDがありません".to_string())
             })?;
 
+            println!("  → 作成されたevent_id={}", event_id);
+            println!("  → マッピングを保存: domain_id={}, event_id={}", domain_id, event_id);
+
             self.id_mapper.save_mapping(
                 domain_id,
                 ExternalId {
-                    calendar_id: new_calendar_id,
-                    event_id,
+                    calendar_id: new_calendar_id.clone(),
+                    event_id: event_id.clone(),
                 },
             )?;
+
+            println!("  → マッピング保存完了");
         }
 
         Ok(())

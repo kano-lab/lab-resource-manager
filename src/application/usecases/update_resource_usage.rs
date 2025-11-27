@@ -55,10 +55,15 @@ impl<R: ResourceUsageRepository> UpdateResourceUsageUseCase<R> {
         println!("🔄 UpdateResourceUsageUseCase::execute: id={}", id.as_str());
 
         // 既存の予約を取得
-        let mut usage = self
-            .repository
-            .find_by_id(id)
-            .await?
+        let find_result = self.repository.find_by_id(id).await;
+
+        match &find_result {
+            Ok(Some(_)) => println!("  → 予約が見つかりました"),
+            Ok(None) => println!("  ❌ 予約が見つかりませんでした (None)"),
+            Err(e) => println!("  ❌ find_by_idでエラー: {:?}", e),
+        }
+
+        let mut usage = find_result?
             .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?;
 
         println!("  → 取得した予約のID: {}", usage.id().as_str());
