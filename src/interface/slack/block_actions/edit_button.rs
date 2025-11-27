@@ -54,20 +54,19 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     // リンク済み: 更新モーダルを開く（usage_idをprivate_metadataに設定）
     info!("予約更新モーダルを開きます（予約ID: {}）", usage_id_str);
 
-    // 予約モーダルを作成（usage_idを渡すことでprivate_metadataが設定される）
+    // 予約モーダルを作成（更新用のパラメータを渡す）
     let initial_server = config.servers.first().map(|s| s.name.as_str());
-    let mut modal_view =
-        reserve::create_reserve_modal(config, None, initial_server, Some(usage_id_str));
+    let modal_view = reserve::create_reserve_modal(
+        config,
+        None,
+        initial_server,
+        Some(usage_id_str),
+        Some(CALLBACK_RESERVE_UPDATE),  // callback_id
+        Some("予約更新"),                // title
+        Some("更新"),                    // submit_text
+    );
 
-    // callback_idとタイトル、ボタンを更新用に変更
-    if let SlackView::Modal(ref mut modal) = modal_view {
-        modal.callback_id = Some(CALLBACK_RESERVE_UPDATE.into());
-        modal.title = pt!("予約更新");
-        modal.submit = Some(pt!("更新"));
-        info!("  → callback_id を設定: {}", CALLBACK_RESERVE_UPDATE);
-    } else {
-        error!("❌ modal_view が SlackView::Modal ではありません");
-    }
+    info!("  → 更新モーダルを作成: callback_id={}", CALLBACK_RESERVE_UPDATE);
 
     modals::open(slack_client, bot_token, trigger_id, modal_view).await?;
 
