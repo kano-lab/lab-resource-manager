@@ -20,6 +20,7 @@
 //! - `RESOURCE_CONFIG`: リソース設定ファイルのパス (デフォルト: config/resources.toml)
 use lab_resource_manager::{
     application::usecases::{
+        create_resource_usage::CreateResourceUsageUseCase,
         grant_user_resource_access::GrantUserResourceAccessUseCase,
         notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase,
     },
@@ -101,6 +102,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // コマンドハンドラとBotの作成
     let config_arc = Arc::new(config);
 
+    // リソース使用予定リポジトリの作成（予約機能用）
+    let resource_usage_repo = Arc::new(
+        GoogleCalendarUsageRepository::new(&service_account_key, config_arc.as_ref().clone())
+            .await?,
+    );
+
+    // リソース使用予定作成UseCaseの作成
+    let create_resource_usage_usecase =
+        Arc::new(CreateResourceUsageUseCase::new(resource_usage_repo));
+
     // Tokenの読み込み
     let bot_token = env::var("SLACK_BOT_TOKEN").expect("環境変数 SLACK_BOT_TOKEN が必要です");
     let bot_token = SlackApiToken::new(bot_token.into());
@@ -109,7 +120,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let slack_client = Arc::new(SlackClient::new(SlackClientHyperConnector::new()?));
     let app = Arc::new(SlackApp::new(
         grant_access_usecase,
+        create_resource_usage_usecase,
         identity_repo.clone(),
+        config_arc.clone(),
         slack_client,
         bot_token,
     ));
@@ -154,7 +167,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let app = state
             .read()
             .await
-            .get_user_state::<Arc<SlackApp>>()
+            .get_user_state::<Arc<SlackApp<GoogleCalendarUsageRepository>>>()
             .ok_or("App の状態が見つかりません")?
             .clone();
 
@@ -183,7 +196,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let app = state
             .read()
             .await
-            .get_user_state::<Arc<SlackApp>>()
+            .get_user_state::<Arc<SlackApp<GoogleCalendarUsageRepository>>>()
             .ok_or("App の状態が見つかりません")?
             .clone();
 
