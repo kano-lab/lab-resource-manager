@@ -18,15 +18,8 @@ pub async fn handle<R: ResourceUsageRepository>(
     let user_id = view_submission.user.id.clone();
 
     // private_metadataからusage_idを取得
-    let usage_id_str = if let SlackView::Modal(modal) = &view_submission.view.view {
-        modal
-            .private_metadata
-            .as_ref()
-            .ok_or("usage_idがprivate_metadataに設定されていません")?
-            .to_string()
-    } else {
-        return Err("モーダルビューが取得できません".into());
-    };
+    let usage_id_str = extract_form_data::get_private_metadata(view_submission)
+        .ok_or("usage_idがprivate_metadataに設定されていません")?;
 
     let usage_id = UsageId::from_string(usage_id_str.clone());
 

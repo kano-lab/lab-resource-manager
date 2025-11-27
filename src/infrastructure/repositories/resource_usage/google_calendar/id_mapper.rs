@@ -76,8 +76,7 @@ impl IdMapper {
         domain_id: &str,
     ) -> Result<Option<ExternalId>, RepositoryError> {
         let mappings = self.mappings.lock().unwrap();
-        let result = mappings.get(domain_id).cloned();
-        Ok(result)
+        Ok(mappings.get(domain_id).cloned())
     }
 
     /// Event ID から Domain ID を取得（逆引き）
