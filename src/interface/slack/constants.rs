@@ -22,7 +22,6 @@ pub const ACTION_RESERVE_END_TIME: &str = "reserve_end_time";
 /// 備考入力のテキストエリアアクション
 pub const ACTION_RESERVE_NOTES: &str = "reserve_notes";
 
-
 // モーダルコールバックID
 /// メールアドレス登録モーダルのコールバックID
 pub const CALLBACK_REGISTER_EMAIL: &str = "register_email";

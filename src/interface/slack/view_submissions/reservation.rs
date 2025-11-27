@@ -47,11 +47,10 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     // Parse datetime
     let start_datetime = parse_datetime(&start_date, &start_time)?;
     let end_datetime = parse_datetime(&end_date, &end_time)?;
-    let time_period =
-        crate::domain::aggregates::resource_usage::value_objects::TimePeriod::new(
-            start_datetime,
-            end_datetime,
-        )?;
+    let time_period = crate::domain::aggregates::resource_usage::value_objects::TimePeriod::new(
+        start_datetime,
+        end_datetime,
+    )?;
     info!("  → 期間: {} ~ {}", start_datetime, end_datetime);
 
     // Get owner email from user_id
@@ -62,9 +61,11 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     let resource_type_val = resource_type.as_str();
     let resources: Vec<Resource> = if resource_type_val == "gpu" {
         // Get server name
-        let server_name =
-            extract_form_data::get_selected_option_text(view_submission, ACTION_RESERVE_SERVER_SELECT)
-                .ok_or("サーバーが選択されていません")?;
+        let server_name = extract_form_data::get_selected_option_text(
+            view_submission,
+            ACTION_RESERVE_SERVER_SELECT,
+        )
+        .ok_or("サーバーが選択されていません")?;
         info!("  → サーバー: {}", server_name);
 
         // Get server config
@@ -84,13 +85,20 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
             server_config
                 .devices
                 .iter()
-                .map(|device| Resource::Gpu(Gpu::new(server_name.clone(), device.id, device.model.clone())))
+                .map(|device| {
+                    Resource::Gpu(Gpu::new(
+                        server_name.clone(),
+                        device.id,
+                        device.model.clone(),
+                    ))
+                })
                 .collect()
         } else {
             // Parse device IDs from values
             let mut gpu_resources = Vec::new();
             for id_str in device_id_values {
-                let device_id = id_str.parse::<u32>()
+                let device_id = id_str
+                    .parse::<u32>()
                     .map_err(|e| format!("デバイスIDのパースに失敗: {} ({})", id_str, e))?;
                 let device = server_config
                     .devices
@@ -106,9 +114,11 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
             gpu_resources
         }
     } else if resource_type_val == "room" {
-        let room_name =
-            extract_form_data::get_selected_option_text(view_submission, ACTION_RESERVE_ROOM_SELECT)
-                .ok_or("部屋が選択されていません")?;
+        let room_name = extract_form_data::get_selected_option_text(
+            view_submission,
+            ACTION_RESERVE_ROOM_SELECT,
+        )
+        .ok_or("部屋が選択されていません")?;
         info!("  → 部屋: {}", room_name);
         vec![Resource::Room { name: room_name }]
     } else {
