@@ -4,7 +4,7 @@ use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use crate::interface::slack::slack_client::modals;
-use crate::interface::slack::views::modals::reservation;
+use crate::interface::slack::views::modals::reserve;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
@@ -80,7 +80,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     // Create updated modal
     info!("🔨 新しいモーダルを作成中...");
-    let updated_modal = reservation::create_reserve_modal(
+    let updated_modal = reserve::create_reserve_modal(
         config,
         new_resource_type,
         new_selected_server,

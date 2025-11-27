@@ -4,8 +4,7 @@ use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::slack_client::modals;
 use crate::interface::slack::utility::user_resolver;
-use crate::interface::slack::views::modals::registration;
-use crate::interface::slack::views::modals::reservation;
+use crate::interface::slack::views::modals::{registration, reserve};
 use slack_morphism::prelude::*;
 use tracing::info;
 
@@ -50,7 +49,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     // Create and open reservation modal
     let initial_server = config.servers.first().map(|s| s.name.as_str());
-    let modal = reservation::create_reserve_modal(config, None, initial_server, None);
+    let modal = reserve::create_reserve_modal(config, None, initial_server, None);
 
     modals::open(slack_client, bot_token, trigger_id, modal).await?;
 

@@ -12,8 +12,8 @@
 //!
 //! - `registration`: メールアドレス登録モーダル
 //! - `link_user`: ユーザーリンクモーダル（管理者用）
-//! - `reservation`: リソース予約モーダル
+//! - `reserve`: リソース予約モーダル（`/reserve`コマンドに対応）
 
 pub mod link_user;
 pub mod registration;
-pub mod reservation;
+pub mod reserve;
