@@ -665,7 +665,6 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
 
     async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError> {
         let new_calendar_id = self.get_calendar_id_for_usage(usage)?;
-        let event = self.create_event_from_usage(usage)?;
         let domain_id = usage.id().as_str();
 
         tracing::info!("💾 save: domain_id={}", domain_id);
@@ -676,6 +675,10 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             // 既存イベント
             if external_id.calendar_id == new_calendar_id {
                 // 同じカレンダー → 更新
+                // IMPORTANT: update API用に id フィールドを含む Event を作成
+                let mut event = self.create_event_from_usage(usage)?;
+                event.id = Some(external_id.event_id.clone());
+
                 self.hub
                     .events()
                     .update(event, &external_id.calendar_id, &external_id.event_id)
@@ -697,6 +700,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
                     })?;
 
                 // 新しいカレンダーにイベントを作成
+                let event = self.create_event_from_usage(usage)?;
                 let (_response, created_event) = self
                     .hub
                     .events()
@@ -726,6 +730,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         } else {
             // 新規 → 作成
             tracing::info!("  → 新規イベントとして作成");
+            let event = self.create_event_from_usage(usage)?;
             let (_response, created_event) = self
                 .hub
                 .events()
