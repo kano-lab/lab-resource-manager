@@ -12,9 +12,7 @@
 //! - `extract_form_data`: Slackフォームデータの抽出
 //! - `user_resolver`: SlackユーザーIDからメールアドレスへの解決
 //! - `datetime_parser`: 日付・時刻のパース
-//! - `resource_parser`: リソース情報のパース
 
 pub mod datetime_parser;
 pub mod extract_form_data;
-pub mod resource_parser;
 pub mod user_resolver;

@@ -142,11 +142,14 @@ pub fn get_selected_datetime(
     None
 }
 
-/// 複数選択されたオプションを取得（チェックボックスまたはマルチセレクトから）
+/// 複数選択されたオプションの値を取得（チェックボックスまたはマルチセレクトから）
 ///
 /// # 引数
 /// * `view_submission` - ビュー送信イベント
 /// * `action_id_str` - アクションID文字列
+///
+/// # 戻り値
+/// 選択されたオプションの値のリスト（表示テキストではなく値）
 pub fn get_selected_options(
     view_submission: &SlackInteractionViewSubmissionEvent,
     action_id_str: &str,
@@ -162,7 +165,7 @@ pub fn get_selected_options(
                 return value
                     .selected_options
                     .as_ref()
-                    .map(|options| options.iter().map(|opt| opt.text.text.clone()).collect())
+                    .map(|options| options.iter().map(|opt| opt.value.clone()).collect())
                     .unwrap_or_default();
             }
         }

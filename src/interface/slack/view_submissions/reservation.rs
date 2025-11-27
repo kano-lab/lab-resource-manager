@@ -6,7 +6,6 @@ use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use crate::interface::slack::utility::datetime_parser::parse_datetime;
 use crate::interface::slack::utility::extract_form_data;
-use crate::interface::slack::utility::resource_parser::parse_device_id;
 use crate::interface::slack::utility::user_resolver;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
@@ -27,7 +26,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     // Extract form values
     let resource_type =
-        extract_form_data::get_selected_option_text(view_submission, ACTION_RESERVE_RESOURCE_TYPE)
+        extract_form_data::get_selected_option_value(view_submission, ACTION_RESERVE_RESOURCE_TYPE)
             .ok_or("リソースタイプが選択されていません")?;
     info!("  → リソースタイプ: {}", resource_type);
 
@@ -76,11 +75,11 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
             .ok_or_else(|| format!("サーバー {} が見つかりません", server_name))?;
 
         // Get selected devices (optional)
-        let device_texts =
+        let device_id_values =
             extract_form_data::get_selected_options(view_submission, ACTION_RESERVE_DEVICES);
-        info!("  → 選択デバイス数: {}", device_texts.len());
+        info!("  → 選択デバイス数: {}", device_id_values.len());
 
-        if device_texts.is_empty() {
+        if device_id_values.is_empty() {
             // No specific devices selected - reserve entire server (all devices)
             server_config
                 .devices
@@ -88,10 +87,11 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
                 .map(|device| Resource::Gpu(Gpu::new(server_name.clone(), device.id, device.model.clone())))
                 .collect()
         } else {
-            // Parse device IDs from checkbox text
+            // Parse device IDs from values
             let mut gpu_resources = Vec::new();
-            for text in device_texts {
-                let device_id = parse_device_id(&text)?;
+            for id_str in device_id_values {
+                let device_id = id_str.parse::<u32>()
+                    .map_err(|e| format!("デバイスIDのパースに失敗: {} ({})", id_str, e))?;
                 let device = server_config
                     .devices
                     .iter()
