@@ -26,6 +26,29 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     info!("🗑️ 予約キャンセル要求: usage_id={}", usage_id_str);
 
+    // channel_idを取得してuser_channel_mapに登録（エフェメラルメッセージ送信用）
+    let channel_id = if let Some(channel) = &block_actions.channel {
+        // channelフィールドから取得できた場合は登録
+        app.user_channel_map
+            .write()
+            .unwrap()
+            .insert(user.id.clone(), channel.id.clone());
+        Some(channel.id.clone())
+    } else if let SlackInteractionActionContainer::Message(msg) = &block_actions.container {
+        // containerから取得を試みる
+        if let Some(channel_id) = &msg.channel_id {
+            app.user_channel_map
+                .write()
+                .unwrap()
+                .insert(user.id.clone(), channel_id.clone());
+            Some(channel_id.clone())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // 依存性を取得
     let delete_usage_usecase = &app.delete_usage_usecase;
     let identity_repo = &app.identity_repo;
@@ -46,7 +69,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         .await;
 
     // ユーザーにフィードバックメッセージを送信
-    if let Some(channel) = &block_actions.channel {
+    if let Some(ch_id) = channel_id {
         let message_text = match &result {
             Ok(_) => {
                 info!("✅ 削除成功: {}", usage_id.as_str());
@@ -70,7 +93,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
         // エフェメラルメッセージで結果を通知
         let ephemeral_req = SlackApiChatPostEphemeralRequest::new(
-            channel.id.clone(),
+            ch_id,
             user.id.clone(),
             SlackMessageContent::new().with_text(message_text),
         );
@@ -79,6 +102,8 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         if let Err(e) = session.chat_post_ephemeral(&ephemeral_req).await {
             error!("❌ エフェメラルメッセージ送信失敗: {}", e);
         }
+    } else {
+        error!("❌ channel_idが取得できないため、エフェメラルメッセージを送信できませんでした");
     }
 
     // エラーの場合もOkを返す（ユーザーには既にメッセージを送信済み）

@@ -45,6 +45,16 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     }
 
     // リンク済み: 更新モーダルを開く（usage_idをprivate_metadataに設定）
+    // channel_idを取得してuser_channel_mapに登録（エフェメラルメッセージ送信用）
+    if let SlackInteractionActionContainer::Message(msg) = &block_actions.container
+        && let Some(channel_id) = &msg.channel_id
+    {
+        app.user_channel_map
+            .write()
+            .unwrap()
+            .insert(user.id.clone(), channel_id.clone());
+    }
+
     // 予約モーダルを作成（更新用のパラメータを渡す）
     let initial_server = config.servers.first().map(|s| s.name.as_str());
     let modal_view = reserve::create_reserve_modal(
