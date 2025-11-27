@@ -16,7 +16,6 @@ pub async fn handle<R: ResourceUsageRepository>(
     app: &SlackApp<R>,
     view_submission: &SlackInteractionViewSubmissionEvent,
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
-    println!("リソース予約更新を処理中...");
 
     let user_id = view_submission.user.id.clone();
 
@@ -31,7 +30,6 @@ pub async fn handle<R: ResourceUsageRepository>(
         return Err("モーダルビューが取得できません".into());
     };
 
-    println!("予約ID: {}", usage_id_str);
 
     let usage_id = UsageId::from_string(usage_id_str.clone());
 
@@ -82,16 +80,8 @@ pub async fn handle<R: ResourceUsageRepository>(
 
     // エフェメラルメッセージで結果を送信
     let message_text = match update_result {
-        Ok(_) => {
-            println!(
-                "✅ リソース予約更新成功: user={}, usage_id={}",
-                user_id, usage_id_str
-            );
-            "✅ 予約を更新しました".to_string()
-        }
+        Ok(_) => "✅ 予約を更新しました".to_string(),
         Err(e) => {
-            println!("❌ リソース予約更新に失敗: {}", e);
-
             // エラーの種類に応じてユーザーフレンドリーなメッセージを返す
             let error_msg = e.to_string();
             if error_msg.contains("見つかりません") || error_msg.contains("NotFound") {
