@@ -419,6 +419,54 @@ impl GoogleCalendarUsageRepository {
             calendar_id
         )))
     }
+
+    /// event_idから直接イベントを削除（マッピングがない場合）
+    ///
+    /// 全カレンダーから該当するイベントを検索して削除します。
+    async fn delete_by_event_id(&self, event_id: &str) -> Result<(), RepositoryError> {
+        println!("🔍 delete_by_event_id: event_id={}", event_id);
+
+        // すべてのカレンダーIDを取得
+        let mut calendar_ids: Vec<String> = self
+            .config
+            .servers
+            .iter()
+            .map(|server| server.calendar_id.clone())
+            .collect();
+
+        // 部屋のカレンダーも追加
+        for room in &self.config.rooms {
+            calendar_ids.push(room.calendar_id.clone());
+        }
+
+        println!("  → 検索対象カレンダー数: {}", calendar_ids.len());
+
+        // 各カレンダーでイベントの削除を試みる
+        for calendar_id in calendar_ids {
+            println!("  → カレンダー {} で削除を試行", calendar_id);
+            match self
+                .hub
+                .events()
+                .delete(&calendar_id, event_id)
+                .doit()
+                .await
+            {
+                Ok(_) => {
+                    println!("  → 削除成功: calendar_id={}", calendar_id);
+                    return Ok(());
+                }
+                Err(e) => {
+                    println!("  → 削除失敗 (次を試行): {}", e);
+                    // 次のカレンダーを試す
+                    continue;
+                }
+            }
+        }
+
+        // すべてのカレンダーで見つからなかった
+        println!("  → すべてのカレンダーで見つかりませんでした");
+        Err(RepositoryError::NotFound)
+    }
 }
 
 #[async_trait]
@@ -594,15 +642,47 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     }
 
     async fn delete(&self, id: &UsageId) -> Result<(), RepositoryError> {
-        let domain_id = id.as_str();
+        let input_id = id.as_str();
+        println!("🗑️ delete: input_id={}", input_id);
 
-        // Domain IDから外部IDを取得
-        let external_id = self
-            .id_mapper
-            .get_external_id(domain_id)?
-            .ok_or(RepositoryError::NotFound)?;
+        // まずdomain_idとして外部IDを取得を試みる
+        let (external_id, actual_domain_id) = match self.id_mapper.get_external_id(input_id)? {
+            Some(ext_id) => {
+                println!("  → domain_idとして見つかりました");
+                (ext_id, input_id.to_string())
+            }
+            None => {
+                println!("  → domain_idとして見つからず。event_idとして逆引きを試みます");
+                // 見つからない場合、input_idがevent_idの可能性がある
+                // 逆引きマッピングを試みる
+                match self.id_mapper.get_domain_id(input_id)? {
+                    Some(domain_id) => {
+                        println!("  → 逆引きで domain_id={} が見つかりました", domain_id);
+                        // domain_idが見つかったので、それで外部IDを取得
+                        let ext_id = self
+                            .id_mapper
+                            .get_external_id(&domain_id)?
+                            .ok_or(RepositoryError::NotFound)?;
+                        (ext_id, domain_id)
+                    }
+                    None => {
+                        println!(
+                            "  → 逆引きでも見つかりませんでした。input_idをevent_idとして直接使用"
+                        );
+                        // それでも見つからない場合、input_idを直接event_idとして使用
+                        // カレンダーIDを推定する必要がある
+                        // とりあえず、全カレンダーから検索して削除を試みる
+                        return self.delete_by_event_id(input_id).await;
+                    }
+                }
+            }
+        };
 
         // イベントを削除
+        println!(
+            "  → Google Calendar から削除: calendar_id={}, event_id={}",
+            external_id.calendar_id, external_id.event_id
+        );
         self.hub
             .events()
             .delete(&external_id.calendar_id, &external_id.event_id)
@@ -611,7 +691,8 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             .map_err(|e| RepositoryError::ConnectionError(format!("イベント削除に失敗: {}", e)))?;
 
         // マッピングを削除
-        self.id_mapper.delete_mapping(domain_id)?;
+        println!("  → マッピング削除: domain_id={}", actual_domain_id);
+        self.id_mapper.delete_mapping(&actual_domain_id)?;
 
         Ok(())
     }
