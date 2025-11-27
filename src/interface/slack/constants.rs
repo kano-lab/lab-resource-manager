@@ -22,13 +22,6 @@ pub const ACTION_RESERVE_END_TIME: &str = "reserve_end_time";
 /// 備考入力のテキストエリアアクション
 pub const ACTION_RESERVE_NOTES: &str = "reserve_notes";
 
-// アクションID - ボタン
-/// 予約詳細表示ボタンアクション
-pub const ACTION_SHOW_DETAIL: &str = "show_detail";
-/// 予約編集ボタンアクション
-pub const ACTION_EDIT_RESERVATION: &str = "edit_reservation";
-/// 予約キャンセルボタンアクション
-pub const ACTION_CANCEL_RESERVATION: &str = "cancel_reservation";
 
 // モーダルコールバックID
 /// メールアドレス登録モーダルのコールバックID

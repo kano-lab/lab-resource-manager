@@ -121,34 +121,9 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("📋 ブロックアクションを処理中");
 
-        // メッセージ内のボタンアクションを処理（viewがNone）
-        if block_actions.view.is_none() {
-            return self.route_message_button_actions(block_actions).await;
-        }
-
         // モーダル内のインタラクションを処理（viewがSome）
         if block_actions.view.is_some() {
             return self.route_modal_interactions(block_actions).await;
-        }
-
-        Ok(())
-    }
-
-    /// メッセージ内のボタンアクションをルーティング（モーダル外）
-    async fn route_message_button_actions(
-        &self,
-        block_actions: &SlackInteractionBlockActionsEvent,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        info!("  → メッセージ内のボタンアクション");
-
-        let Some(actions) = &block_actions.actions else {
-            return Ok(());
-        };
-
-        for action in actions {
-            let action_id = action.action_id.to_string();
-            info!("  → アクションID: {}", action_id);
-            info!("  → 不明なアクション: {}", action_id);
         }
 
         Ok(())

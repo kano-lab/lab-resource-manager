@@ -15,9 +15,6 @@
 //! - `slash_commands`: スラッシュコマンドハンドラ（`/register-calendar`、`/link-user`）
 //! - `block_actions`: ブロックアクションハンドラ（モーダル内ボタンクリックなど）
 //! - `view_submissions`: モーダル送信ハンドラ（フォーム送信時の処理）
-//! - `adapters`: アダプター（ユーザーID解決など）
-//! - `parsers`: パーサー（日時、リソースIDなど）
-//! - `extractors`: データ抽出（フォームデータ抽出）
 //! - `utility`: ユーティリティ関数
 //! - `slack_client`: Slack API クライアント（モーダル操作、メッセージ送信）
 //! - `async_execution`: バックグラウンドタスク管理（非同期処理）
