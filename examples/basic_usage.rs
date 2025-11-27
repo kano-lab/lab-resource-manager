@@ -43,11 +43,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("GOOGLE_SERVICE_ACCOUNT_KEY must be set");
     let absolute_key_path = project_root.join(&service_account_key);
 
-    let repository = GoogleCalendarUsageRepository::new(
-        absolute_key_path.to_str().expect("Failed to convert path"),
-        config.clone(),
-    )
-    .await?;
+    let repository = Arc::new(
+        GoogleCalendarUsageRepository::new(
+            absolute_key_path.to_str().expect("Failed to convert path"),
+            config.clone(),
+        )
+        .await?,
+    );
     println!("✅ Google Calendar repository initialized");
 
     // Create identity link repository

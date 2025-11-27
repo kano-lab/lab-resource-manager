@@ -3,6 +3,7 @@ use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::ports::{NotificationEvent, Notifier};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// 未来および進行中のリソース使用状況の変更を監視し、通知するユースケース
 ///
@@ -19,7 +20,7 @@ where
     R: ResourceUsageRepository,
     N: Notifier,
 {
-    repository: R,
+    repository: Arc<R>,
     notifier: N,
     previous_state: tokio::sync::Mutex<HashMap<String, ResourceUsage>>,
 }
@@ -32,12 +33,12 @@ where
     /// 新しいインスタンスを作成し、初期状態を取得する
     ///
     /// # Arguments
-    /// * `repository` - リソース使用リポジトリ
+    /// * `repository` - リソース使用リポジトリ（Arc で共有）
     /// * `notifier` - 通知サービス
     ///
     /// # Errors
     /// リポジトリから初期状態の取得に失敗した場合
-    pub async fn new(repository: R, notifier: N) -> Result<Self, ApplicationError> {
+    pub async fn new(repository: Arc<R>, notifier: N) -> Result<Self, ApplicationError> {
         let instance = Self {
             repository,
             notifier,

@@ -29,6 +29,8 @@ pub const CALLBACK_REGISTER_EMAIL: &str = "register_email";
 pub const CALLBACK_LINK_USER: &str = "link_user";
 /// 新規予約送信モーダルのコールバックID
 pub const CALLBACK_RESERVE_SUBMIT: &str = "reserve_submit";
+/// 予約更新モーダルのコールバックID
+pub const CALLBACK_RESERVE_UPDATE: &str = "reserve_update";
 
 // アクションID - メールアドレス登録モーダル
 /// メールアドレス入力フィールドのアクション
@@ -39,3 +41,9 @@ pub const ACTION_EMAIL_INPUT: &str = "email_input";
 pub const ACTION_USER_SELECT: &str = "user_select";
 /// リンク先メールアドレス入力フィールドのアクション
 pub const ACTION_LINK_EMAIL_INPUT: &str = "link_email_input";
+
+// アクションID - 予約リストボタン
+/// 予約編集ボタンのアクション
+pub const ACTION_EDIT_RESERVATION: &str = "edit_reservation";
+/// 予約キャンセルボタンのアクション
+pub const ACTION_CANCEL_RESERVATION: &str = "cancel_reservation";

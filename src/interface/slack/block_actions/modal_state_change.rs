@@ -75,6 +75,9 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         new_resource_type,
         new_selected_server,
         None, // No usage_id for modal updates
+        None, // Use default callback_id
+        None, // Use default title
+        None, // Use default submit_text
     );
 
     // Update modal

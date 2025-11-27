@@ -21,8 +21,10 @@
 use lab_resource_manager::{
     application::usecases::{
         create_resource_usage::CreateResourceUsageUseCase,
+        delete_resource_usage::DeleteResourceUsageUseCase,
         grant_user_resource_access::GrantUserResourceAccessUseCase,
         notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase,
+        update_resource_usage::UpdateResourceUsageUseCase,
     },
     infrastructure::{
         config::load_config,
@@ -108,9 +110,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?,
     );
 
-    // リソース使用予定作成UseCaseの作成
+    // リソース使用予定UseCasesの作成
     let create_resource_usage_usecase =
-        Arc::new(CreateResourceUsageUseCase::new(resource_usage_repo));
+        Arc::new(CreateResourceUsageUseCase::new(resource_usage_repo.clone()));
+    let update_resource_usage_usecase =
+        Arc::new(UpdateResourceUsageUseCase::new(resource_usage_repo.clone()));
+    let delete_resource_usage_usecase =
+        Arc::new(DeleteResourceUsageUseCase::new(resource_usage_repo.clone()));
 
     // Tokenの読み込み
     let bot_token = env::var("SLACK_BOT_TOKEN").expect("環境変数 SLACK_BOT_TOKEN が必要です");
@@ -121,6 +127,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Arc::new(SlackApp::new(
         grant_access_usecase,
         create_resource_usage_usecase,
+        update_resource_usage_usecase,
+        delete_resource_usage_usecase,
         identity_repo.clone(),
         config_arc.clone(),
         slack_client,
@@ -131,14 +139,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 通知機能のセットアップ
     let notifier = NotificationRouter::new(config_arc.as_ref().clone(), identity_repo.clone());
 
-    // 別のリポジトリインスタンスを作成（ポーリング用）
-    let polling_repository =
-        GoogleCalendarUsageRepository::new(&service_account_key, config_arc.as_ref().clone())
-            .await?;
-
-    let notify_usecase = NotifyFutureResourceUsageChangesUseCase::new(polling_repository, notifier)
-        .await
-        .map_err(|e| format!("通知UseCaseの初期化に失敗: {}", e))?;
+    // ポーリング用にも同じリポジトリインスタンスを使用（IdMapperを共有するため）
+    let notify_usecase =
+        NotifyFutureResourceUsageChangesUseCase::new(Arc::clone(&resource_usage_repo), notifier)
+            .await
+            .map_err(|e| format!("通知UseCaseの初期化に失敗: {}", e))?;
 
     let notify_usecase = Arc::new(notify_usecase);
     println!("✅ 通知機能を初期化しました");
