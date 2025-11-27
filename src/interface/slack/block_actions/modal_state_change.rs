@@ -29,31 +29,21 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         action
             .selected_option
             .as_ref()
-            .and_then(|opt| match &opt.text {
-                SlackBlockText::Plain(plain) => {
-                    let text_val = plain.text.as_str();
-                    if text_val == "GPU Server" {
-                        Some("gpu")
-                    } else if text_val == "Room" {
-                        Some("room")
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            })
+            .map(|opt| opt.value.as_str())
     } else {
         None
     };
 
+    // サーバー選択の決定
     let new_selected_server = if action_id == ACTION_RESERVE_SERVER_SELECT {
+        // サーバーが明示的に選択された場合
         action
             .selected_option
             .as_ref()
-            .and_then(|opt| match &opt.text {
-                SlackBlockText::Plain(plain) => Some(plain.text.as_str()),
-                _ => None,
-            })
+            .map(|opt| opt.value.as_str())
+    } else if new_resource_type.is_some() && new_resource_type == Some("gpu") {
+        // リソースタイプがGPUに変更された場合、デフォルトのサーバーを選択
+        config.servers.first().map(|s| s.name.as_str())
     } else {
         None
     };
