@@ -59,22 +59,42 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         .execute(&usage_id, &EmailAddress::new(owner_email.clone())?)
         .await;
 
-    match &result {
-        Ok(_) => println!("🔵 削除処理結果: OK"),
-        Err(e) => println!("🔵 削除処理結果: Error = {}", e),
+    // ユーザーにフィードバックメッセージを送信
+    if let Some(channel) = &block_actions.channel {
+        let message_text = match &result {
+            Ok(_) => {
+                info!("✅ 削除成功: {}", usage_id.as_str());
+                format!("✅ 予約をキャンセルしました")
+            }
+            Err(e) => {
+                error!("❌ 削除失敗: usage_id={}, error={}", usage_id.as_str(), e);
+
+                // エラーの種類に応じてユーザーフレンドリーなメッセージを返す
+                let error_msg = e.to_string();
+                if error_msg.contains("見つかりません") || error_msg.contains("NotFound") {
+                    "❌ 申し訳ございません。この予約は既に削除されているか、見つかりませんでした。".to_string()
+                } else if error_msg.contains("権限") || error_msg.contains("Unauthorized") {
+                    "❌ この予約を削除する権限がありません。".to_string()
+                } else {
+                    format!("❌ 予約の削除に失敗しました: {}", error_msg)
+                }
+            }
+        };
+
+        // エフェメラルメッセージで結果を通知
+        let ephemeral_req = SlackApiChatPostEphemeralRequest::new(
+            channel.id.clone(),
+            user.id.clone(),
+            SlackMessageContent::new().with_text(message_text),
+        );
+
+        let session = app.slack_client.open_session(&app.bot_token);
+        if let Err(e) = session.chat_post_ephemeral(&ephemeral_req).await {
+            error!("❌ エフェメラルメッセージ送信失敗: {}", e);
+        }
     }
 
-    match &result {
-        Ok(_) => {
-            info!("✅ 削除成功: {}", usage_id.as_str());
-        }
-        Err(e) => {
-            error!("❌ 削除失敗: usage_id={}, error={}", usage_id.as_str(), e);
-        }
-    }
-
-    result?;
-
-    info!("✅ 予約をキャンセルしました: {}", usage_id_str);
+    // エラーの場合もOkを返す（ユーザーには既にメッセージを送信済み）
+    // これにより、Slackに「エラーが発生しました」というデフォルトメッセージが表示されない
     Ok(())
 }
