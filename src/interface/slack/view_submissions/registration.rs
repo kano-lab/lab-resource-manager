@@ -5,7 +5,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::ACTION_EMAIL_INPUT;
-use crate::interface::slack::extractors::form_data;
+use crate::interface::slack::utility::extract_form_data as form_data;
 use crate::interface::slack::views::modals::{reservation, result};
 use slack_morphism::prelude::*;
 use tracing::{error, info};

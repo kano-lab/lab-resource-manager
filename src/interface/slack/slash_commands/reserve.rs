@@ -1,9 +1,9 @@
 //! /reserve コマンドハンドラ
 
 use crate::domain::ports::repositories::ResourceUsageRepository;
-use crate::interface::slack::adapters::user_resolver;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::slack_client::modals;
+use crate::interface::slack::utility::user_resolver;
 use crate::interface::slack::views::modals::registration;
 use crate::interface::slack::views::modals::reservation;
 use slack_morphism::prelude::*;

@@ -14,7 +14,7 @@
 ///
 /// # Example
 /// ```
-/// use lab_resource_manager::interface::slack::parsers::resource::parse_device_id;
+/// use lab_resource_manager::interface::slack::utility::resource_parser::parse_device_id;
 ///
 /// let id = parse_device_id("Device 0 (RTX 3090)").unwrap();
 /// assert_eq!(id, 0);

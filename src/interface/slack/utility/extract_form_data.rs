@@ -41,10 +41,7 @@ pub fn get_selected_option_value(
     for (_block_id, actions_map) in values.iter() {
         for (action_id, value) in actions_map.iter() {
             if action_id.to_string() == action_id_str {
-                return value
-                    .selected_option
-                    .as_ref()
-                    .map(|opt| opt.text.text.clone());
+                return value.selected_option.as_ref().map(|opt| opt.value.clone());
             }
         }
     }
@@ -120,6 +117,31 @@ pub fn get_selected_time(
     None
 }
 
+/// 選択された日時を取得（DateTimePickerから）
+///
+/// # 引数
+/// * `view_submission` - ビュー送信イベント
+/// * `action_id_str` - アクションID文字列
+///
+/// # 戻り値
+/// UNIXタイムスタンプ（秒）
+pub fn get_selected_datetime(
+    view_submission: &SlackInteractionViewSubmissionEvent,
+    action_id_str: &str,
+) -> Option<i64> {
+    let state = view_submission.view.state_params.state.as_ref()?;
+    let values = &state.values;
+
+    for (_block_id, actions_map) in values.iter() {
+        for (action_id, value) in actions_map.iter() {
+            if action_id.to_string() == action_id_str {
+                return value.selected_date_time.as_ref().map(|dt| dt.0.timestamp());
+            }
+        }
+    }
+    None
+}
+
 /// 複数選択されたオプションを取得（チェックボックスまたはマルチセレクトから）
 ///
 /// # 引数
@@ -162,7 +184,7 @@ pub fn get_private_metadata(
     modal_view.private_metadata.as_ref().map(|s| s.to_string())
 }
 
-/// ユーザー選択フィールドから選択されたユーザーIDを取得
+/// ユーザー選択から選択されたユーザーIDを取得
 ///
 /// # 引数
 /// * `view_submission` - ビュー送信イベント
