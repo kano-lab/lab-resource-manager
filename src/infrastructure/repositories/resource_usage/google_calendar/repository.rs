@@ -452,6 +452,57 @@ impl GoogleCalendarUsageRepository {
         )))
     }
 
+    /// event_idから直接イベントを検索（マッピングがない場合）
+    ///
+    /// 全カレンダーから該当するイベントを検索してResourceUsageを返します。
+    async fn find_by_event_id(
+        &self,
+        event_id: &str,
+    ) -> Result<Option<ResourceUsage>, RepositoryError> {
+        println!("🔍 find_by_event_id: event_id={}", event_id);
+
+        // すべてのカレンダーIDを取得
+        let mut calendar_ids: Vec<String> = self
+            .config
+            .servers
+            .iter()
+            .map(|server| server.calendar_id.clone())
+            .collect();
+
+        // 部屋のカレンダーも追加
+        for room in &self.config.rooms {
+            calendar_ids.push(room.calendar_id.clone());
+        }
+
+        println!("  → 検索対象カレンダー数: {}", calendar_ids.len());
+
+        // 各カレンダーでイベントの検索を試みる
+        for calendar_id in calendar_ids {
+            println!("  → カレンダー {} で検索", calendar_id);
+            match self
+                .fetch_event_from_calendar(&calendar_id, event_id)
+                .await?
+            {
+                Some(event) => {
+                    println!("  → 見つかりました: calendar_id={}", calendar_id);
+                    // リソースコンテキストを取得
+                    let resource_context = self.get_resource_context(&calendar_id)?;
+                    // イベントをパース（この時点で新しいマッピングが作成される）
+                    let usage = self.parse_event(event, &calendar_id, &resource_context)?;
+                    return Ok(Some(usage));
+                }
+                None => {
+                    // 次のカレンダーを試す
+                    continue;
+                }
+            }
+        }
+
+        // すべてのカレンダーで見つからなかった
+        println!("  → すべてのカレンダーで見つかりませんでした");
+        Ok(None)
+    }
+
     /// event_idから直接イベントを削除（マッピングがない場合）
     ///
     /// 全カレンダーから該当するイベントを検索して削除します。
@@ -504,12 +555,38 @@ impl GoogleCalendarUsageRepository {
 #[async_trait]
 impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
-        let domain_id = id.as_str();
+        let input_id = id.as_str();
+        println!("🔍 find_by_id: input_id={}", input_id);
 
-        // Domain ID から外部ID を取得
-        let external_id = match self.id_mapper.get_external_id(domain_id)? {
-            Some(id) => id,
-            None => return Ok(None), // マッピングが見つからない場合はNone
+        // まずdomain_idとして外部IDを取得を試みる
+        let external_id = match self.id_mapper.get_external_id(input_id)? {
+            Some(ext_id) => {
+                println!("  → domain_idとして見つかりました");
+                ext_id
+            }
+            None => {
+                println!("  → domain_idとして見つからず。event_idとして逆引きを試みます");
+                // 見つからない場合、input_idがevent_idの可能性がある
+                // 逆引きマッピングを試みる
+                match self.id_mapper.get_domain_id(input_id)? {
+                    Some(domain_id) => {
+                        println!("  → 逆引きで domain_id={} が見つかりました", domain_id);
+                        // domain_idが見つかったので、それで外部IDを取得
+                        match self.id_mapper.get_external_id(&domain_id)? {
+                            Some(ext_id) => ext_id,
+                            None => {
+                                println!("  → domain_idから外部ID取得失敗");
+                                return Ok(None);
+                            }
+                        }
+                    }
+                    None => {
+                        println!("  → 逆引きでも見つかりませんでした");
+                        // それでも見つからない場合、event_idとして全カレンダーから検索
+                        return self.find_by_event_id(input_id).await;
+                    }
+                }
+            }
         };
 
         // 特定のカレンダーから直接イベントを取得
