@@ -1,15 +1,13 @@
 //! リソース予約モーダル送信ハンドラ
 
-use crate::domain::aggregates::resource_usage::value_objects::TimePeriod;
 use crate::domain::aggregates::resource_usage::value_objects::resource::{Gpu, Resource};
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use crate::interface::slack::utility::datetime_parser::parse_datetime;
-use crate::interface::slack::utility::extract_form_data as form_data;
+use crate::interface::slack::utility::extract_form_data;
 use crate::interface::slack::utility::resource_parser::parse_device_id;
 use crate::interface::slack::utility::user_resolver;
-use crate::interface::slack::views::modals::result;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
@@ -20,6 +18,8 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
     info!("🔍 予約フォームから値を抽出中...");
 
+    let user_id = view_submission.user.id.clone();
+
     // Get dependencies
     let create_usage_usecase = &app.create_resource_usage_usecase;
     let identity_repo = &app.identity_repo;
@@ -27,84 +27,89 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     // Extract form values
     let resource_type =
-        form_data::get_selected_option_text(view_submission, ACTION_RESERVE_RESOURCE_TYPE)
+        extract_form_data::get_selected_option_text(view_submission, ACTION_RESERVE_RESOURCE_TYPE)
             .ok_or("リソースタイプが選択されていません")?;
+    info!("  → リソースタイプ: {}", resource_type);
 
-    let resource_type_val = if resource_type == "GPU Server" {
-        "gpu"
-    } else if resource_type == "Room" {
-        "room"
-    } else {
-        &resource_type
-    };
+    let start_date =
+        extract_form_data::get_selected_date(view_submission, ACTION_RESERVE_START_DATE)
+            .ok_or("開始日が選択されていません")?;
+    let start_time =
+        extract_form_data::get_selected_time(view_submission, ACTION_RESERVE_START_TIME)
+            .ok_or("開始時刻が選択されていません")?;
 
-    let server_name =
-        form_data::get_selected_option_text(view_submission, ACTION_RESERVE_SERVER_SELECT);
-    let room_name =
-        form_data::get_selected_option_text(view_submission, ACTION_RESERVE_ROOM_SELECT);
-    let device_ids = form_data::get_selected_options(view_submission, ACTION_RESERVE_DEVICES);
-
-    let start_date = form_data::get_selected_date(view_submission, ACTION_RESERVE_START_DATE)
-        .ok_or("開始日が選択されていません")?;
-    let start_time = form_data::get_selected_time(view_submission, ACTION_RESERVE_START_TIME)
-        .ok_or("開始時刻が選択されていません")?;
-    let end_date = form_data::get_selected_date(view_submission, ACTION_RESERVE_END_DATE)
+    let end_date = extract_form_data::get_selected_date(view_submission, ACTION_RESERVE_END_DATE)
         .ok_or("終了日が選択されていません")?;
-    let end_time = form_data::get_selected_time(view_submission, ACTION_RESERVE_END_TIME)
+    let end_time = extract_form_data::get_selected_time(view_submission, ACTION_RESERVE_END_TIME)
         .ok_or("終了時刻が選択されていません")?;
 
-    let notes = form_data::get_plain_text_input(view_submission, ACTION_RESERVE_NOTES);
-
-    info!("📊 抽出完了");
-
-    // Get user email
-    let owner_email =
-        user_resolver::resolve_user_email(&view_submission.user.id, identity_repo).await?;
-    info!("  → ユーザー: {}", owner_email);
+    let notes = extract_form_data::get_plain_text_input(view_submission, ACTION_RESERVE_NOTES);
 
     // Parse datetime
     let start_datetime = parse_datetime(&start_date, &start_time)?;
     let end_datetime = parse_datetime(&end_date, &end_time)?;
-    info!(
-        "  → 期間: {} 〜 {}",
-        start_datetime.format("%Y-%m-%d %H:%M"),
-        end_datetime.format("%Y-%m-%d %H:%M")
-    );
+    let time_period =
+        crate::domain::aggregates::resource_usage::value_objects::TimePeriod::new(
+            start_datetime,
+            end_datetime,
+        )?;
+    info!("  → 期間: {} ~ {}", start_datetime, end_datetime);
 
-    let time_period = TimePeriod::new(start_datetime, end_datetime)
-        .map_err(|e| format!("時間期間の作成に失敗: {}", e))?;
+    // Get owner email from user_id
+    let owner_email = user_resolver::resolve_user_email(&user_id, identity_repo).await?;
+    info!("  → オーナー: {}", owner_email);
 
-    // Build resources
-    let resources = if resource_type_val == "gpu" {
-        let server_name = server_name.ok_or("GPUサーバーが選択されていません")?;
+    // Extract resources based on type
+    let resource_type_val = resource_type.as_str();
+    let resources: Vec<Resource> = if resource_type_val == "gpu" {
+        // Get server name
+        let server_name =
+            extract_form_data::get_selected_option_text(view_submission, ACTION_RESERVE_SERVER_SELECT)
+                .ok_or("サーバーが選択されていません")?;
+        info!("  → サーバー: {}", server_name);
 
-        if device_ids.is_empty() {
-            return Err("デバイスが選択されていません".into());
-        }
-
+        // Get server config
         let server_config = config
-            .get_server(&server_name)
-            .ok_or_else(|| format!("サーバー設定が見つかりません: {}", server_name))?;
+            .servers
+            .iter()
+            .find(|s| s.name == server_name)
+            .ok_or_else(|| format!("サーバー {} が見つかりません", server_name))?;
 
-        let mut gpu_resources = Vec::new();
-        for device_text in &device_ids {
-            let device_id = parse_device_id(device_text)?;
+        // Get selected devices (optional)
+        let device_texts =
+            extract_form_data::get_selected_options(view_submission, ACTION_RESERVE_DEVICES);
+        info!("  → 選択デバイス数: {}", device_texts.len());
 
-            let device_config = server_config
+        if device_texts.is_empty() {
+            // No specific devices selected - reserve entire server (all devices)
+            server_config
                 .devices
                 .iter()
-                .find(|d| d.id == device_id)
-                .ok_or_else(|| format!("デバイス {} が見つかりません", device_id))?;
-
-            gpu_resources.push(Resource::Gpu(Gpu::new(
-                server_name.clone(),
-                device_id,
-                device_config.model.clone(),
-            )));
+                .map(|device| Resource::Gpu(Gpu::new(server_name.clone(), device.id, device.model.clone())))
+                .collect()
+        } else {
+            // Parse device IDs from checkbox text
+            let mut gpu_resources = Vec::new();
+            for text in device_texts {
+                let device_id = parse_device_id(&text)?;
+                let device = server_config
+                    .devices
+                    .iter()
+                    .find(|d| d.id == device_id)
+                    .ok_or_else(|| format!("デバイス {} が見つかりません", device_id))?;
+                gpu_resources.push(Resource::Gpu(Gpu::new(
+                    server_name.clone(),
+                    device.id,
+                    device.model.clone(),
+                )));
+            }
+            gpu_resources
         }
-        gpu_resources
     } else if resource_type_val == "room" {
-        let room_name = room_name.ok_or("部屋が選択されていません")?;
+        let room_name =
+            extract_form_data::get_selected_option_text(view_submission, ACTION_RESERVE_ROOM_SELECT)
+                .ok_or("部屋が選択されていません")?;
+        info!("  → 部屋: {}", room_name);
         vec![Resource::Room { name: room_name }]
     } else {
         return Err(format!("不明なリソースタイプ: {}", resource_type_val).into());
@@ -114,45 +119,46 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     // Create reservation
     info!("📝 予約を作成中...");
-    match create_usage_usecase
+    let reservation_result = create_usage_usecase
         .execute(
             crate::domain::common::EmailAddress::new(owner_email)?,
             time_period,
             resources,
             notes,
         )
-        .await
-    {
-        Ok(usage_id) => {
-            info!("✅ 予約を作成しました: {}", usage_id.as_str());
+        .await;
 
-            // 成功モーダルを返す
-            let success_modal = result::create_success_modal(
-                "予約完了",
+    // channel_id を取得
+    let channel_id = app.user_channel_map.read().unwrap().get(&user_id).cloned();
+
+    if let Some(channel_id) = channel_id {
+        // エフェメラルメッセージで結果を送信
+        let message_text = match reservation_result {
+            Ok(ref usage_id) => {
+                info!("✅ 予約を作成しました: {}", usage_id.as_str());
                 format!(
-                    "リソースの予約が完了しました\n予約ID: {}",
+                    "✅ リソースの予約が完了しました\n予約ID: {}",
                     usage_id.as_str()
-                ),
-            );
+                )
+            }
+            Err(ref e) => {
+                error!("❌ 予約作成に失敗: {}", e);
+                format!("❌ 予約の作成に失敗しました\n\n{}", e)
+            }
+        };
 
-            Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse {
-                    view: success_modal,
-                },
-            )))
-        }
-        Err(e) => {
-            error!("❌ 予約作成に失敗: {}", e);
+        let ephemeral_req = SlackApiChatPostEphemeralRequest::new(
+            channel_id,
+            user_id.clone(),
+            SlackMessageContent::new().with_text(message_text),
+        );
 
-            // エラーモーダルを返す
-            let error_modal = result::create_error_modal(
-                "予約失敗",
-                format!("予約の作成に失敗しました\n\n{}", e),
-            );
-
-            Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse { view: error_modal },
-            )))
-        }
+        let session = app.slack_client.open_session(&app.bot_token);
+        session.chat_post_ephemeral(&ephemeral_req).await?;
+    } else {
+        error!("❌ channel_id が見つかりません");
     }
+
+    // モーダルを閉じる
+    Ok(None)
 }

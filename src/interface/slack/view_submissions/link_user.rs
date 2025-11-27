@@ -5,8 +5,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::{ACTION_LINK_EMAIL_INPUT, ACTION_USER_SELECT};
-use crate::interface::slack::utility::extract_form_data as form_data;
-use crate::interface::slack::views::modals::result;
+use crate::interface::slack::utility::extract_form_data;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
@@ -19,63 +18,66 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
     info!("ユーザーリンクを処理中...");
 
-    // ユーザーリンク処理を実行
-    let link_result = async {
-        // ユーザーIDを抽出
-        let target_user_id = form_data::get_user_select(view_submission, ACTION_USER_SELECT)
-            .ok_or("ユーザーが選択されていません")?;
+    let user_id = view_submission.user.id.clone();
 
-        // メールアドレスを抽出
-        let email_value = form_data::get_plain_text_input(view_submission, ACTION_LINK_EMAIL_INPUT)
+    // ユーザーIDを抽出
+    let target_user_id = extract_form_data::get_user_select(view_submission, ACTION_USER_SELECT)
+        .ok_or("ユーザーが選択されていません")?;
+
+    // メールアドレスを抽出
+    let email_value =
+        extract_form_data::get_plain_text_input(view_submission, ACTION_LINK_EMAIL_INPUT)
             .ok_or("メールアドレスが入力されていません")?;
 
-        // メールアドレスのバリデーション
-        let email = EmailAddress::new(email_value.trim().to_string())
-            .map_err(|e| format!("メールアドレスの形式が不正です: {}", e))?;
+    // メールアドレスのバリデーション
+    let email_result = EmailAddress::new(email_value.trim().to_string());
 
-        // ユーザーをリンク
-        app.grant_access_usecase
+    // ユーザーをリンク
+    let link_result = match &email_result {
+        Ok(email) => app
+            .grant_access_usecase
             .execute(ExternalSystem::Slack, target_user_id.clone(), email.clone())
             .await
-            .map_err(|e| format!("紐付けに失敗しました: {}", e))?;
+            .map_err(|e| e.into()),
+        Err(e) => Err(Box::new(e.clone()) as Box<dyn std::error::Error + Send + Sync>),
+    };
 
-        Ok::<(String, EmailAddress), String>((target_user_id, email))
-    }
-    .await;
+    // channel_id を取得
+    let channel_id = app.user_channel_map.read().unwrap().get(&user_id).cloned();
 
-    match link_result {
-        Ok((target_user_id, email)) => {
-            info!(
-                "✅ ユーザーリンク成功: {} -> {}",
-                target_user_id,
-                email.as_str()
-            );
-
-            // 成功モーダルを表示
-            let success_modal = result::create_success_modal(
-                "リンク成功",
-                format!(
-                    "ユーザー <@{}> をメールアドレス {} に紐付けました",
+    if let Some(channel_id) = channel_id {
+        // エフェメラルメッセージで結果を送信
+        let message_text = match link_result {
+            Ok(_) => {
+                info!(
+                    "✅ ユーザーリンク成功: {} -> {}",
                     target_user_id,
-                    email.as_str()
-                ),
-            );
+                    email_result.as_ref().unwrap().as_str()
+                );
+                format!(
+                    "✅ ユーザー <@{}> をメールアドレス {} に紐付けました",
+                    target_user_id,
+                    email_result.as_ref().unwrap().as_str()
+                )
+            }
+            Err(e) => {
+                error!("❌ ユーザーリンクに失敗: {}", e);
+                format!("❌ 紐付けに失敗しました: {}", e)
+            }
+        };
 
-            Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse {
-                    view: success_modal,
-                },
-            )))
-        }
-        Err(e) => {
-            error!("❌ ユーザーリンクに失敗: {}", e);
+        let ephemeral_req = SlackApiChatPostEphemeralRequest::new(
+            channel_id,
+            user_id.clone(),
+            SlackMessageContent::new().with_text(message_text),
+        );
 
-            // エラーモーダルを表示
-            let error_modal = result::create_error_modal("リンク失敗", e);
-
-            Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse { view: error_modal },
-            )))
-        }
+        let session = app.slack_client.open_session(&app.bot_token);
+        session.chat_post_ephemeral(&ephemeral_req).await?;
+    } else {
+        error!("❌ channel_id が見つかりません");
     }
+
+    // モーダルを閉じる
+    Ok(None)
 }

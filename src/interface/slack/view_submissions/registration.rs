@@ -5,69 +5,69 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::ACTION_EMAIL_INPUT;
-use crate::interface::slack::utility::extract_form_data as form_data;
-use crate::interface::slack::views::modals::{reservation, result};
+use crate::interface::slack::utility::extract_form_data;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
 /// メールアドレス登録モーダル送信を処理
 ///
-/// メールアドレスを登録し、自動的に予約モーダルを開く
+/// メールアドレスを登録し、カレンダーアクセス権を付与
 pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     app: &SlackApp<R>,
     view_submission: &SlackInteractionViewSubmissionEvent,
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
     info!("メールアドレス登録を処理中...");
 
-    // 登録処理を実行
-    let registration_result = async {
-        let user_id = view_submission.user.id.to_string();
+    let user_id = view_submission.user.id.clone();
 
-        // Extract email from form
-        let email_value = form_data::get_plain_text_input(view_submission, ACTION_EMAIL_INPUT)
-            .ok_or("メールアドレスが入力されていません")?;
+    let email_value = extract_form_data::get_plain_text_input(view_submission, ACTION_EMAIL_INPUT)
+        .ok_or("メールアドレスが入力されていません")?;
 
-        // Validate email
-        let email = EmailAddress::new(email_value.trim().to_string())
-            .map_err(|e| format!("メールアドレスの形式が不正です: {}", e))?;
+    let email_result = EmailAddress::new(email_value.trim().to_string());
 
-        // Register user
-        app.grant_access_usecase
-            .execute(ExternalSystem::Slack, user_id.clone(), email.clone())
+    let registration_result = match &email_result {
+        Ok(email) => app
+            .grant_access_usecase
+            .execute(ExternalSystem::Slack, user_id.to_string(), email.clone())
             .await
-            .map_err(|e| format!("登録に失敗しました: {}", e))?;
+            .map_err(|e| e.into()),
+        Err(e) => Err(Box::new(e.clone()) as Box<dyn std::error::Error + Send + Sync>),
+    };
 
-        Ok::<EmailAddress, String>(email)
+    // channel_id を取得
+    let channel_id = app.user_channel_map.read().unwrap().get(&user_id).cloned();
+
+    if let Some(channel_id) = channel_id {
+        // エフェメラルメッセージで結果を送信
+        let message_text = match registration_result {
+            Ok(_) => {
+                info!(
+                    "✅ ユーザー登録成功: {}",
+                    email_result.as_ref().unwrap().as_str()
+                );
+                format!(
+                    "✅ メールアドレス {} を登録しました",
+                    email_result.as_ref().unwrap().as_str()
+                )
+            }
+            Err(e) => {
+                error!("❌ ユーザー登録に失敗: {}", e);
+                format!("❌ 登録に失敗しました: {}", e)
+            }
+        };
+
+        let ephemeral_req = SlackApiChatPostEphemeralRequest::new(
+            channel_id,
+            user_id.clone(),
+            SlackMessageContent::new().with_text(message_text),
+        );
+
+        let session = app.slack_client.open_session(&app.bot_token);
+        session.chat_post_ephemeral(&ephemeral_req).await?;
+    } else {
+        error!("❌ channel_id が見つかりません");
     }
-    .await;
 
-    match registration_result {
-        Ok(email) => {
-            info!("✅ ユーザー登録成功: {}", email.as_str());
-
-            // 成功時は予約モーダルをpush
-            let config = &app.resource_config;
-            let initial_server = config.servers.first().map(|s| s.name.as_str());
-            let reserve_modal =
-                reservation::create_reserve_modal(config, None, initial_server, None);
-
-            info!("📋 予約モーダルをpushします...");
-            Ok(Some(SlackViewSubmissionResponse::Push(
-                SlackViewSubmissionPushResponse {
-                    view: reserve_modal,
-                },
-            )))
-        }
-        Err(e) => {
-            error!("❌ ユーザー登録に失敗: {}", e);
-
-            // エラーモーダルを表示
-            let error_modal =
-                result::create_error_modal("登録失敗", format!("登録に失敗しました\n\n{}", e));
-
-            Ok(Some(SlackViewSubmissionResponse::Update(
-                SlackViewSubmissionUpdateResponse { view: error_modal },
-            )))
-        }
-    }
+    // モーダルを閉じる
+    Ok(None)
 }

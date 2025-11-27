@@ -23,6 +23,12 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         let command = event.command.0.as_str();
         info!("📨 スラッシュコマンドを受信: {}", command);
 
+        // user_id -> channel_id マッピングを更新
+        self.user_channel_map
+            .write()
+            .unwrap()
+            .insert(event.user_id.clone(), event.channel_id.clone());
+
         match command {
             "/reserve" => {
                 crate::interface::slack::slash_commands::reserve::handle(self, event).await
