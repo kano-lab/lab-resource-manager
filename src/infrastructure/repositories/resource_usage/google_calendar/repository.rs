@@ -71,19 +71,28 @@ impl GoogleCalendarUsageRepository {
     }
 
     /// すべてのカレンダーから未来のイベントを取得
-    async fn fetch_future_events(&self) -> Result<Vec<(Event, String)>, RepositoryError> {
+    /// 戻り値: (Event, calendar_id, resource_name)
+    async fn fetch_future_events(&self) -> Result<Vec<(Event, String, String)>, RepositoryError> {
         let mut all_events = Vec::new();
 
         // 各サーバーカレンダーから取得
         for server in &self.config.servers {
             let events = self.fetch_events_from_calendar(&server.calendar_id).await?;
-            all_events.extend(events.into_iter().map(|e| (e, server.name.clone())));
+            all_events.extend(
+                events
+                    .into_iter()
+                    .map(|e| (e, server.calendar_id.clone(), server.name.clone())),
+            );
         }
 
         // 部屋カレンダーから取得
         for room in &self.config.rooms {
             let events = self.fetch_events_from_calendar(&room.calendar_id).await?;
-            all_events.extend(events.into_iter().map(|e| (e, room.name.clone())));
+            all_events.extend(
+                events
+                    .into_iter()
+                    .map(|e| (e, room.calendar_id.clone(), room.name.clone())),
+            );
         }
 
         Ok(all_events)
@@ -132,17 +141,40 @@ impl GoogleCalendarUsageRepository {
     fn parse_event(
         &self,
         event: Event,
+        calendar_id: &str,
         resource_context: &str,
     ) -> Result<ResourceUsage, RepositoryError> {
         // Event ID から Domain ID を取得
         let event_id = event.id.clone().unwrap_or_default();
-        println!("📝 parse_event: event_id={}", event_id);
+        println!(
+            "📝 parse_event: event_id={}, calendar_id={}",
+            event_id, calendar_id
+        );
 
-        let domain_id = self.id_mapper.get_domain_id(&event_id)?.unwrap_or_else(|| {
-            // マッピングが見つからない場合（レガシーデータ）はevent_idをそのまま使用
-            println!("⚠️ マッピングが見つからないため、event_idをそのままdomain_idとして使用");
-            event_id.clone()
-        });
+        let domain_id = match self.id_mapper.get_domain_id(&event_id)? {
+            Some(existing_domain_id) => {
+                println!("  → 既存マッピング発見: domain_id={}", existing_domain_id);
+                existing_domain_id
+            }
+            None => {
+                // マッピングが見つからない場合、新しいdomain_idを生成してマッピングを作成
+                println!("  → マッピングなし。新しいdomain_idを生成します");
+                let new_domain_id = UsageId::new();
+
+                println!("  → 新規domain_id={}", new_domain_id.as_str());
+
+                // 新しいマッピングを保存
+                self.id_mapper.save_mapping(
+                    new_domain_id.as_str(),
+                    ExternalId {
+                        calendar_id: calendar_id.to_string(),
+                        event_id: event_id.clone(),
+                    },
+                )?;
+
+                new_domain_id.as_str().to_string()
+            }
+        };
         println!("📝 使用するdomain_id={}", domain_id);
 
         let id = UsageId::from_string(domain_id);
@@ -493,7 +525,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         let resource_context = self.get_resource_context(&external_id.calendar_id)?;
 
         // イベントをパース
-        let usage = self.parse_event(event, &resource_context)?;
+        let usage = self.parse_event(event, &external_id.calendar_id, &resource_context)?;
         Ok(Some(usage))
     }
 
@@ -501,8 +533,8 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         let events = self.fetch_future_events().await?;
 
         let mut usages = Vec::new();
-        for (event, context) in events {
-            match self.parse_event(event, &context) {
+        for (event, calendar_id, context) in events {
+            match self.parse_event(event, &calendar_id, &context) {
                 Ok(usage) => usages.push(usage),
                 Err(e) => {
                     eprintln!("⚠️  イベントパースエラー: {}", e); // TODO@KinjiKawaguchi: エラーハンドリングの改善
