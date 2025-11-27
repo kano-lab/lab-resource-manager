@@ -512,9 +512,20 @@ impl GoogleCalendarUsageRepository {
                 .await
             {
                 Ok(_) => {
+                    tracing::info!(
+                        "✅ イベント削除成功: event_id={}, calendar_id={}",
+                        event_id,
+                        calendar_id
+                    );
                     return Ok(());
                 }
-                Err(_) => {
+                Err(e) => {
+                    tracing::debug!(
+                        "カレンダー {} でイベント {} が見つかりませんでした: {}",
+                        calendar_id,
+                        event_id,
+                        e
+                    );
                     // 次のカレンダーを試す
                     continue;
                 }
@@ -522,6 +533,10 @@ impl GoogleCalendarUsageRepository {
         }
 
         // すべてのカレンダーで見つからなかった
+        tracing::error!(
+            "❌ イベントが全カレンダーで見つかりませんでした: event_id={}",
+            event_id
+        );
         Err(RepositoryError::NotFound)
     }
 }
