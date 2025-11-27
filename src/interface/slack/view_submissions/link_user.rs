@@ -49,7 +49,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         .unwrap()
         .get(&user_id)
         .cloned()
-        .ok_or("channel_idが見つかりません。もう一度お試しください。")?;
+        .ok_or("セッションの有効期限が切れました。もう一度コマンドを実行してください。")?;
 
     // エフェメラルメッセージで結果を送信
     let message_text = match link_result {
