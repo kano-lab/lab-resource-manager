@@ -12,6 +12,7 @@ use crate::domain::aggregates::resource_usage::value_objects::Resource;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
 use crate::infrastructure::notifier::senders::sender::{NotificationContext, Sender};
+use crate::interface::slack::constants::{ACTION_CANCEL_RESERVATION, ACTION_EDIT_RESERVATION};
 
 /// Slack通知設定
 pub struct SlackNotificationConfig {
@@ -167,7 +168,7 @@ impl SlackSender {
                                 "text": "🔄 更新"
                             },
                             "style": "primary",
-                            "action_id": "edit_reservation",
+                            "action_id": ACTION_EDIT_RESERVATION,
                             "value": usage_id
                         },
                         {
@@ -177,7 +178,7 @@ impl SlackSender {
                                 "text": "❌ キャンセル"
                             },
                             "style": "danger",
-                            "action_id": "cancel_reservation",
+                            "action_id": ACTION_CANCEL_RESERVATION,
                             "value": usage_id
                         }
                     ]
