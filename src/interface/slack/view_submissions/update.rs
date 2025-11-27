@@ -4,9 +4,8 @@ use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::resource_usage::value_objects::{TimePeriod, UsageId};
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
-use crate::interface::slack::constants::{ACTION_END_TIME, ACTION_NOTES, ACTION_START_TIME};
-use crate::interface::slack::utility::extract_form_data;
-use chrono::{DateTime, Utc};
+use crate::interface::slack::constants::*;
+use crate::interface::slack::utility::{datetime_parser::parse_datetime, extract_form_data};
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
@@ -37,23 +36,25 @@ pub async fn handle<R: ResourceUsageRepository>(
     let usage_id = UsageId::from_string(usage_id_str.clone());
 
     // 開始・終了日時を取得
-    let start_timestamp =
-        extract_form_data::get_selected_datetime(view_submission, ACTION_START_TIME)
-            .ok_or("開始日時が選択されていません")?;
+    let start_date =
+        extract_form_data::get_selected_date(view_submission, ACTION_RESERVE_START_DATE)
+            .ok_or("開始日が選択されていません")?;
+    let start_time =
+        extract_form_data::get_selected_time(view_submission, ACTION_RESERVE_START_TIME)
+            .ok_or("開始時刻が選択されていません")?;
 
-    let end_timestamp = extract_form_data::get_selected_datetime(view_submission, ACTION_END_TIME)
-        .ok_or("終了日時が選択されていません")?;
+    let end_date = extract_form_data::get_selected_date(view_submission, ACTION_RESERVE_END_DATE)
+        .ok_or("終了日が選択されていません")?;
+    let end_time = extract_form_data::get_selected_time(view_submission, ACTION_RESERVE_END_TIME)
+        .ok_or("終了時刻が選択されていません")?;
 
-    let start_time = DateTime::<Utc>::from_timestamp(start_timestamp, 0)
-        .ok_or("開始日時の変換に失敗しました")?;
-
-    let end_time =
-        DateTime::<Utc>::from_timestamp(end_timestamp, 0).ok_or("終了日時の変換に失敗しました")?;
-
-    let time_period = TimePeriod::new(start_time, end_time)?;
+    // Parse datetime
+    let start_datetime = parse_datetime(&start_date, &start_time)?;
+    let end_datetime = parse_datetime(&end_date, &end_time)?;
+    let time_period = TimePeriod::new(start_datetime, end_datetime)?;
 
     // 備考を取得（オプション）
-    let notes = extract_form_data::get_plain_text_input(view_submission, ACTION_NOTES);
+    let notes = extract_form_data::get_plain_text_input(view_submission, ACTION_RESERVE_NOTES);
 
     // ユーザーのメールアドレスを取得
     let identity_link = app
@@ -71,35 +72,37 @@ pub async fn handle<R: ResourceUsageRepository>(
         .await;
 
     // channel_id を取得
-    let channel_id = app.user_channel_map.read().unwrap().get(&user_id).cloned();
+    let channel_id = app
+        .user_channel_map
+        .read()
+        .unwrap()
+        .get(&user_id)
+        .cloned()
+        .ok_or("セッションの有効期限が切れました。もう一度コマンドを実行してください。")?;
 
-    if let Some(channel_id) = channel_id {
-        // エフェメラルメッセージで結果を送信
-        let message_text = match update_result {
-            Ok(_) => {
-                info!(
-                    "✅ リソース予約更新成功: user={}, usage_id={}",
-                    user_id, usage_id_str
-                );
-                format!("✅ 予約を更新しました\n予約ID: {}", usage_id_str)
-            }
-            Err(e) => {
-                error!("❌ リソース予約更新に失敗: {}", e);
-                format!("❌ 更新に失敗しました: {}", e)
-            }
-        };
+    // エフェメラルメッセージで結果を送信
+    let message_text = match update_result {
+        Ok(_) => {
+            info!(
+                "✅ リソース予約更新成功: user={}, usage_id={}",
+                user_id, usage_id_str
+            );
+            format!("✅ 予約を更新しました\n予約ID: {}", usage_id_str)
+        }
+        Err(e) => {
+            error!("❌ リソース予約更新に失敗: {}", e);
+            format!("❌ 更新に失敗しました: {}", e)
+        }
+    };
 
-        let ephemeral_req = SlackApiChatPostEphemeralRequest::new(
-            channel_id,
-            user_id.clone(),
-            SlackMessageContent::new().with_text(message_text),
-        );
+    let ephemeral_req = SlackApiChatPostEphemeralRequest::new(
+        channel_id,
+        user_id.clone(),
+        SlackMessageContent::new().with_text(message_text),
+    );
 
-        let session = app.slack_client.open_session(&app.bot_token);
-        session.chat_post_ephemeral(&ephemeral_req).await?;
-    } else {
-        error!("❌ channel_id が見つかりません");
-    }
+    let session = app.slack_client.open_session(&app.bot_token);
+    session.chat_post_ephemeral(&ephemeral_req).await?;
 
     // モーダルを閉じる
     Ok(None)
