@@ -35,9 +35,26 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     // 予約を削除
     let usage_id = UsageId::from_string(usage_id_str.to_string());
-    delete_usage_usecase
-        .execute(&usage_id, &EmailAddress::new(owner_email)?)
-        .await?;
+    info!(
+        "📍 削除処理開始: usage_id={}, owner={}",
+        usage_id.as_str(),
+        owner_email.as_str()
+    );
+
+    let result = delete_usage_usecase
+        .execute(&usage_id, &EmailAddress::new(owner_email.clone())?)
+        .await;
+
+    match &result {
+        Ok(_) => {
+            info!("✅ 削除成功: {}", usage_id.as_str());
+        }
+        Err(e) => {
+            error!("❌ 削除失敗: usage_id={}, error={}", usage_id.as_str(), e);
+        }
+    }
+
+    result?;
 
     info!("✅ 予約をキャンセルしました: {}", usage_id_str);
     Ok(())

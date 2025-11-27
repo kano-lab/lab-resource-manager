@@ -139,6 +139,7 @@ impl SlackSender {
     fn build_message_blocks(message: &str, context: &NotificationContext) -> Vec<SlackBlock> {
         let usage = Self::extract_usage_from_event(context.event);
         let usage_id = usage.id().as_str();
+        tracing::info!("🔔 通知ボタン作成: usage_id={}", usage_id);
 
         // Deleted イベントの場合はボタンなし
         let should_add_buttons = matches!(
