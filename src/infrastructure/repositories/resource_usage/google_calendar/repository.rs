@@ -580,8 +580,28 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         // リソースコンテキストを取得
         let resource_context = self.get_resource_context(&external_id.calendar_id)?;
 
-        // イベントをパース
-        let usage = self.parse_event(event, &external_id.calendar_id, &resource_context)?;
+        // イベントをパース（ただし、domain_idは元のinput_idを使用）
+        let mut usage = self.parse_event(event, &external_id.calendar_id, &resource_context)?;
+
+        // IMPORTANT: find_by_id() で検索した場合、取得したResourceUsageのIDは
+        // 必ず元のinput_idであるべき。parse_event()が別のdomain_idを生成した場合、
+        // それを元のinput_idで上書きする。
+        if usage.id().as_str() != input_id {
+            tracing::warn!(
+                "parse_event returned different domain_id: expected={}, got={}. Overriding with expected ID.",
+                input_id,
+                usage.id().as_str()
+            );
+            // ResourceUsageのIDを元のinput_idに置き換える
+            usage = ResourceUsage::reconstruct(
+                UsageId::from_string(input_id.to_string()),
+                usage.owner_email().clone(),
+                usage.time_period().clone(),
+                usage.resources().to_vec(),
+                usage.notes().cloned(),
+            )?;
+        }
+
         Ok(Some(usage))
     }
 
