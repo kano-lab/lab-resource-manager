@@ -26,9 +26,14 @@ pub(super) struct IdMapper {
 impl IdMapper {
     /// 新しいIdMapperを作成
     pub(super) fn new(file_path: PathBuf) -> Result<Self, RepositoryError> {
+        println!("🗂️ IdMapper初期化開始: file_path={:?}", file_path);
+
         let mappings = if file_path.exists() {
-            Self::load_from_file(&file_path)?
+            let loaded = Self::load_from_file(&file_path)?;
+            println!("  → ファイルから{}件のマッピングを読み込み", loaded.len());
+            loaded
         } else {
+            println!("  → ファイルが存在しないため空のマッピングで開始");
             HashMap::new()
         };
 
@@ -37,6 +42,8 @@ impl IdMapper {
             .iter()
             .map(|(domain_id, external_id)| (external_id.event_id.clone(), domain_id.clone()))
             .collect();
+
+        println!("  → IdMapper初期化完了（{}件のマッピング）", mappings.len());
 
         Ok(Self {
             file_path,
@@ -51,6 +58,8 @@ impl IdMapper {
         domain_id: &str,
         external_id: ExternalId,
     ) -> Result<(), RepositoryError> {
+        println!("💾 IdMapper::save_mapping: domain_id={}, event_id={}", domain_id, external_id.event_id);
+
         let mut mappings = self.mappings.lock().unwrap();
         let mut reverse_mappings = self.reverse_mappings.lock().unwrap();
 
@@ -84,6 +93,13 @@ impl IdMapper {
     pub(super) fn get_domain_id(&self, event_id: &str) -> Result<Option<String>, RepositoryError> {
         let reverse_mappings = self.reverse_mappings.lock().unwrap();
         let result = reverse_mappings.get(event_id).cloned();
+
+        if result.is_some() {
+            println!("🔍 IdMapper::get_domain_id({}): 発見", event_id);
+        } else {
+            println!("🔍 IdMapper::get_domain_id({}): 見つからず（マップには{}件）", event_id, reverse_mappings.len());
+        }
+
         Ok(result)
     }
 
@@ -122,6 +138,8 @@ impl IdMapper {
     fn save_to_file(&self) -> Result<(), RepositoryError> {
         let mappings = self.mappings.lock().unwrap();
 
+        println!("💾 IdMapper::save_to_file: {}件のマッピングをファイルに保存中", mappings.len());
+
         if let Some(parent) = self.file_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
                 RepositoryError::ConnectionError(format!("ディレクトリの作成に失敗: {}", e))
@@ -135,6 +153,8 @@ impl IdMapper {
         std::fs::write(&self.file_path, json).map_err(|e| {
             RepositoryError::ConnectionError(format!("マッピングファイルの書き込みに失敗: {}", e))
         })?;
+
+        println!("  → ファイル保存完了: {:?}", self.file_path);
 
         Ok(())
     }
