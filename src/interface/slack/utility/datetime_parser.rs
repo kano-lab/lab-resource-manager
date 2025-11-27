@@ -33,7 +33,12 @@ pub fn parse_datetime(
     let local_datetime = Local
         .from_local_datetime(&naive_datetime)
         .single()
-        .ok_or_else(|| format!("無効な日時: {} {}", date_str, time_str))?;
+        .ok_or_else(|| {
+            format!(
+                "無効な日時: {} {} (夏時間の切り替え時刻の可能性があります)",
+                date_str, time_str
+            )
+        })?;
 
     Ok(local_datetime.with_timezone(&Utc))
 }
