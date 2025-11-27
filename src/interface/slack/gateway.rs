@@ -91,6 +91,8 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
             _ => None,
         };
 
+        info!("  → callback_id: {:?}", callback_id);
+
         match callback_id.as_deref() {
             Some(CALLBACK_REGISTER_EMAIL) => {
                 info!("  → メールアドレス登録モーダル");

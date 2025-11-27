@@ -64,6 +64,9 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         modal.callback_id = Some(CALLBACK_RESERVE_UPDATE.into());
         modal.title = pt!("予約更新");
         modal.submit = Some(pt!("更新"));
+        info!("  → callback_id を設定: {}", CALLBACK_RESERVE_UPDATE);
+    } else {
+        error!("❌ modal_view が SlackView::Modal ではありません");
     }
 
     modals::open(slack_client, bot_token, trigger_id, modal_view).await?;
