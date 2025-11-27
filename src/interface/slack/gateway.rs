@@ -94,6 +94,11 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
                 )
                 .await
             }
+            Some(CALLBACK_LINK_USER) => {
+                info!("  → ユーザーリンクモーダル");
+                crate::interface::slack::view_submissions::link_user::handle(self, view_submission)
+                    .await
+            }
             Some(CALLBACK_RESERVE_SUBMIT) => {
                 info!("  → 予約モーダル");
                 crate::interface::slack::view_submissions::reservation::handle(
