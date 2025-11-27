@@ -35,38 +35,40 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     };
 
     // channel_id を取得
-    let channel_id = app.user_channel_map.read().unwrap().get(&user_id).cloned();
+    let channel_id = app
+        .user_channel_map
+        .read()
+        .unwrap()
+        .get(&user_id)
+        .cloned()
+        .ok_or("channel_idが見つかりません。もう一度お試しください。")?;
 
-    if let Some(channel_id) = channel_id {
-        // エフェメラルメッセージで結果を送信
-        let message_text = match registration_result {
-            Ok(_) => {
-                info!(
-                    "✅ ユーザー登録成功: {}",
-                    email_result.as_ref().unwrap().as_str()
-                );
-                format!(
-                    "✅ メールアドレス {} を登録しました",
-                    email_result.as_ref().unwrap().as_str()
-                )
-            }
-            Err(e) => {
-                error!("❌ ユーザー登録に失敗: {}", e);
-                format!("❌ 登録に失敗しました: {}", e)
-            }
-        };
+    // エフェメラルメッセージで結果を送信
+    let message_text = match registration_result {
+        Ok(_) => {
+            info!(
+                "✅ ユーザー登録成功: {}",
+                email_result.as_ref().unwrap().as_str()
+            );
+            format!(
+                "✅ メールアドレス {} を登録しました",
+                email_result.as_ref().unwrap().as_str()
+            )
+        }
+        Err(e) => {
+            error!("❌ ユーザー登録に失敗: {}", e);
+            format!("❌ 登録に失敗しました: {}", e)
+        }
+    };
 
-        let ephemeral_req = SlackApiChatPostEphemeralRequest::new(
-            channel_id,
-            user_id.clone(),
-            SlackMessageContent::new().with_text(message_text),
-        );
+    let ephemeral_req = SlackApiChatPostEphemeralRequest::new(
+        channel_id,
+        user_id.clone(),
+        SlackMessageContent::new().with_text(message_text),
+    );
 
-        let session = app.slack_client.open_session(&app.bot_token);
-        session.chat_post_ephemeral(&ephemeral_req).await?;
-    } else {
-        error!("❌ channel_id が見つかりません");
-    }
+    let session = app.slack_client.open_session(&app.bot_token);
+    session.chat_post_ephemeral(&ephemeral_req).await?;
 
     // モーダルを閉じる
     Ok(None)
