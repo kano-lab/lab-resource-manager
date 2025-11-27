@@ -139,14 +139,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 通知機能のセットアップ
     let notifier = NotificationRouter::new(config_arc.as_ref().clone(), identity_repo.clone());
 
-    // 別のリポジトリインスタンスを作成（ポーリング用）
-    let polling_repository =
-        GoogleCalendarUsageRepository::new(&service_account_key, config_arc.as_ref().clone())
-            .await?;
-
-    let notify_usecase = NotifyFutureResourceUsageChangesUseCase::new(polling_repository, notifier)
-        .await
-        .map_err(|e| format!("通知UseCaseの初期化に失敗: {}", e))?;
+    // ポーリング用にも同じリポジトリインスタンスを使用（IdMapperを共有するため）
+    let notify_usecase = NotifyFutureResourceUsageChangesUseCase::new(
+        Arc::clone(&resource_usage_repo),
+        notifier,
+    )
+    .await
+    .map_err(|e| format!("通知UseCaseの初期化に失敗: {}", e))?;
 
     let notify_usecase = Arc::new(notify_usecase);
     println!("✅ 通知機能を初期化しました");
