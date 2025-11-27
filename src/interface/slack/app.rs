@@ -53,6 +53,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
     /// * `resource_config` - リソース設定
     /// * `slack_client` - Slackクライアント
     /// * `bot_token` - Bot Token
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         grant_access_usecase: Arc<GrantUserResourceAccessUseCase>,
         create_resource_usage_usecase: Arc<CreateResourceUsageUseCase<R>>,

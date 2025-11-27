@@ -56,7 +56,8 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     // 予約モーダルを作成（usage_idを渡すことでprivate_metadataが設定される）
     let initial_server = config.servers.first().map(|s| s.name.as_str());
-    let mut modal_view = reserve::create_reserve_modal(config, None, initial_server, Some(usage_id_str));
+    let mut modal_view =
+        reserve::create_reserve_modal(config, None, initial_server, Some(usage_id_str));
 
     // callback_idとタイトル、ボタンを更新用に変更
     if let SlackView::Modal(ref mut modal) = modal_view {
