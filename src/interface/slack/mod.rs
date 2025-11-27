@@ -15,7 +15,10 @@
 //! - `slash_commands`: スラッシュコマンドハンドラ（`/register-calendar`、`/link-user`）
 //! - `block_actions`: ブロックアクションハンドラ（モーダル内ボタンクリックなど）
 //! - `view_submissions`: モーダル送信ハンドラ（フォーム送信時の処理）
-//! - `utility`: ユーティリティ関数（データ抽出、ユーザーID解決など）
+//! - `adapters`: アダプター（ユーザーID解決など）
+//! - `parsers`: パーサー（日時、リソースIDなど）
+//! - `extractors`: データ抽出（フォームデータ抽出）
+//! - `utility`: ユーティリティ関数
 //! - `slack_client`: Slack API クライアント（モーダル操作、メッセージ送信）
 //! - `async_execution`: バックグラウンドタスク管理（非同期処理）
 //! - `views`: UIコンポーネント定義（モーダル、メッセージのビルダー）
@@ -31,13 +34,16 @@
 //! | Messages API | `slack_client/messages.rs` |
 //! | Block Kit | `views/` |
 
+pub mod adapters;
 pub mod app;
 pub mod async_execution;
+pub mod block_actions;
 pub mod constants;
+pub mod extractors;
 pub mod gateway;
+pub mod parsers;
 pub mod slack_client;
 pub mod slash_commands;
-pub mod utility;
 pub mod view_submissions;
 pub mod views;
 

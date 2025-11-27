@@ -1,34 +1,59 @@
 //! /reserve コマンドハンドラ
 
 use crate::domain::ports::repositories::ResourceUsageRepository;
+use crate::interface::slack::adapters::user_resolver;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::slack_client::modals;
-use crate::interface::slack::views;
+use crate::interface::slack::views::modals::registration;
+use crate::interface::slack::views::modals::reservation;
 use slack_morphism::prelude::*;
 use tracing::info;
 
 /// /reserve スラッシュコマンドを処理
 ///
-/// リソース予約モーダルを開く
-pub async fn handle<R: ResourceUsageRepository>(
+/// ユーザーが紐付け済みの場合は予約モーダルを表示、未紐付けの場合はメール登録モーダルを表示
+pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     app: &SlackApp<R>,
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
-    let user_id = event.user_id.to_string();
-    info!("📅 リソース予約モーダルを開きます: user={}", user_id);
+    let user_id = &event.user_id;
+    let trigger_id = &event.trigger_id;
 
-    // user_id と channel_id のマッピングを保存
-    app.user_channel_map
-        .write()
-        .unwrap()
-        .insert(event.user_id.clone(), event.channel_id.clone());
+    // Get dependencies
+    let config = &app.resource_config;
+    let slack_client = &app.slack_client;
+    let bot_token = &app.bot_token;
+    let identity_repo = &app.identity_repo;
 
-    // リソース予約モーダルを作成
-    let modal = views::modals::reserve::create();
+    // Check if user is linked
+    let is_linked = user_resolver::is_user_linked(user_id, identity_repo).await;
 
-    // モーダルを開く
-    modals::open(&app.slack_client, &app.bot_token, &event.trigger_id, modal).await?;
+    if !is_linked {
+        // Unlinked: Show email registration modal
+        info!(
+            "ユーザー {} は未リンク。メールアドレス登録モーダルを表示します",
+            user_id
+        );
 
-    // 空のレスポンスを返す（モーダルが開かれたことをSlackに伝える）
+        let modal = registration::create();
+        modals::open(slack_client, bot_token, trigger_id, modal).await?;
+
+        info!("✅ メールアドレス登録モーダルを開きました");
+        return Ok(SlackCommandEventResponse::new(SlackMessageContent::new()));
+    }
+
+    // Linked: Show reservation modal
+    info!(
+        "ユーザー {} はリンク済み。予約モーダルを表示します",
+        user_id
+    );
+
+    // Create and open reservation modal
+    let initial_server = config.servers.first().map(|s| s.name.as_str());
+    let modal = reservation::create_reserve_modal(config, None, initial_server, None);
+
+    modals::open(slack_client, bot_token, trigger_id, modal).await?;
+
+    info!("✅ 予約モーダルを開きました");
     Ok(SlackCommandEventResponse::new(SlackMessageContent::new()))
 }

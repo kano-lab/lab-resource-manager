@@ -4,13 +4,11 @@
 
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
-use crate::interface::slack::constants::{
-    CALLBACK_LINK_USER, CALLBACK_REGISTER_EMAIL, CALLBACK_RESERVE,
-};
+use crate::interface::slack::constants::*;
 use slack_morphism::prelude::*;
 use tracing::{error, info};
 
-impl<R: ResourceUsageRepository> SlackApp<R> {
+impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
     /// スラッシュコマンドイベントをルーティング
     ///
     /// # 引数
@@ -26,15 +24,15 @@ impl<R: ResourceUsageRepository> SlackApp<R> {
         info!("📨 スラッシュコマンドを受信: {}", command);
 
         match command {
+            "/reserve" => {
+                crate::interface::slack::slash_commands::reserve::handle(self, event).await
+            }
             "/register-calendar" => {
                 crate::interface::slack::slash_commands::register_calendar::handle(self, event)
                     .await
             }
             "/link-user" => {
                 crate::interface::slack::slash_commands::link_user::handle(self, event).await
-            }
-            "/reserve" => {
-                crate::interface::slack::slash_commands::reserve::handle(self, event).await
             }
             _ => Ok(SlackCommandEventResponse::new(
                 SlackMessageContent::new().with_text(format!("不明なコマンド: {}", command)),
@@ -45,7 +43,7 @@ impl<R: ResourceUsageRepository> SlackApp<R> {
     /// インタラクションイベントをルーティング
     ///
     /// # 引数
-    /// * `event` - Slackからのインタラクションイベント（モーダル送信など）
+    /// * `event` - Slackからのインタラクションイベント（ボタンクリック、モーダル送信など）
     ///
     /// # 戻り値
     /// View Submissionの場合はレスポンス（結果モーダルなど）を返す
@@ -58,6 +56,10 @@ impl<R: ResourceUsageRepository> SlackApp<R> {
         match &event {
             SlackInteractionEvent::ViewSubmission(view_submission) => {
                 self.route_view_submission(view_submission).await
+            }
+            SlackInteractionEvent::BlockActions(block_actions) => {
+                self.route_block_actions(block_actions).await?;
+                Ok(None)
             }
             SlackInteractionEvent::ViewClosed(_) => {
                 info!("  → ViewClosedイベント（無視）");
@@ -92,14 +94,17 @@ impl<R: ResourceUsageRepository> SlackApp<R> {
                 )
                 .await
             }
-            Some(CALLBACK_LINK_USER) => {
-                info!("  → ユーザーリンクモーダル");
-                crate::interface::slack::view_submissions::link_user::handle(self, view_submission)
-                    .await
+            Some(CALLBACK_RESERVE_SUBMIT) => {
+                info!("  → 予約モーダル");
+                crate::interface::slack::view_submissions::reservation::handle(
+                    self,
+                    view_submission,
+                )
+                .await
             }
-            Some(CALLBACK_RESERVE) => {
-                info!("  → リソース予約モーダル");
-                crate::interface::slack::view_submissions::reserve::handle(self, view_submission)
+            Some(CALLBACK_UPDATE_SUBMIT) => {
+                info!("  → 予約更新モーダル");
+                crate::interface::slack::view_submissions::update::handle(self, view_submission)
                     .await
             }
             _ => {
@@ -107,5 +112,78 @@ impl<R: ResourceUsageRepository> SlackApp<R> {
                 Ok(None)
             }
         }
+    }
+
+    /// ブロックアクションイベントをルーティング（ボタンクリック、セレクトメニューなど）
+    async fn route_block_actions(
+        &self,
+        block_actions: &SlackInteractionBlockActionsEvent,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        info!("📋 ブロックアクションを処理中");
+
+        // メッセージ内のボタンアクションを処理（viewがNone）
+        if block_actions.view.is_none() {
+            return self.route_message_button_actions(block_actions).await;
+        }
+
+        // モーダル内のインタラクションを処理（viewがSome）
+        if block_actions.view.is_some() {
+            return self.route_modal_interactions(block_actions).await;
+        }
+
+        Ok(())
+    }
+
+    /// メッセージ内のボタンアクションをルーティング（モーダル外）
+    async fn route_message_button_actions(
+        &self,
+        block_actions: &SlackInteractionBlockActionsEvent,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        info!("  → メッセージ内のボタンアクション");
+
+        let Some(actions) = &block_actions.actions else {
+            return Ok(());
+        };
+
+        for action in actions {
+            let action_id = action.action_id.to_string();
+            info!("  → アクションID: {}", action_id);
+            info!("  → 不明なアクション: {}", action_id);
+        }
+
+        Ok(())
+    }
+
+    /// モーダル内のインタラクションをルーティング（リソースタイプ変更、サーバー選択など）
+    async fn route_modal_interactions(
+        &self,
+        block_actions: &SlackInteractionBlockActionsEvent,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        info!("  → モーダル内のインタラクション");
+
+        let Some(actions) = &block_actions.actions else {
+            return Ok(());
+        };
+
+        for action in actions {
+            let action_id = action.action_id.to_string();
+
+            match action_id.as_str() {
+                ACTION_RESERVE_RESOURCE_TYPE | ACTION_RESERVE_SERVER_SELECT => {
+                    crate::interface::slack::block_actions::modal_state_change::handle(
+                        self,
+                        block_actions,
+                        action,
+                    )
+                    .await?
+                }
+                _ => {
+                    // その他のモーダルアクションは送信時に処理
+                    info!("  → アクション {} （送信時に処理）", action_id);
+                }
+            }
+        }
+
+        Ok(())
     }
 }
