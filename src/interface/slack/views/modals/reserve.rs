@@ -130,6 +130,14 @@ fn add_gpu_blocks(
     config: &ResourceConfig,
     selected_server: Option<&str>,
 ) {
+    // サーバー設定が空の場合はエラーメッセージを表示
+    if config.servers.is_empty() {
+        blocks.push(SlackBlock::Section(SlackSectionBlock::new().with_text(
+            md!("⚠️ サーバー設定が見つかりません。管理者に問い合わせてください。"),
+        )));
+        return;
+    }
+
     // GPU Server選択肢
     let server_options: Vec<SlackBlockChoiceItem<SlackBlockPlainTextOnly>> = config
         .servers
@@ -199,6 +207,14 @@ fn add_gpu_blocks(
 
 /// Room選択ブロックを追加
 fn add_room_blocks(blocks: &mut Vec<SlackBlock>, config: &ResourceConfig) {
+    // 部屋設定が空の場合はエラーメッセージを表示
+    if config.rooms.is_empty() {
+        blocks.push(SlackBlock::Section(SlackSectionBlock::new().with_text(
+            md!("⚠️ 部屋設定が見つかりません。管理者に問い合わせてください。"),
+        )));
+        return;
+    }
+
     // Room選択肢
     let room_options: Vec<SlackBlockChoiceItem<SlackBlockPlainTextOnly>> = config
         .rooms

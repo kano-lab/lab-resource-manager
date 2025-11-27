@@ -118,6 +118,15 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
     }
 
     /// ブロックアクションイベントをルーティング（ボタンクリック、セレクトメニューなど）
+    ///
+    /// # 引数
+    /// * `block_actions` - Slackからのブロックアクションイベント（ボタンクリック、セレクトメニューなど）
+    ///
+    /// # 戻り値
+    /// 正常に処理された場合は `Ok(())` を返す
+    ///
+    /// # エラー
+    /// 処理中にエラーが発生した場合は `Err` を返す
     async fn route_block_actions(
         &self,
         block_actions: &SlackInteractionBlockActionsEvent,
