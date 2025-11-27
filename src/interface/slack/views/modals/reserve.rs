@@ -175,7 +175,11 @@ fn add_gpu_blocks(
                 .unwrap_or_default()
         } else {
             // サーバー未選択の場合は最初のサーバーのデバイスを表示
-            config.servers.first().map(create_device_options).unwrap_or_default()
+            config
+                .servers
+                .first()
+                .map(create_device_options)
+                .unwrap_or_default()
         };
 
     // GPU Device選択（チェックボックス）
