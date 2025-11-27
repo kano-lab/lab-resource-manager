@@ -58,12 +58,15 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         event: SlackInteractionEvent,
     ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
         info!("🔘 インタラクションイベントを受信");
+        println!("🟢 route_interaction が呼ばれました");
 
         match &event {
             SlackInteractionEvent::ViewSubmission(view_submission) => {
+                println!("  → ViewSubmissionイベント");
                 self.route_view_submission(view_submission).await
             }
             SlackInteractionEvent::BlockActions(block_actions) => {
+                println!("  → BlockActionsイベント");
                 self.route_block_actions(block_actions).await?;
                 Ok(None)
             }
@@ -137,23 +140,33 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         block_actions: &SlackInteractionBlockActionsEvent,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("📋 ブロックアクションを処理中");
+        println!("🟢 route_block_actions が呼ばれました");
 
         // モーダル内のインタラクションを処理（viewがSome）
         if block_actions.view.is_some() {
+            println!("  → モーダル内のインタラクション");
             return self.route_modal_interactions(block_actions).await;
         }
 
+        println!("  → メッセージ内のボタン");
+
         // メッセージ内のボタンを処理
         let Some(actions) = &block_actions.actions else {
+            println!("  → actionsがNone");
             return Ok(());
         };
+
+        println!("  → actions count: {}", actions.len());
 
         for action in actions {
             let action_id = action.action_id.to_string();
             info!("  → アクションID: {}", action_id);
+            println!("  → アクションID: {}, value: {:?}", action_id, action.value);
 
             match action_id.as_str() {
                 ACTION_EDIT_RESERVATION => {
+                    println!("  → edit_reservationハンドラー呼び出し");
+
                     crate::interface::slack::block_actions::edit_button::handle(
                         self,
                         block_actions,
@@ -162,6 +175,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
                     .await?
                 }
                 ACTION_CANCEL_RESERVATION => {
+                    println!("  → cancel_reservationハンドラー呼び出し");
                     crate::interface::slack::block_actions::cancel_button::handle(
                         self,
                         block_actions,
