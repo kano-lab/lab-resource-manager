@@ -136,10 +136,15 @@ impl GoogleCalendarUsageRepository {
     ) -> Result<ResourceUsage, RepositoryError> {
         // Event ID から Domain ID を取得
         let event_id = event.id.clone().unwrap_or_default();
+        println!("📝 parse_event: event_id={}", event_id);
+
         let domain_id = self.id_mapper.get_domain_id(&event_id)?.unwrap_or_else(|| {
             // マッピングが見つからない場合（レガシーデータ）はevent_idをそのまま使用
+            println!("⚠️ マッピングが見つからないため、event_idをそのままdomain_idとして使用");
             event_id.clone()
         });
+        println!("📝 使用するdomain_id={}", domain_id);
+
         let id = UsageId::from_string(domain_id);
 
         // owner_emailの決定ロジック
