@@ -87,7 +87,7 @@ pub async fn handle<R: ResourceUsageRepository>(
                 "✅ リソース予約更新成功: user={}, usage_id={}",
                 user_id, usage_id_str
             );
-            format!("✅ 予約を更新しました")
+            "✅ 予約を更新しました".to_string()
         }
         Err(e) => {
             error!("❌ リソース予約更新に失敗: {}", e);
@@ -95,11 +95,12 @@ pub async fn handle<R: ResourceUsageRepository>(
             // エラーの種類に応じてユーザーフレンドリーなメッセージを返す
             let error_msg = e.to_string();
             if error_msg.contains("見つかりません") || error_msg.contains("NotFound") {
-                "❌ 申し訳ございません。この予約は既に削除されているか、見つかりませんでした。".to_string()
+                "❌ 申し訳ございません。この予約は既に削除されているか、見つかりませんでした。"
+                    .to_string()
             } else if error_msg.contains("権限") || error_msg.contains("Unauthorized") {
                 "❌ この予約を更新する権限がありません。".to_string()
             } else if error_msg.contains("重複") || error_msg.contains("Conflict") {
-                format!("❌ 指定された時間帯は既に予約されています。")
+                "❌ 指定された時間帯は既に予約されています。".to_string()
             } else {
                 format!("❌ 予約の更新に失敗しました: {}", error_msg)
             }

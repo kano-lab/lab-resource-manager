@@ -26,15 +26,9 @@ pub(super) struct IdMapper {
 impl IdMapper {
     /// 新しいIdMapperを作成
     pub(super) fn new(file_path: PathBuf) -> Result<Self, RepositoryError> {
-        println!("🗂️ IdMapper初期化: file_path={:?}", file_path);
-
         let mappings = if file_path.exists() {
-            println!("  → 既存ファイルから読み込み");
-            let loaded = Self::load_from_file(&file_path)?;
-            println!("  → 読み込み完了: {} 件のマッピング", loaded.len());
-            loaded
+            Self::load_from_file(&file_path)?
         } else {
-            println!("  → 新規作成（ファイルなし）");
             HashMap::new()
         };
 
@@ -57,34 +51,22 @@ impl IdMapper {
         domain_id: &str,
         external_id: ExternalId,
     ) -> Result<(), RepositoryError> {
-        println!(
-            "💾 save_mapping: domain_id={}, calendar_id={}, event_id={}",
-            domain_id, external_id.calendar_id, external_id.event_id
-        );
-        println!("💾 file_path={:?}", self.file_path);
-
         let mut mappings = self.mappings.lock().unwrap();
         let mut reverse_mappings = self.reverse_mappings.lock().unwrap();
 
         // 既存のマッピングがある場合は逆引きマップから削除
         if let Some(old_external_id) = mappings.get(domain_id) {
-            println!("  → 既存マッピングを更新");
             reverse_mappings.remove(&old_external_id.event_id);
-        } else {
-            println!("  → 新規マッピングを作成");
         }
 
         // 新しいマッピングを追加
         reverse_mappings.insert(external_id.event_id.clone(), domain_id.to_string());
         mappings.insert(domain_id.to_string(), external_id);
 
-        println!("  → マッピング数: {}", mappings.len());
-
         drop(mappings);
         drop(reverse_mappings);
 
         self.save_to_file()?;
-        println!("  → ファイル保存完了");
         Ok(())
     }
 
@@ -93,53 +75,15 @@ impl IdMapper {
         &self,
         domain_id: &str,
     ) -> Result<Option<ExternalId>, RepositoryError> {
-        println!("🔍 get_external_id: domain_id={}", domain_id);
-        println!("🔍 file_path={:?}", self.file_path);
-
         let mappings = self.mappings.lock().unwrap();
-        println!("🔍 マッピング数: {}", mappings.len());
-
         let result = mappings.get(domain_id).cloned();
-        match &result {
-            Some(external_id) => {
-                println!(
-                    "  → 見つかりました: calendar_id={}, event_id={}",
-                    external_id.calendar_id, external_id.event_id
-                );
-            }
-            None => {
-                println!("  → 見つかりませんでした");
-                println!(
-                    "  → 利用可能なキー: {:?}",
-                    mappings.keys().collect::<Vec<_>>()
-                );
-            }
-        }
-
         Ok(result)
     }
 
     /// Event ID から Domain ID を取得（逆引き）
     pub(super) fn get_domain_id(&self, event_id: &str) -> Result<Option<String>, RepositoryError> {
-        println!("🔄 get_domain_id: event_id={}", event_id);
-
         let reverse_mappings = self.reverse_mappings.lock().unwrap();
-        println!("🔄 逆引きマッピング数: {}", reverse_mappings.len());
-
         let result = reverse_mappings.get(event_id).cloned();
-        match &result {
-            Some(domain_id) => {
-                println!("  → 見つかりました: domain_id={}", domain_id);
-            }
-            None => {
-                println!("  → 見つかりませんでした");
-                println!(
-                    "  → 利用可能なevent_id: {:?}",
-                    reverse_mappings.keys().collect::<Vec<_>>()
-                );
-            }
-        }
-
         Ok(result)
     }
 
