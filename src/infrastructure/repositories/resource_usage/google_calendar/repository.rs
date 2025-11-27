@@ -71,19 +71,28 @@ impl GoogleCalendarUsageRepository {
     }
 
     /// すべてのカレンダーから未来のイベントを取得
-    async fn fetch_future_events(&self) -> Result<Vec<(Event, String)>, RepositoryError> {
+    /// 戻り値: (Event, calendar_id, resource_name)
+    async fn fetch_future_events(&self) -> Result<Vec<(Event, String, String)>, RepositoryError> {
         let mut all_events = Vec::new();
 
         // 各サーバーカレンダーから取得
         for server in &self.config.servers {
             let events = self.fetch_events_from_calendar(&server.calendar_id).await?;
-            all_events.extend(events.into_iter().map(|e| (e, server.name.clone())));
+            all_events.extend(
+                events
+                    .into_iter()
+                    .map(|e| (e, server.calendar_id.clone(), server.name.clone())),
+            );
         }
 
         // 部屋カレンダーから取得
         for room in &self.config.rooms {
             let events = self.fetch_events_from_calendar(&room.calendar_id).await?;
-            all_events.extend(events.into_iter().map(|e| (e, room.name.clone())));
+            all_events.extend(
+                events
+                    .into_iter()
+                    .map(|e| (e, room.calendar_id.clone(), room.name.clone())),
+            );
         }
 
         Ok(all_events)
@@ -132,14 +141,31 @@ impl GoogleCalendarUsageRepository {
     fn parse_event(
         &self,
         event: Event,
+        calendar_id: &str,
         resource_context: &str,
     ) -> Result<ResourceUsage, RepositoryError> {
         // Event ID から Domain ID を取得
         let event_id = event.id.clone().unwrap_or_default();
-        let domain_id = self.id_mapper.get_domain_id(&event_id)?.unwrap_or_else(|| {
-            // マッピングが見つからない場合（レガシーデータ）はevent_idをそのまま使用
-            event_id.clone()
-        });
+
+        let domain_id = match self.id_mapper.get_domain_id(&event_id)? {
+            Some(existing_domain_id) => existing_domain_id,
+            None => {
+                // マッピングが見つからない場合、新しいdomain_idを生成してマッピングを作成
+                let new_domain_id = UsageId::new();
+
+                // 新しいマッピングを保存
+                self.id_mapper.save_mapping(
+                    new_domain_id.as_str(),
+                    ExternalId {
+                        calendar_id: calendar_id.to_string(),
+                        event_id: event_id.clone(),
+                    },
+                )?;
+
+                new_domain_id.as_str().to_string()
+            }
+        };
+
         let id = UsageId::from_string(domain_id);
 
         // owner_emailの決定ロジック
@@ -414,17 +440,134 @@ impl GoogleCalendarUsageRepository {
             calendar_id
         )))
     }
+
+    /// event_idから直接イベントを検索（マッピングがない場合）
+    ///
+    /// 全カレンダーから該当するイベントを検索してResourceUsageを返します。
+    async fn find_by_event_id(
+        &self,
+        event_id: &str,
+    ) -> Result<Option<ResourceUsage>, RepositoryError> {
+        // すべてのカレンダーIDを取得
+        let mut calendar_ids: Vec<String> = self
+            .config
+            .servers
+            .iter()
+            .map(|server| server.calendar_id.clone())
+            .collect();
+
+        // 部屋のカレンダーも追加
+        for room in &self.config.rooms {
+            calendar_ids.push(room.calendar_id.clone());
+        }
+
+        // 各カレンダーでイベントの検索を試みる
+        for calendar_id in calendar_ids {
+            match self
+                .fetch_event_from_calendar(&calendar_id, event_id)
+                .await?
+            {
+                Some(event) => {
+                    // リソースコンテキストを取得
+                    let resource_context = self.get_resource_context(&calendar_id)?;
+                    // イベントをパース（この時点で新しいマッピングが作成される）
+                    let usage = self.parse_event(event, &calendar_id, &resource_context)?;
+                    return Ok(Some(usage));
+                }
+                None => {
+                    // 次のカレンダーを試す
+                    continue;
+                }
+            }
+        }
+
+        // すべてのカレンダーで見つからなかった
+        Ok(None)
+    }
+
+    /// event_idから直接イベントを削除（マッピングがない場合）
+    ///
+    /// 全カレンダーから該当するイベントを検索して削除します。
+    async fn delete_by_event_id(&self, event_id: &str) -> Result<(), RepositoryError> {
+        // すべてのカレンダーIDを取得
+        let mut calendar_ids: Vec<String> = self
+            .config
+            .servers
+            .iter()
+            .map(|server| server.calendar_id.clone())
+            .collect();
+
+        // 部屋のカレンダーも追加
+        for room in &self.config.rooms {
+            calendar_ids.push(room.calendar_id.clone());
+        }
+
+        // 各カレンダーでイベントの削除を試みる
+        for calendar_id in calendar_ids {
+            match self
+                .hub
+                .events()
+                .delete(&calendar_id, event_id)
+                .doit()
+                .await
+            {
+                Ok(_) => {
+                    tracing::info!(
+                        "✅ イベント削除成功: event_id={}, calendar_id={}",
+                        event_id,
+                        calendar_id
+                    );
+                    return Ok(());
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        "カレンダー {} でイベント {} が見つかりませんでした: {}",
+                        calendar_id,
+                        event_id,
+                        e
+                    );
+                    // 次のカレンダーを試す
+                    continue;
+                }
+            }
+        }
+
+        // すべてのカレンダーで見つからなかった
+        tracing::error!(
+            "❌ イベントが全カレンダーで見つかりませんでした: event_id={}",
+            event_id
+        );
+        Err(RepositoryError::NotFound)
+    }
 }
 
 #[async_trait]
 impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
-        let domain_id = id.as_str();
+        let input_id = id.as_str();
 
-        // Domain ID から外部ID を取得
-        let external_id = match self.id_mapper.get_external_id(domain_id)? {
-            Some(id) => id,
-            None => return Ok(None), // マッピングが見つからない場合はNone
+        // まずdomain_idとして外部IDを取得を試みる
+        let external_id = match self.id_mapper.get_external_id(input_id)? {
+            Some(ext_id) => ext_id,
+            None => {
+                // 見つからない場合、input_idがevent_idの可能性がある
+                // 逆引きマッピングを試みる
+                match self.id_mapper.get_domain_id(input_id)? {
+                    Some(domain_id) => {
+                        // domain_idが見つかったので、それで外部IDを取得
+                        match self.id_mapper.get_external_id(&domain_id)? {
+                            Some(ext_id) => ext_id,
+                            None => {
+                                return Ok(None);
+                            }
+                        }
+                    }
+                    None => {
+                        // それでも見つからない場合、event_idとして全カレンダーから検索
+                        return self.find_by_event_id(input_id).await;
+                    }
+                }
+            }
         };
 
         // 特定のカレンダーから直接イベントを取得
@@ -439,8 +582,28 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         // リソースコンテキストを取得
         let resource_context = self.get_resource_context(&external_id.calendar_id)?;
 
-        // イベントをパース
-        let usage = self.parse_event(event, &resource_context)?;
+        // イベントをパース（ただし、domain_idは元のinput_idを使用）
+        let mut usage = self.parse_event(event, &external_id.calendar_id, &resource_context)?;
+
+        // IMPORTANT: find_by_id() で検索した場合、取得したResourceUsageのIDは
+        // 必ず元のinput_idであるべき。parse_event()が別のdomain_idを生成した場合、
+        // それを元のinput_idで上書きする。
+        if usage.id().as_str() != input_id {
+            tracing::warn!(
+                "parse_event returned different domain_id: expected={}, got={}. Overriding with expected ID.",
+                input_id,
+                usage.id().as_str()
+            );
+            // ResourceUsageのIDを元のinput_idに置き換える
+            usage = ResourceUsage::reconstruct(
+                UsageId::from_string(input_id.to_string()),
+                usage.owner_email().clone(),
+                usage.time_period().clone(),
+                usage.resources().to_vec(),
+                usage.notes().cloned(),
+            )?;
+        }
+
         Ok(Some(usage))
     }
 
@@ -448,8 +611,8 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         let events = self.fetch_future_events().await?;
 
         let mut usages = Vec::new();
-        for (event, context) in events {
-            match self.parse_event(event, &context) {
+        for (event, calendar_id, context) in events {
+            match self.parse_event(event, &calendar_id, &context) {
                 Ok(usage) => usages.push(usage),
                 Err(e) => {
                     eprintln!("⚠️  イベントパースエラー: {}", e); // TODO@KinjiKawaguchi: エラーハンドリングの改善
@@ -504,7 +667,6 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
 
     async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError> {
         let new_calendar_id = self.get_calendar_id_for_usage(usage)?;
-        let event = self.create_event_from_usage(usage)?;
         let domain_id = usage.id().as_str();
 
         // Domain IDから外部IDを検索
@@ -512,6 +674,10 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             // 既存イベント
             if external_id.calendar_id == new_calendar_id {
                 // 同じカレンダー → 更新
+                // IMPORTANT: update API用に id フィールドを含む Event を作成
+                let mut event = self.create_event_from_usage(usage)?;
+                event.id = Some(external_id.event_id.clone());
+
                 self.hub
                     .events()
                     .update(event, &external_id.calendar_id, &external_id.event_id)
@@ -533,6 +699,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
                     })?;
 
                 // 新しいカレンダーにイベントを作成
+                let event = self.create_event_from_usage(usage)?;
                 let (_response, created_event) = self
                     .hub
                     .events()
@@ -561,6 +728,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             }
         } else {
             // 新規 → 作成
+            let event = self.create_event_from_usage(usage)?;
             let (_response, created_event) = self
                 .hub
                 .events()
@@ -579,8 +747,8 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             self.id_mapper.save_mapping(
                 domain_id,
                 ExternalId {
-                    calendar_id: new_calendar_id,
-                    event_id,
+                    calendar_id: new_calendar_id.clone(),
+                    event_id: event_id.clone(),
                 },
             )?;
         }
@@ -589,13 +757,32 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     }
 
     async fn delete(&self, id: &UsageId) -> Result<(), RepositoryError> {
-        let domain_id = id.as_str();
+        let input_id = id.as_str();
 
-        // Domain IDから外部IDを取得
-        let external_id = self
-            .id_mapper
-            .get_external_id(domain_id)?
-            .ok_or(RepositoryError::NotFound)?;
+        // まずdomain_idとして外部IDを取得を試みる
+        let (external_id, actual_domain_id) = match self.id_mapper.get_external_id(input_id)? {
+            Some(ext_id) => (ext_id, input_id.to_string()),
+            None => {
+                // 見つからない場合、input_idがevent_idの可能性がある
+                // 逆引きマッピングを試みる
+                match self.id_mapper.get_domain_id(input_id)? {
+                    Some(domain_id) => {
+                        // domain_idが見つかったので、それで外部IDを取得
+                        let ext_id = self
+                            .id_mapper
+                            .get_external_id(&domain_id)?
+                            .ok_or(RepositoryError::NotFound)?;
+                        (ext_id, domain_id)
+                    }
+                    None => {
+                        // それでも見つからない場合、input_idを直接event_idとして使用
+                        // カレンダーIDを推定する必要がある
+                        // とりあえず、全カレンダーから検索して削除を試みる
+                        return self.delete_by_event_id(input_id).await;
+                    }
+                }
+            }
+        };
 
         // イベントを削除
         self.hub
@@ -606,7 +793,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             .map_err(|e| RepositoryError::ConnectionError(format!("イベント削除に失敗: {}", e)))?;
 
         // マッピングを削除
-        self.id_mapper.delete_mapping(domain_id)?;
+        self.id_mapper.delete_mapping(&actual_domain_id)?;
 
         Ok(())
     }

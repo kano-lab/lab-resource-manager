@@ -12,6 +12,9 @@ use slack_morphism::prelude::*;
 /// * `resource_type` - 選択されたリソースタイプ ("gpu" or "room")
 /// * `selected_server` - 選択されたサーバー名（GPU選択時のみ）
 /// * `usage_id` - 更新対象の予約ID（Noneの場合は新規作成）
+/// * `callback_id` - モーダルのコールバックID（デフォルト: "reserve_submit"）
+/// * `title` - モーダルのタイトル（デフォルト: "リソース予約"）
+/// * `submit_text` - 送信ボタンのテキスト（デフォルト: "予約する"）
 ///
 /// # 戻り値
 /// 予約フォームのモーダルビュー
@@ -20,6 +23,9 @@ pub fn create_reserve_modal(
     resource_type: Option<&str>,
     selected_server: Option<&str>,
     usage_id: Option<&str>,
+    callback_id: Option<&str>,
+    title: Option<&str>,
+    submit_text: Option<&str>,
 ) -> SlackView {
     // 現在時刻を取得してデフォルト値を設定
     let now = Local::now();
@@ -89,8 +95,9 @@ pub fn create_reserve_modal(
     ));
 
     // モーダルの作成
-    // 注意: 更新機能は別のPRで実装予定のため、常に新規作成モーダルとして扱う
-    let (callback_id, title, submit_text) = (CALLBACK_RESERVE_SUBMIT, "リソース予約", "予約する");
+    let callback_id = callback_id.unwrap_or(CALLBACK_RESERVE_SUBMIT);
+    let title = title.unwrap_or("リソース予約");
+    let submit_text = submit_text.unwrap_or("予約する");
 
     let mut modal_view = SlackModalView::new(pt!(title), blocks)
         .with_callback_id(callback_id.into())

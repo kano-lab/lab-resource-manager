@@ -49,7 +49,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     // Create and open reservation modal
     let initial_server = config.servers.first().map(|s| s.name.as_str());
-    let modal = reserve::create_reserve_modal(config, None, initial_server, None);
+    let modal = reserve::create_reserve_modal(config, None, initial_server, None, None, None, None);
 
     modals::open(slack_client, bot_token, trigger_id, modal).await?;
 
