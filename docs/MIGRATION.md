@@ -148,11 +148,13 @@ docker compose up -d
 ### Service fails to start
 
 Check logs:
+
 ```bash
 sudo journalctl -u lab-resource-manager -e
 ```
 
 Common issues:
+
 - Missing environment variables in `/etc/default/lab-resource-manager`
 - Incorrect file permissions
 - Missing data files
@@ -160,6 +162,7 @@ Common issues:
 ### Permission denied errors
 
 Ensure correct ownership:
+
 ```bash
 sudo chown -R lrm:lrm /var/lib/lab-resource-manager/
 sudo chown -R lrm:lrm /etc/lab-resource-manager/
@@ -171,5 +174,5 @@ Verify paths in `/etc/default/lab-resource-manager` are absolute paths and files
 
 ## Support
 
-If you encounter issues, please open an issue at:
-https://github.com/kano-lab/lab-resource-manager/issues
+If you encounter issues, please open an issue at
+<https://github.com/kano-lab/lab-resource-manager/issues>
