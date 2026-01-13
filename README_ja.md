@@ -37,61 +37,44 @@ src/
 ├── interface/               # インターフェース層（アダプター）
 │   └── slack/               # Slackボット（Socket Mode + コマンドハンドラー）
 └── bin/                     # エントリポイント
-    ├── watcher.rs           # リソース使用状況監視
-    └── slackbot.rs          # リソースアクセス管理用Slackボット
+    └── lab-resource-manager.rs  # リソースアクセス管理用Slackボット
 ```
 
 ## Setup
 
 セットアップの詳細については、[管理者ガイド](docs/ADMIN_GUIDE_ja.md)を参照してください。
 
-## Dockerデプロイ
+## インストール
 
-### Docker Composeでのビルドと実行
+### バイナリリリースから（推奨）
 
-```bash
-# 両方のサービスをビルドして起動
-docker-compose up -d
-
-# ログを表示
-docker-compose logs -f
-
-# サービスを停止
-docker-compose down
-```
-
-**セキュリティ注意**: デプロイ前にsecretsの適切なパーミッション設定を確認してください:
+[GitHub Releases](https://github.com/kano-lab/lab-resource-manager/releases) から最新版をダウンロード:
 
 ```bash
-chmod 600 secrets/service-account.json
-chmod 600 secrets/*
+# ダウンロードして展開
+curl -LO https://github.com/kano-lab/lab-resource-manager/releases/latest/download/lab-resource-manager-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf lab-resource-manager-x86_64-unknown-linux-gnu.tar.gz
+
+# インストール（root権限が必要）
+sudo bash deploy/install.sh
 ```
 
-Dockerセットアップは、各サービスに最適化された個別のイメージを持つマルチステージビルドを使用:
+インストールされるもの:
 
-- **ベースイメージ**: `ubuntu:24.04`（GLIBC 2.38サポートのため必須）
-- **サービス固有ステージ**: 各サービス（watcher/slackbot）は自身のバイナリのみを含む
-- **共有ビルダー**: 単一のビルドステージで両方のバイナリを効率的にコンパイル
+- バイナリ: `/usr/local/bin/lab-resource-manager`
+- 設定ディレクトリ: `/etc/lab-resource-manager/`
+- データディレクトリ: `/var/lib/lab-resource-manager/`
+- systemdサービスファイル
 
-### スタンドアロンDocker使用
+### ソースから
 
 ```bash
-# watcherをビルド・実行
-docker build --target watcher -t lab-resource-manager:watcher .
-docker run -v ./config:/app/config:ro \
-           -v ./data:/app/data \
-           -v ./secrets:/app/secrets:ro \
-           --env-file .env \
-           lab-resource-manager:watcher
-
-# slackbotをビルド・実行
-docker build --target slackbot -t lab-resource-manager:slackbot .
-docker run -v ./config:/app/config:ro \
-           -v ./data:/app/data \
-           -v ./secrets:/app/secrets:ro \
-           --env-file .env \
-           lab-resource-manager:slackbot
+cargo build --release
 ```
+
+### Dockerからの移行
+
+Docker ベースのデプロイからアップグレードする場合は、[マイグレーションガイド](docs/MIGRATION_ja.md)を参照してください。
 
 ## Usage
 
@@ -121,7 +104,7 @@ Slackボットを使うと、ユーザーがメールアドレスを登録して
 
 ```bash
 # ボットの起動
-cargo run --bin slackbot
+cargo run --bin lab-resource-manager
 ```
 
 **Slackコマンド:**
@@ -142,6 +125,7 @@ lab-resource-manager = "0.1"
 
 ```rust
 use lab_resource_manager::prelude::*;
+use std::path::PathBuf;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -152,6 +136,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let repository = GoogleCalendarUsageRepository::new(
         "secrets/service-account.json",
         config.clone(),
+        PathBuf::from("data/google_calendar_mappings.json"),
     ).await?;
 
     // 通知ルーターの作成（設定された全ての通知実装を自動処理）
