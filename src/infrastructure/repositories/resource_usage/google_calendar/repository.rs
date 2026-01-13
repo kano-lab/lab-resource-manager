@@ -35,9 +35,11 @@ impl GoogleCalendarUsageRepository {
     /// # Arguments
     /// * `service_account_key` - サービスアカウントキーファイルのパス
     /// * `config` - リソース設定
+    /// * `id_mappings_path` - IDマッピングファイルのパス
     pub async fn new(
         service_account_key: &str,
         config: ResourceConfig,
+        id_mappings_path: std::path::PathBuf,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let secret = yup_oauth2::read_service_account_key(service_account_key).await?;
         let service_account_email = secret.client_email.clone();
@@ -56,11 +58,7 @@ impl GoogleCalendarUsageRepository {
 
         let hub = CalendarHub::new(client, auth);
 
-        // ID マッピングの初期化
-        // TODO(#41): マッピングファイルパスを設定ファイルまたは環境変数から読み込む
-        let id_mapper = IdMapper::new(std::path::PathBuf::from(
-            "data/google_calendar_mappings.json",
-        ))?;
+        let id_mapper = IdMapper::new(id_mappings_path)?;
 
         Ok(Self {
             hub,

@@ -52,6 +52,7 @@
 //!     GoogleCalendarUsageRepository::new(
 //!         "secrets/service-account.json",
 //!         config.clone(),
+//!         "data/google_calendar_mappings.json".into(),
 //!     )
 //!     .await?,
 //! );
