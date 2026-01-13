@@ -53,9 +53,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .install_default()
         .ok();
 
-    // 環境変数の読み込み
-    dotenv::dotenv().ok();
-
     let service_account_key = env::var("GOOGLE_SERVICE_ACCOUNT_KEY")
         .expect("環境変数 GOOGLE_SERVICE_ACCOUNT_KEY が必要です");
 
