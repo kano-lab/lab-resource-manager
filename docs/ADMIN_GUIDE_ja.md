@@ -93,36 +93,23 @@ channel_id = "C01234567..."
 
 ## システムの起動
 
-### Watcher（リソース監視）の起動
+### サービス管理
 
 ```bash
-# デフォルト（リポジトリ実装 + 設定済み通知先）
-cargo run --bin watcher
-
-# Mockリポジトリ使用（テスト用）
-cargo run --bin watcher --repository mock
-
-# ポーリング間隔指定（デフォルト60秒）
-cargo run --bin watcher --interval 30
-```
-
-### CLIオプション
-
-- `--repository <google_calendar|mock>`: リポジトリ実装の選択
-- `--interval <秒>`: ポーリング間隔
-
-通知実装は `config/resources.toml` でリソースごとに設定します。
-
-### Slackボットの起動
-
-Slackボットを使うと、ユーザーがメールアドレスを登録して全てのリソースコレクションへのアクセスを取得できます:
-
-```bash
-# ボットの起動（開発時）
-cargo run --bin lab-resource-manager
-
-# systemdサービスとして起動（本番環境）
+# サービスを起動
 sudo systemctl start lab-resource-manager
+
+# サービスを停止
+sudo systemctl stop lab-resource-manager
+
+# ステータスを確認
+sudo systemctl status lab-resource-manager
+
+# ログを確認
+sudo journalctl -u lab-resource-manager -f
+
+# 自動起動を有効化
+sudo systemctl enable lab-resource-manager
 ```
 
 ### 管理者用コマンド
@@ -141,26 +128,13 @@ sudo systemctl start lab-resource-manager
 
 このコマンドは、指定したSlackユーザーとメールアドレスを連携し、Google Calendarへのアクセス権を付与します。
 
-## ビルド
+## インストール
 
-### 開発ビルド
-
-```bash
-cargo build
-```
-
-### リリースビルド
+[GitHub Releases](https://github.com/kano-lab/lab-resource-manager/releases)から最新版をダウンロードして実行:
 
 ```bash
-cargo build --release
-```
-
-### 本番環境へのデプロイ
-
-本番環境では、バイナリリリースとsystemdを使用します:
-
-```bash
-# ダウンロードしてインストール（詳細はREADMEを参照）
+# 展開してインストール
+tar -xzf lab-resource-manager-x86_64-unknown-linux-gnu.tar.gz
 sudo bash deploy/install.sh
 ```
 

@@ -95,36 +95,23 @@ understand local times.
 
 ## Running the System
 
-### Running the Watcher (Resource Monitor)
+### Service Management
 
 ```bash
-# Default (repository implementation + configured notifications)
-cargo run --bin watcher
-
-# Use mock repository (for testing)
-cargo run --bin watcher --repository mock
-
-# Customize polling interval (default: 60 seconds)
-cargo run --bin watcher --interval 30
-```
-
-### CLI Options
-
-- `--repository <google_calendar|mock>`: Select repository implementation
-- `--interval <seconds>`: Set polling interval
-
-Notifier implementations are configured per resource in `config/resources.toml`.
-
-### Running the Slack Bot
-
-The Slack bot allows users to register their email addresses and get access to all resource collections:
-
-```bash
-# Run the bot (development)
-cargo run --bin lab-resource-manager
-
-# Run as systemd service (production)
+# Start the service
 sudo systemctl start lab-resource-manager
+
+# Stop the service
+sudo systemctl stop lab-resource-manager
+
+# Check status
+sudo systemctl status lab-resource-manager
+
+# View logs
+sudo journalctl -u lab-resource-manager -f
+
+# Enable on boot
+sudo systemctl enable lab-resource-manager
 ```
 
 ### Administrator Commands
@@ -143,26 +130,13 @@ Administrators can register other users' email addresses:
 
 This command links the specified Slack user with an email address and grants access to Google Calendar resources.
 
-## Building
+## Installation
 
-### Development Build
-
-```bash
-cargo build
-```
-
-### Release Build
+Download the latest release from [GitHub Releases](https://github.com/kano-lab/lab-resource-manager/releases) and run:
 
 ```bash
-cargo build --release
-```
-
-### Production Deployment
-
-For production deployment, use the binary release with systemd:
-
-```bash
-# Download and install (see README for details)
+# Extract and install
+tar -xzf lab-resource-manager-x86_64-unknown-linux-gnu.tar.gz
 sudo bash deploy/install.sh
 ```
 
