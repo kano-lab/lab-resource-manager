@@ -12,6 +12,7 @@ use lab_resource_manager::{
     GoogleCalendarUsageRepository, JsonFileIdentityLinkRepository, NotificationRouter,
     NotifyFutureResourceUsageChangesUseCase, load_config,
 };
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -20,33 +21,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Starting resource usage watcher (basic example)");
 
     // Load resource configuration
-    let dotenv_path = dotenv::dotenv().ok();
-    let project_root = dotenv_path
-        .as_ref()
-        .and_then(|p| p.parent())
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
-
     let config_path =
         std::env::var("RESOURCE_CONFIG").unwrap_or_else(|_| "config/resources.toml".to_string());
-    let absolute_config_path = project_root.join(&config_path);
 
-    let config = load_config(
-        absolute_config_path
-            .to_str()
-            .expect("Failed to convert path"),
-    )?;
+    let config = load_config(&config_path)?;
     println!("✅ Configuration loaded");
 
     // Create repository
     let service_account_key = std::env::var("GOOGLE_SERVICE_ACCOUNT_KEY")
         .expect("GOOGLE_SERVICE_ACCOUNT_KEY must be set");
-    let absolute_key_path = project_root.join(&service_account_key);
+
+    let id_mappings_path = std::env::var("GOOGLE_CALENDAR_MAPPINGS_FILE")
+        .unwrap_or_else(|_| "data/google_calendar_mappings.json".to_string());
 
     let repository = Arc::new(
         GoogleCalendarUsageRepository::new(
-            absolute_key_path.to_str().expect("Failed to convert path"),
+            &service_account_key,
             config.clone(),
+            PathBuf::from(&id_mappings_path),
         )
         .await?,
     );
@@ -54,9 +46,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create identity link repository
     let identity_links_path = std::env::var("IDENTITY_LINKS_FILE")
-        .map(|p| project_root.join(p))
-        .unwrap_or_else(|_| project_root.join("data/identity_links.json"));
-    let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new(identity_links_path));
+        .unwrap_or_else(|_| "data/identity_links.json".to_string());
+    let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new(PathBuf::from(
+        identity_links_path,
+    )));
 
     // Create notification router (uses configured notification destinations and identity_repo)
     let notifier = NotificationRouter::new(config, identity_repo);

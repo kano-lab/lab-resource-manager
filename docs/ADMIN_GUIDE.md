@@ -6,23 +6,28 @@ This guide is for administrators who are deploying lab-resource-manager in their
 
 ### 1. Environment Variables
 
-```bash
-cp .env.example .env
-```
-
-Edit `.env` to configure:
+For systemd deployment, create `/etc/default/lab-resource-manager`:
 
 ```env
 # Repository Configuration (default implementation: Google Calendar)
-GOOGLE_SERVICE_ACCOUNT_KEY=secrets/service-account.json
+GOOGLE_SERVICE_ACCOUNT_KEY=/etc/lab-resource-manager/service-account.json
 
 # Resource Configuration
-RESOURCE_CONFIG=config/resources.toml
+RESOURCE_CONFIG=/etc/lab-resource-manager/resources.toml
 
-# Slack Bot Configuration (for slackbot binary)
+# Data files
+IDENTITY_LINKS_FILE=/var/lib/lab-resource-manager/identity_links.json
+GOOGLE_CALENDAR_MAPPINGS_FILE=/var/lib/lab-resource-manager/google_calendar_mappings.json
+
+# Slack Bot Configuration
 SLACK_BOT_TOKEN=xoxb-your-bot-token-here
 SLACK_APP_TOKEN=xapp-your-app-token-here
+
+# Logging
+RUST_LOG=info
 ```
+
+For development, you can set these as shell environment variables.
 
 **Note**: Notification settings are configured in `config/resources.toml` per resource.
 
@@ -90,33 +95,23 @@ understand local times.
 
 ## Running the System
 
-### Running the Watcher (Resource Monitor)
+### Service Management
 
 ```bash
-# Default (repository implementation + configured notifications)
-cargo run --bin watcher
+# Start the service
+sudo systemctl start lab-resource-manager
 
-# Use mock repository (for testing)
-cargo run --bin watcher --repository mock
+# Stop the service
+sudo systemctl stop lab-resource-manager
 
-# Customize polling interval (default: 60 seconds)
-cargo run --bin watcher --interval 30
-```
+# Check status
+sudo systemctl status lab-resource-manager
 
-### CLI Options
+# View logs
+sudo journalctl -u lab-resource-manager -f
 
-- `--repository <google_calendar|mock>`: Select repository implementation
-- `--interval <seconds>`: Set polling interval
-
-Notifier implementations are configured per resource in `config/resources.toml`.
-
-### Running the Slack Bot
-
-The Slack bot allows users to register their email addresses and get access to all resource collections:
-
-```bash
-# Run the bot
-cargo run --bin slackbot
+# Enable on boot
+sudo systemctl enable lab-resource-manager
 ```
 
 ### Administrator Commands
@@ -135,23 +130,21 @@ Administrators can register other users' email addresses:
 
 This command links the specified Slack user with an email address and grants access to Google Calendar resources.
 
-## Building
+## Installation
 
-### Development Build
-
-```bash
-cargo build
-```
-
-### Release Build
+Download the latest release from [GitHub Releases](https://github.com/kano-lab/lab-resource-manager/releases) and run:
 
 ```bash
-cargo build --release
+# Extract and install
+tar -xzf lab-resource-manager-x86_64-unknown-linux-gnu.tar.gz
+sudo bash deploy/install.sh
 ```
 
-### Binary Deployment
+This installs:
 
-After a release build, binaries are generated in `target/release/`:
+- `/usr/local/bin/lab-resource-manager` - Main binary
+- `/etc/lab-resource-manager/` - Configuration directory
+- `/var/lib/lab-resource-manager/` - Data directory
+- `/etc/systemd/system/lab-resource-manager.service` - systemd service
 
-- `target/release/watcher` - Resource monitoring program
-- `target/release/slackbot` - Slack bot
+See [Migration Guide](MIGRATION.md) if upgrading from Docker deployment.

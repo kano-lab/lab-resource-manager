@@ -1,0 +1,29 @@
+[Unit]
+Description=Lab Resource Manager
+After=network.target
+
+[Service]
+Type=simple
+User=lrm
+Group=lrm
+WorkingDirectory=/var/lib/lab-resource-manager
+ExecStart=/usr/local/bin/lab-resource-manager
+EnvironmentFile=/etc/default/lab-resource-manager
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ReadWritePaths=/var/lib/lab-resource-manager
+
+[Install]
+WantedBy=multi-user.target

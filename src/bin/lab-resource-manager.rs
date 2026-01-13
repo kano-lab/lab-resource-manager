@@ -9,7 +9,7 @@
 //! # 環境変数を指定して実行
 //! SLACK_BOT_TOKEN=xoxb-... \
 //! GOOGLE_SERVICE_ACCOUNT_KEY=/path/to/key.json \
-//! cargo run --bin slackbot
+//! cargo run --bin lab-resource-manager
 //! ```
 //!
 //! ## 環境変数
@@ -18,6 +18,8 @@
 //! - `SLACK_APP_TOKEN`: Socket Mode用のSlack App-Level Token (必須, xapp-...)
 //! - `GOOGLE_SERVICE_ACCOUNT_KEY`: Google サービスアカウントJSONキーのパス (必須)
 //! - `RESOURCE_CONFIG`: リソース設定ファイルのパス (デフォルト: config/resources.toml)
+//! - `IDENTITY_LINKS_FILE`: ID紐付けファイルのパス (デフォルト: data/identity_links.json)
+//! - `GOOGLE_CALENDAR_MAPPINGS_FILE`: カレンダーIDマッピングファイルのパス (デフォルト: data/google_calendar_mappings.json)
 use lab_resource_manager::{
     application::usecases::{
         create_resource_usage::CreateResourceUsageUseCase,
@@ -53,9 +55,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .install_default()
         .ok();
 
-    // 環境変数の読み込み
-    dotenv::dotenv().ok();
-
     let service_account_key = env::var("GOOGLE_SERVICE_ACCOUNT_KEY")
         .expect("環境変数 GOOGLE_SERVICE_ACCOUNT_KEY が必要です");
 
@@ -65,6 +64,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let identity_links_file =
         env::var("IDENTITY_LINKS_FILE").unwrap_or_else(|_| "data/identity_links.json".to_string());
+
+    let calendar_mappings_file = env::var("GOOGLE_CALENDAR_MAPPINGS_FILE")
+        .unwrap_or_else(|_| "data/google_calendar_mappings.json".to_string());
 
     println!("🤖 Slack Bot を起動しています...");
     println!("📁 リソース設定ファイル: {}", resource_config_path);
@@ -106,8 +108,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // リソース使用予定リポジトリの作成（予約機能用）
     let resource_usage_repo = Arc::new(
-        GoogleCalendarUsageRepository::new(&service_account_key, config_arc.as_ref().clone())
-            .await?,
+        GoogleCalendarUsageRepository::new(
+            &service_account_key,
+            config_arc.as_ref().clone(),
+            PathBuf::from(&calendar_mappings_file),
+        )
+        .await?,
     );
 
     // リソース使用予定UseCasesの作成
