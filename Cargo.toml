@@ -1,6 +1,6 @@
 [package]
 name = "lab-resource-manager"
-version = "0.4.0"
+version = "1.0.0-rc.1"
 edition = "2024"
 authors = ["Kinji Kawaguchi"]
 license = "MIT OR Apache-2.0"
@@ -16,7 +16,6 @@ async-trait = "0.1.89"
 chrono = "0.4.42"
 chrono-tz = "0.10"
 clap = { version = "4.5", features = ["derive"] }
-dotenv = "0.15.0"
 google-calendar3 = "6.0.0"
 reqwest = { version = "0.12.24", features = ["json"] }
 rustls = { version = "0.23", features = ["ring"] }
@@ -28,3 +27,4 @@ tokio-util = { version = "0.7", features = ["rt"] }
 toml = "0.9.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.11", features = ["v4"] }

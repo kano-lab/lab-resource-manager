@@ -40,8 +40,29 @@
 //!
 //! ### 4. Thin Application Layer
 //! Application層は薄く保ち、ドメインロジックをDomain層に配置する。
-pub mod grant_user_resource_access;
-pub mod notify_resource_usage_changes;
 
+/// リソース使用予定を作成するユースケース
+pub mod create_resource_usage;
+/// リソース使用予定を削除するユースケース
+pub mod delete_resource_usage;
+/// IDでリソース使用予定を取得するユースケース
+pub mod get_resource_usage_by_id;
+/// ユーザーにリソースアクセス権を付与するユースケース
+pub mod grant_user_resource_access;
+/// 全ての未来のリソース使用予定を取得するユースケース
+pub mod list_all_future_resource_usages;
+/// ユーザーのリソース使用予定一覧を取得するユースケース
+pub mod list_user_resource_usages;
+/// 未来のリソース使用変更を監視して通知するユースケース
+pub mod notify_future_resource_usage_changes;
+/// リソース使用予定を更新するユースケース
+pub mod update_resource_usage;
+
+pub use create_resource_usage::CreateResourceUsageUseCase;
+pub use delete_resource_usage::DeleteResourceUsageUseCase;
+pub use get_resource_usage_by_id::GetResourceUsageByIdUseCase;
 pub use grant_user_resource_access::GrantUserResourceAccessUseCase;
-pub use notify_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase;
+pub use list_all_future_resource_usages::ListAllFutureResourceUsagesUseCase;
+pub use list_user_resource_usages::ListUserResourceUsagesUseCase;
+pub use notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase;
+pub use update_resource_usage::UpdateResourceUsageUseCase;

@@ -44,61 +44,44 @@ src/
 ├── interface/               # Interface layer (adapters)
 │   └── slack/               # Slack bot (Socket Mode + command handlers)
 └── bin/                     # Entry points
-    ├── watcher.rs           # Resource usage watcher
-    └── slackbot.rs          # Slack bot for resource access management
+    └── lab-resource-manager.rs  # Slack bot for resource access management
 ```
 
 ## Setup
 
 For detailed setup instructions, see the [Administrator Guide](docs/ADMIN_GUIDE.md).
 
-## Docker Deployment
+## Installation
 
-### Building and Running with Docker Compose
+### From Binary Release (Recommended)
 
-```bash
-# Build and start both services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
-```
-
-**Security Note**: Ensure proper file permissions for secrets before deployment:
+Download the latest release from [GitHub Releases](https://github.com/kano-lab/lab-resource-manager/releases):
 
 ```bash
-chmod 600 secrets/service-account.json
-chmod 600 secrets/*
+# Download and extract
+curl -LO https://github.com/kano-lab/lab-resource-manager/releases/latest/download/lab-resource-manager-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf lab-resource-manager-x86_64-unknown-linux-gnu.tar.gz
+
+# Install (requires root)
+sudo bash deploy/install.sh
 ```
 
-The Docker setup uses a multi-stage build with separate optimized images for each service:
+This installs:
 
-- **Base image**: `ubuntu:24.04` (required for GLIBC 2.38 support)
-- **Service-specific stages**: Each service (watcher/slackbot) gets only its binary
-- **Shared builder**: Single build stage compiles both binaries efficiently
+- Binary to `/usr/local/bin/lab-resource-manager`
+- Config directory at `/etc/lab-resource-manager/`
+- Data directory at `/var/lib/lab-resource-manager/`
+- systemd service file
 
-### Standalone Docker Usage
+### From Source
 
 ```bash
-# Build and run watcher
-docker build --target watcher -t lab-resource-manager:watcher .
-docker run -v ./config:/app/config:ro \
-           -v ./data:/app/data \
-           -v ./secrets:/app/secrets:ro \
-           --env-file .env \
-           lab-resource-manager:watcher
-
-# Build and run slackbot
-docker build --target slackbot -t lab-resource-manager:slackbot .
-docker run -v ./config:/app/config:ro \
-           -v ./data:/app/data \
-           -v ./secrets:/app/secrets:ro \
-           --env-file .env \
-           lab-resource-manager:slackbot
+cargo build --release
 ```
+
+### Migration from Docker
+
+If upgrading from a Docker-based deployment, see [Migration Guide](docs/MIGRATION.md).
 
 ## Usage
 
@@ -128,7 +111,7 @@ The Slack bot allows users to register their email addresses and get access to a
 
 ```bash
 # Run the bot
-cargo run --bin slackbot
+cargo run --bin lab-resource-manager
 ```
 
 **Slack Commands:**
@@ -149,6 +132,7 @@ Example code (using Google Calendar implementation):
 
 ```rust
 use lab_resource_manager::prelude::*;
+use std::path::PathBuf;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -159,6 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let repository = GoogleCalendarUsageRepository::new(
         "secrets/service-account.json",
         config.clone(),
+        PathBuf::from("data/google_calendar_mappings.json"),
     ).await?;
 
     // Create notification router (automatically handles all configured notifier implementations)

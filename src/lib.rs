@@ -48,10 +48,14 @@
 //! let config = load_config("config/resources.toml")?;
 //!
 //! // Create repository and notifier
-//! let repository = GoogleCalendarUsageRepository::new(
-//!     "secrets/service-account.json",
-//!     config.clone(),
-//! ).await?;
+//! let repository = Arc::new(
+//!     GoogleCalendarUsageRepository::new(
+//!         "secrets/service-account.json",
+//!         config.clone(),
+//!         "data/google_calendar_mappings.json".into(),
+//!     )
+//!     .await?,
+//! );
 //! // Create identity link repository for Slack user mapping
 //! let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new("data/identity_links.json".into()));
 //! // NotificationRouter automatically supports all configured notification types

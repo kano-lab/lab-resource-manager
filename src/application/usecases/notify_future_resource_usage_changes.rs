@@ -3,6 +3,7 @@ use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::ports::{NotificationEvent, Notifier};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// 未来および進行中のリソース使用状況の変更を監視し、通知するユースケース
 ///
@@ -19,7 +20,7 @@ where
     R: ResourceUsageRepository,
     N: Notifier,
 {
-    repository: R,
+    repository: Arc<R>,
     notifier: N,
     previous_state: tokio::sync::Mutex<HashMap<String, ResourceUsage>>,
 }
@@ -29,7 +30,15 @@ where
     R: ResourceUsageRepository,
     N: Notifier,
 {
-    pub async fn new(repository: R, notifier: N) -> Result<Self, ApplicationError> {
+    /// 新しいインスタンスを作成し、初期状態を取得する
+    ///
+    /// # Arguments
+    /// * `repository` - リソース使用リポジトリ（Arc で共有）
+    /// * `notifier` - 通知サービス
+    ///
+    /// # Errors
+    /// リポジトリから初期状態の取得に失敗した場合
+    pub async fn new(repository: Arc<R>, notifier: N) -> Result<Self, ApplicationError> {
         let instance = Self {
             repository,
             notifier,
@@ -42,6 +51,12 @@ where
         Ok(instance)
     }
 
+    /// 一度だけポーリングを実行し、変更を検知して通知する
+    ///
+    /// 前回の状態と現在の状態を比較し、作成・更新・削除された予約を検知して通知します。
+    ///
+    /// # Errors
+    /// リポジトリアクセスまたは通知送信に失敗した場合
     pub async fn poll_once(&self) -> Result<(), ApplicationError> {
         let current_usages = self.fetch_current_usages().await?;
         let mut previous_usages = self.previous_state.lock().await;

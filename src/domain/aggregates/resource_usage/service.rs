@@ -2,6 +2,7 @@ use super::entity::ResourceUsage;
 use super::errors::ResourceUsageError;
 use super::value_objects::Resource;
 
+/// リソース使用の競合をチェックするドメインサービス
 pub struct UsageConflictChecker;
 
 // TODO@KinjiKawaguchi: もう少し自明なコードを書いてインラインコメントを減らす
@@ -12,10 +13,19 @@ impl Default for UsageConflictChecker {
 }
 
 impl UsageConflictChecker {
+    /// 新しいチェッカーを作成
     pub fn new() -> Self {
         Self
     }
 
+    /// リソース使用の競合をチェック
+    ///
+    /// # Arguments
+    /// * `new_usage` - チェック対象の新しい使用予定
+    /// * `existing_usages` - 既存の使用予定リスト
+    ///
+    /// # Errors
+    /// 競合がある場合、`ResourceUsageError::UsageConflict`を返す
     pub fn check_conflicts(
         &self,
         new_usage: &ResourceUsage,

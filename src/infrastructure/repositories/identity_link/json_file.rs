@@ -96,6 +96,10 @@ impl IdentityLinkDto {
 }
 
 impl JsonFileIdentityLinkRepository {
+    /// 新しいJSONファイルベースのリポジトリを作成
+    ///
+    /// # Arguments
+    /// * `file_path` - JSONファイルのパス
     pub fn new(file_path: PathBuf) -> Self {
         Self {
             file_path,
@@ -199,32 +203,6 @@ impl IdentityLinkRepository for JsonFileIdentityLinkRepository {
         {
             let mut cache = self.cache.write().await;
             cache.insert(email_key, dto);
-        }
-
-        self.save_to_file().await?;
-
-        Ok(())
-    }
-
-    async fn find_all(&self) -> Result<Vec<IdentityLink>, RepositoryError> {
-        self.ensure_loaded().await?;
-
-        let cache = self.cache.read().await;
-        let mut result = Vec::new();
-
-        for dto in cache.values() {
-            result.push(dto.to_entity()?);
-        }
-
-        Ok(result)
-    }
-
-    async fn delete(&self, email: &EmailAddress) -> Result<(), RepositoryError> {
-        self.ensure_loaded().await?;
-
-        {
-            let mut cache = self.cache.write().await;
-            cache.remove(email.as_str());
         }
 
         self.save_to_file().await?;

@@ -13,5 +13,7 @@
 //! 外部ライブラリへの依存も最小限に抑える。
 pub mod aggregates;
 pub mod common;
+/// ドメイン層のエラー定義と基底トレイト
 pub mod errors;
 pub mod ports;
+pub mod services;

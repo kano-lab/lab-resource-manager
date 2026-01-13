@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+/// テスト用のインメモリResourceUsageリポジトリ実装
 #[derive(Clone)]
 pub struct MockUsageRepository {
     storage: Arc<Mutex<HashMap<String, ResourceUsage>>>,
@@ -21,6 +22,7 @@ impl Default for MockUsageRepository {
 }
 
 impl MockUsageRepository {
+    /// 新しいモックリポジトリを作成
     pub fn new() -> Self {
         Self {
             storage: Arc::new(Mutex::new(HashMap::new())),
@@ -33,11 +35,6 @@ impl ResourceUsageRepository for MockUsageRepository {
     async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
         let storage = self.storage.lock().unwrap();
         Ok(storage.get(id.as_str()).cloned())
-    }
-
-    async fn find_all(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        let storage = self.storage.lock().unwrap();
-        Ok(storage.values().cloned().collect())
     }
 
     async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
@@ -56,6 +53,19 @@ impl ResourceUsageRepository for MockUsageRepository {
             .cloned()
             .collect();
         Ok(overlapping)
+    }
+
+    async fn find_by_owner(
+        &self,
+        owner_email: &crate::domain::common::EmailAddress,
+    ) -> Result<Vec<ResourceUsage>, RepositoryError> {
+        let storage = self.storage.lock().unwrap();
+        let owned: Vec<ResourceUsage> = storage
+            .values()
+            .filter(|usage| usage.owner_email() == owner_email)
+            .cloned()
+            .collect();
+        Ok(owned)
     }
 
     async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError> {

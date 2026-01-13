@@ -30,8 +30,12 @@
 //! ### 3. 集約単位で定義
 //! Repositoryは**集約ルート**に対して1つ定義する。
 //! 集約内部の値オブジェクトには個別のRepositoryを作らない。
+
+/// リポジトリのエラー型
 pub mod errors;
+/// IdentityLinkリポジトリポート
 pub mod identity_link;
+/// ResourceUsageリポジトリポート
 pub mod resource_usage;
 
 pub use errors::RepositoryError;

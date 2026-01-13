@@ -14,6 +14,7 @@ impl Default for MockSender {
 }
 
 impl MockSender {
+    /// 新しいMockSenderを作成
     pub fn new() -> Self {
         Self
     }

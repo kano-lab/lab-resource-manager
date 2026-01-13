@@ -6,23 +6,28 @@
 
 ### 1. 環境変数の設定
 
-```bash
-cp .env.example .env
-```
-
-`.env`を編集して以下を設定:
+systemdデプロイの場合、`/etc/default/lab-resource-manager` を作成:
 
 ```env
 # リポジトリ設定（デフォルト実装: Google Calendar）
-GOOGLE_SERVICE_ACCOUNT_KEY=secrets/service-account.json
+GOOGLE_SERVICE_ACCOUNT_KEY=/etc/lab-resource-manager/service-account.json
 
 # リソース設定
-RESOURCE_CONFIG=config/resources.toml
+RESOURCE_CONFIG=/etc/lab-resource-manager/resources.toml
 
-# Slackボット設定（slackbotバイナリ用）
+# データファイル
+IDENTITY_LINKS_FILE=/var/lib/lab-resource-manager/identity_links.json
+GOOGLE_CALENDAR_MAPPINGS_FILE=/var/lib/lab-resource-manager/google_calendar_mappings.json
+
+# Slackボット設定
 SLACK_BOT_TOKEN=xoxb-your-bot-token-here
 SLACK_APP_TOKEN=xapp-your-app-token-here
+
+# ログ設定
+RUST_LOG=info
 ```
+
+開発時はシェルの環境変数として設定できます。
 
 **注意**: 通知設定は `config/resources.toml` でリソースごとに設定します。
 
@@ -48,7 +53,8 @@ calendar_id = "your-calendar-id@group.calendar.google.com"  # リポジトリ実
 # リソースごとに通知先を設定
 [[servers.notifications]]
 type = "slack"  # 通知実装の選択
-webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+bot_token = "xoxb-YOUR-BOT-TOKEN"
+channel_id = "C01234567..."
 # オプション: 通知のタイムゾーンを設定（IANA形式）
 # 指定しない場合はシステムのローカルタイムゾーンで表示されます
 # timezone = "Asia/Tokyo"
@@ -72,7 +78,8 @@ calendar_id = "room-calendar-id@group.calendar.google.com"
 
 [[rooms.notifications]]
 type = "slack"
-webhook_url = "https://hooks.slack.com/services/YOUR/ROOM/WEBHOOK"
+bot_token = "xoxb-YOUR-BOT-TOKEN"
+channel_id = "C01234567..."
 # timezone = "Europe/London"
 ```
 
@@ -86,33 +93,23 @@ webhook_url = "https://hooks.slack.com/services/YOUR/ROOM/WEBHOOK"
 
 ## システムの起動
 
-### Watcher（リソース監視）の起動
+### サービス管理
 
 ```bash
-# デフォルト（リポジトリ実装 + 設定済み通知先）
-cargo run --bin watcher
+# サービスを起動
+sudo systemctl start lab-resource-manager
 
-# Mockリポジトリ使用（テスト用）
-cargo run --bin watcher --repository mock
+# サービスを停止
+sudo systemctl stop lab-resource-manager
 
-# ポーリング間隔指定（デフォルト60秒）
-cargo run --bin watcher --interval 30
-```
+# ステータスを確認
+sudo systemctl status lab-resource-manager
 
-### CLIオプション
+# ログを確認
+sudo journalctl -u lab-resource-manager -f
 
-- `--repository <google_calendar|mock>`: リポジトリ実装の選択
-- `--interval <秒>`: ポーリング間隔
-
-通知実装は `config/resources.toml` でリソースごとに設定します。
-
-### Slackボットの起動
-
-Slackボットを使うと、ユーザーがメールアドレスを登録して全てのリソースコレクションへのアクセスを取得できます:
-
-```bash
-# ボットの起動
-cargo run --bin slackbot
+# 自動起動を有効化
+sudo systemctl enable lab-resource-manager
 ```
 
 ### 管理者用コマンド
@@ -131,23 +128,21 @@ cargo run --bin slackbot
 
 このコマンドは、指定したSlackユーザーとメールアドレスを連携し、Google Calendarへのアクセス権を付与します。
 
-## ビルド
+## インストール
 
-### 開発ビルド
-
-```bash
-cargo build
-```
-
-### リリースビルド
+[GitHub Releases](https://github.com/kano-lab/lab-resource-manager/releases)から最新版をダウンロードして実行:
 
 ```bash
-cargo build --release
+# 展開してインストール
+tar -xzf lab-resource-manager-x86_64-unknown-linux-gnu.tar.gz
+sudo bash deploy/install.sh
 ```
 
-### バイナリの配置
+インストールされるもの:
 
-リリースビルド後、バイナリは `target/release/` に生成されます:
+- `/usr/local/bin/lab-resource-manager` - メインバイナリ
+- `/etc/lab-resource-manager/` - 設定ディレクトリ
+- `/var/lib/lab-resource-manager/` - データディレクトリ
+- `/etc/systemd/system/lab-resource-manager.service` - systemdサービス
 
-- `target/release/watcher` - リソース監視プログラム
-- `target/release/slackbot` - Slackボット
+Dockerデプロイからアップグレードする場合は、[マイグレーションガイド](MIGRATION_ja.md)を参照してください。

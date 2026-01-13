@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     // Create mock repository and notification router
-    let repository = MockUsageRepository::new();
+    let repository = Arc::new(MockUsageRepository::new());
     let notifier = NotificationRouter::new(config, identity_repo);
 
     println!("✅ Mock repository and notification router initialized");

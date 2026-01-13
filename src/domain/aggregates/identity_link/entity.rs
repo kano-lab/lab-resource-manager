@@ -115,18 +115,22 @@ impl IdentityLink {
         !self.external_identities.is_empty()
     }
 
+    /// メールアドレスを取得
     pub fn email(&self) -> &EmailAddress {
         &self.email
     }
 
+    /// 外部システムの識別情報リストを取得
     pub fn external_identities(&self) -> &[ExternalIdentity] {
         &self.external_identities
     }
 
+    /// 作成日時を取得
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
 
+    /// 更新日時を取得
     pub fn updated_at(&self) -> DateTime<Utc> {
         self.updated_at
     }

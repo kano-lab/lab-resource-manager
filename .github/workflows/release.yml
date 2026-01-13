@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+
+    steps:
+      - name: Fetch Repository
+        uses: actions/checkout@v5
+
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }} --bin lab-resource-manager
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/lab-resource-manager dist/
+          cp -r deploy/ dist/
+          cd dist && tar -czvf ../lab-resource-manager-${{ matrix.target }}.tar.gz *
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab-resource-manager-${{ matrix.target }}
+          path: lab-resource-manager-${{ matrix.target }}.tar.gz
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.tar.gz
+          generate_release_notes: true
