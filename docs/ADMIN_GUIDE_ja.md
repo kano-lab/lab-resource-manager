@@ -6,23 +6,28 @@
 
 ### 1. 環境変数の設定
 
-```bash
-cp .env.example .env
-```
-
-`.env`を編集して以下を設定:
+systemdデプロイの場合、`/etc/default/lab-resource-manager` を作成:
 
 ```env
 # リポジトリ設定（デフォルト実装: Google Calendar）
-GOOGLE_SERVICE_ACCOUNT_KEY=secrets/service-account.json
+GOOGLE_SERVICE_ACCOUNT_KEY=/etc/lab-resource-manager/service-account.json
 
 # リソース設定
-RESOURCE_CONFIG=config/resources.toml
+RESOURCE_CONFIG=/etc/lab-resource-manager/resources.toml
 
-# Slackボット設定（slackbotバイナリ用）
+# データファイル
+IDENTITY_LINKS_FILE=/var/lib/lab-resource-manager/identity_links.json
+GOOGLE_CALENDAR_MAPPINGS_FILE=/var/lib/lab-resource-manager/google_calendar_mappings.json
+
+# Slackボット設定
 SLACK_BOT_TOKEN=xoxb-your-bot-token-here
 SLACK_APP_TOKEN=xapp-your-app-token-here
+
+# ログ設定
+RUST_LOG=info
 ```
+
+開発時はシェルの環境変数として設定できます。
 
 **注意**: 通知設定は `config/resources.toml` でリソースごとに設定します。
 
@@ -113,8 +118,11 @@ cargo run --bin watcher --interval 30
 Slackボットを使うと、ユーザーがメールアドレスを登録して全てのリソースコレクションへのアクセスを取得できます:
 
 ```bash
-# ボットの起動
-cargo run --bin slackbot
+# ボットの起動（開発時）
+cargo run --bin lab-resource-manager
+
+# systemdサービスとして起動（本番環境）
+sudo systemctl start lab-resource-manager
 ```
 
 ### 管理者用コマンド
@@ -147,9 +155,20 @@ cargo build
 cargo build --release
 ```
 
-### バイナリの配置
+### 本番環境へのデプロイ
 
-リリースビルド後、バイナリは `target/release/` に生成されます:
+本番環境では、バイナリリリースとsystemdを使用します:
 
-- `target/release/watcher` - リソース監視プログラム
-- `target/release/slackbot` - Slackボット
+```bash
+# ダウンロードしてインストール（詳細はREADMEを参照）
+sudo bash deploy/install.sh
+```
+
+インストールされるもの:
+
+- `/usr/local/bin/lab-resource-manager` - メインバイナリ
+- `/etc/lab-resource-manager/` - 設定ディレクトリ
+- `/var/lib/lab-resource-manager/` - データディレクトリ
+- `/etc/systemd/system/lab-resource-manager.service` - systemdサービス
+
+Dockerデプロイからアップグレードする場合は、[マイグレーションガイド](MIGRATION_ja.md)を参照してください。

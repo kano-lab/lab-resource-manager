@@ -6,23 +6,28 @@ This guide is for administrators who are deploying lab-resource-manager in their
 
 ### 1. Environment Variables
 
-```bash
-cp .env.example .env
-```
-
-Edit `.env` to configure:
+For systemd deployment, create `/etc/default/lab-resource-manager`:
 
 ```env
 # Repository Configuration (default implementation: Google Calendar)
-GOOGLE_SERVICE_ACCOUNT_KEY=secrets/service-account.json
+GOOGLE_SERVICE_ACCOUNT_KEY=/etc/lab-resource-manager/service-account.json
 
 # Resource Configuration
-RESOURCE_CONFIG=config/resources.toml
+RESOURCE_CONFIG=/etc/lab-resource-manager/resources.toml
 
-# Slack Bot Configuration (for slackbot binary)
+# Data files
+IDENTITY_LINKS_FILE=/var/lib/lab-resource-manager/identity_links.json
+GOOGLE_CALENDAR_MAPPINGS_FILE=/var/lib/lab-resource-manager/google_calendar_mappings.json
+
+# Slack Bot Configuration
 SLACK_BOT_TOKEN=xoxb-your-bot-token-here
 SLACK_APP_TOKEN=xapp-your-app-token-here
+
+# Logging
+RUST_LOG=info
 ```
+
+For development, you can set these as shell environment variables.
 
 **Note**: Notification settings are configured in `config/resources.toml` per resource.
 
@@ -115,8 +120,11 @@ Notifier implementations are configured per resource in `config/resources.toml`.
 The Slack bot allows users to register their email addresses and get access to all resource collections:
 
 ```bash
-# Run the bot
-cargo run --bin slackbot
+# Run the bot (development)
+cargo run --bin lab-resource-manager
+
+# Run as systemd service (production)
+sudo systemctl start lab-resource-manager
 ```
 
 ### Administrator Commands
@@ -149,9 +157,20 @@ cargo build
 cargo build --release
 ```
 
-### Binary Deployment
+### Production Deployment
 
-After a release build, binaries are generated in `target/release/`:
+For production deployment, use the binary release with systemd:
 
-- `target/release/watcher` - Resource monitoring program
-- `target/release/slackbot` - Slack bot
+```bash
+# Download and install (see README for details)
+sudo bash deploy/install.sh
+```
+
+This installs:
+
+- `/usr/local/bin/lab-resource-manager` - Main binary
+- `/etc/lab-resource-manager/` - Configuration directory
+- `/var/lib/lab-resource-manager/` - Data directory
+- `/etc/systemd/system/lab-resource-manager.service` - systemd service
+
+See [Migration Guide](MIGRATION.md) if upgrading from Docker deployment.
