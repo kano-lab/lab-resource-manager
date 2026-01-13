@@ -5,8 +5,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RELEASE_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Configuration
-INSTALL_DIR="/opt/lab-resource-manager"
+# Configuration (FHS-compliant paths)
+BIN_DIR="/usr/local/bin"
+CONFIG_DIR="/etc/lab-resource-manager"
+DATA_DIR="/var/lib/lab-resource-manager"
+ENV_FILE="/etc/default/lab-resource-manager"
+
 SERVICE_USER="lrm"
 SERVICE_GROUP="lrm"
 BINARY_NAME="lab-resource-manager"
@@ -43,19 +47,21 @@ if ! getent passwd "$SERVICE_USER" > /dev/null 2>&1; then
 fi
 
 # Create directory structure
-mkdir -p "$INSTALL_DIR"/{config,data,secrets}
+mkdir -p "$CONFIG_DIR"
+mkdir -p "$DATA_DIR"
 
 # Copy binary
-cp "$RELEASE_DIR/$BINARY_NAME" "$INSTALL_DIR/"
-chmod 755 "$INSTALL_DIR/$BINARY_NAME"
+cp "$RELEASE_DIR/$BINARY_NAME" "$BIN_DIR/"
+chmod 755 "$BIN_DIR/$BINARY_NAME"
 
 # Copy systemd service file
 cp "$SCRIPT_DIR/$SERVICE_FILE" /etc/systemd/system/
 
 # Set permissions
-chown -R "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_DIR"
-chmod 750 "$INSTALL_DIR"
-chmod 700 "$INSTALL_DIR/secrets"
+chown -R "$SERVICE_USER:$SERVICE_GROUP" "$CONFIG_DIR"
+chown -R "$SERVICE_USER:$SERVICE_GROUP" "$DATA_DIR"
+chmod 750 "$CONFIG_DIR"
+chmod 750 "$DATA_DIR"
 
 # Reload systemd
 systemctl daemon-reload
@@ -63,16 +69,22 @@ systemctl daemon-reload
 echo ""
 echo "Installation complete!"
 echo ""
-echo "Next steps:"
-echo "  1. Create environment file: /etc/default/$BINARY_NAME"
-echo "  2. Copy config files to $INSTALL_DIR/config/"
-echo "  3. Copy secrets to $INSTALL_DIR/secrets/"
-echo "  4. Start the service: systemctl start $BINARY_NAME"
-echo "  5. Enable on boot: systemctl enable $BINARY_NAME"
+echo "Directory structure:"
+echo "  Binary:  $BIN_DIR/$BINARY_NAME"
+echo "  Config:  $CONFIG_DIR/"
+echo "  Data:    $DATA_DIR/"
+echo "  Env:     $ENV_FILE"
 echo ""
-echo "Environment file format (/etc/default/$BINARY_NAME):"
+echo "Next steps:"
+echo "  1. Create environment file: $ENV_FILE"
+echo "  2. Copy config files to $CONFIG_DIR/"
+echo "  3. Start the service: systemctl start $BINARY_NAME"
+echo "  4. Enable on boot: systemctl enable $BINARY_NAME"
+echo ""
+echo "Environment file format ($ENV_FILE):"
 echo "  SLACK_BOT_TOKEN=xoxb-..."
 echo "  SLACK_APP_TOKEN=xapp-..."
-echo "  GOOGLE_SERVICE_ACCOUNT_KEY=/opt/lab-resource-manager/secrets/key.json"
-echo "  RESOURCE_CONFIG=/opt/lab-resource-manager/config/resources.toml"
+echo "  GOOGLE_SERVICE_ACCOUNT_KEY=$CONFIG_DIR/service-account.json"
+echo "  RESOURCE_CONFIG=$CONFIG_DIR/resources.toml"
+echo "  IDENTITY_LINKS_FILE=$DATA_DIR/identity_links.json"
 echo "  RUST_LOG=info"

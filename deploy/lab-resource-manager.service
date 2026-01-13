@@ -6,8 +6,8 @@ After=network.target
 Type=simple
 User=lrm
 Group=lrm
-WorkingDirectory=/opt/lab-resource-manager
-ExecStart=/opt/lab-resource-manager/lab-resource-manager
+WorkingDirectory=/var/lib/lab-resource-manager
+ExecStart=/usr/local/bin/lab-resource-manager
 EnvironmentFile=/etc/default/lab-resource-manager
 Restart=on-failure
 RestartSec=5
@@ -23,7 +23,7 @@ PrivateDevices=true
 ProtectKernelTunables=true
 ProtectControlGroups=true
 ProtectKernelModules=true
-ReadWritePaths=/opt/lab-resource-manager/data
+ReadWritePaths=/var/lib/lab-resource-manager
 
 [Install]
 WantedBy=multi-user.target
