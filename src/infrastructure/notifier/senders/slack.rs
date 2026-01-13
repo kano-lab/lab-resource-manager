@@ -105,23 +105,30 @@ impl SlackSender {
         let time_period = format_time_period(usage.time_period(), context.timezone);
         let resource_label = Self::get_resource_label(usage.resources());
 
+        // 備考がある場合は追加
+        let notes_section = usage
+            .notes()
+            .filter(|n| !n.is_empty())
+            .map(|n| format!("\n\n📝 備考\n{}", n))
+            .unwrap_or_default();
+
         match context.event {
             NotificationEvent::ResourceUsageCreated(_) => {
                 format!(
-                    "🔔 新規予約\n👤 {}\n\n📅 期間\n{}\n\n{}\n{}",
-                    user_display, time_period, resource_label, resources
+                    "🔔 新規予約\n👤 {}\n\n📅 期間\n{}\n\n{}\n{}{}",
+                    user_display, time_period, resource_label, resources, notes_section
                 )
             }
             NotificationEvent::ResourceUsageUpdated(_) => {
                 format!(
-                    "🔄 予約更新\n👤 {}\n\n📅 期間\n{}\n\n{}\n{}",
-                    user_display, time_period, resource_label, resources
+                    "🔄 予約更新\n👤 {}\n\n📅 期間\n{}\n\n{}\n{}{}",
+                    user_display, time_period, resource_label, resources, notes_section
                 )
             }
             NotificationEvent::ResourceUsageDeleted(_) => {
                 format!(
-                    "🗑️ 予約削除\n👤 {}\n\n📅 期間\n{}\n\n{}\n{}",
-                    user_display, time_period, resource_label, resources
+                    "🗑️ 予約削除\n👤 {}\n\n📅 期間\n{}\n\n{}\n{}{}",
+                    user_display, time_period, resource_label, resources, notes_section
                 )
             }
         }
