@@ -2,9 +2,11 @@
 set -euo pipefail
 
 # Configuration
-INSTALL_DIR="/opt/slackbot"
-SERVICE_USER="slackbot"
-SERVICE_GROUP="slackbot"
+INSTALL_DIR="/opt/lab-resource-manager"
+SERVICE_USER="lrm"
+SERVICE_GROUP="lrm"
+BINARY_NAME="lab-resource-manager"
+SERVICE_FILE="lab-resource-manager.service"
 
 # Check if running as root
 if [[ $EUID -ne 0 ]]; then
@@ -12,7 +14,7 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-echo "Installing slackbot..."
+echo "Installing $BINARY_NAME..."
 
 # Create user and group if not exists
 if ! getent group "$SERVICE_GROUP" > /dev/null 2>&1; then
@@ -29,11 +31,11 @@ fi
 mkdir -p "$INSTALL_DIR"/{config,data,secrets}
 
 # Copy binary
-cp slackbot "$INSTALL_DIR/"
-chmod 755 "$INSTALL_DIR/slackbot"
+cp "$BINARY_NAME" "$INSTALL_DIR/"
+chmod 755 "$INSTALL_DIR/$BINARY_NAME"
 
 # Copy systemd service file
-cp slackbot.service /etc/systemd/system/
+cp "$SERVICE_FILE" /etc/systemd/system/
 
 # Set permissions
 chown -R "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_DIR"
@@ -50,5 +52,5 @@ echo "Next steps:"
 echo "  1. Copy your .env file to $INSTALL_DIR/.env"
 echo "  2. Copy config files to $INSTALL_DIR/config/"
 echo "  3. Copy secrets to $INSTALL_DIR/secrets/"
-echo "  4. Start the service: systemctl start slackbot"
-echo "  5. Enable on boot: systemctl enable slackbot"
+echo "  4. Start the service: systemctl start $BINARY_NAME"
+echo "  5. Enable on boot: systemctl enable $BINARY_NAME"

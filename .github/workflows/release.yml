@@ -31,20 +31,20 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} --bin slackbot
+        run: cargo build --release --target ${{ matrix.target }} --bin lab-resource-manager
 
       - name: Prepare artifacts
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/slackbot dist/
+          cp target/${{ matrix.target }}/release/lab-resource-manager dist/
           cp -r deploy/ dist/
-          cd dist && tar -czvf ../slackbot-${{ matrix.target }}.tar.gz *
+          cd dist && tar -czvf ../lab-resource-manager-${{ matrix.target }}.tar.gz *
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: slackbot-${{ matrix.target }}
-          path: slackbot-${{ matrix.target }}.tar.gz
+          name: lab-resource-manager-${{ matrix.target }}
+          path: lab-resource-manager-${{ matrix.target }}.tar.gz
 
   release:
     name: Create Release
