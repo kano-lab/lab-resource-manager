@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RELEASE_DIR="$(dirname "$SCRIPT_DIR")"
+
 # Configuration
 INSTALL_DIR="/opt/lab-resource-manager"
 SERVICE_USER="lrm"
@@ -12,6 +16,17 @@ SERVICE_FILE="lab-resource-manager.service"
 if [[ $EUID -ne 0 ]]; then
    echo "This script must be run as root"
    exit 1
+fi
+
+# Verify required files exist
+if [[ ! -f "$RELEASE_DIR/$BINARY_NAME" ]]; then
+    echo "Error: Binary not found at $RELEASE_DIR/$BINARY_NAME"
+    exit 1
+fi
+
+if [[ ! -f "$SCRIPT_DIR/$SERVICE_FILE" ]]; then
+    echo "Error: Service file not found at $SCRIPT_DIR/$SERVICE_FILE"
+    exit 1
 fi
 
 echo "Installing $BINARY_NAME..."
@@ -31,11 +46,11 @@ fi
 mkdir -p "$INSTALL_DIR"/{config,data,secrets}
 
 # Copy binary
-cp "$BINARY_NAME" "$INSTALL_DIR/"
+cp "$RELEASE_DIR/$BINARY_NAME" "$INSTALL_DIR/"
 chmod 755 "$INSTALL_DIR/$BINARY_NAME"
 
 # Copy systemd service file
-cp "$SERVICE_FILE" /etc/systemd/system/
+cp "$SCRIPT_DIR/$SERVICE_FILE" /etc/systemd/system/
 
 # Set permissions
 chown -R "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_DIR"

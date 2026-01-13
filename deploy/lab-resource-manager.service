@@ -11,12 +11,18 @@ ExecStart=/opt/lab-resource-manager/lab-resource-manager
 EnvironmentFile=/opt/lab-resource-manager/.env
 Restart=on-failure
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
 
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ProtectKernelModules=true
 ReadWritePaths=/opt/lab-resource-manager/data
 
 [Install]
