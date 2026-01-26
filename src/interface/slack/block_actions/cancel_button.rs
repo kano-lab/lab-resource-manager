@@ -2,6 +2,7 @@
 
 use crate::domain::aggregates::resource_usage::value_objects::UsageId;
 use crate::domain::common::EmailAddress;
+use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::utility::user_resolver;
@@ -9,11 +10,15 @@ use slack_morphism::prelude::*;
 use tracing::{error, info};
 
 /// 予約キャンセルボタンのクリックを処理
-pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
-    app: &SlackApp<R>,
+pub async fn handle<R, N>(
+    app: &SlackApp<R, N>,
     block_actions: &SlackInteractionBlockActionsEvent,
     action: &SlackInteractionActionInfo,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    R: ResourceUsageRepository + Send + Sync + 'static,
+    N: Notifier + Send + Sync + 'static,
+{
     let Some(usage_id_str) = &action.value else {
         error!("❌ usage_idが取得できませんでした");
         return Ok(());
@@ -29,7 +34,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     // channel_idを取得してuser_channel_mapに登録（エフェメラルメッセージ送信用）
     let channel_id = if let Some(channel) = &block_actions.channel {
         // channelフィールドから取得できた場合は登録
-        app.user_channel_map
+        app.user_channel_map()
             .write()
             .unwrap()
             .insert(user.id.clone(), channel.id.clone());
@@ -37,7 +42,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     } else if let SlackInteractionActionContainer::Message(msg) = &block_actions.container {
         // containerから取得を試みる
         if let Some(channel_id) = &msg.channel_id {
-            app.user_channel_map
+            app.user_channel_map()
                 .write()
                 .unwrap()
                 .insert(user.id.clone(), channel_id.clone());
@@ -50,8 +55,8 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     };
 
     // 依存性を取得
-    let delete_usage_usecase = &app.delete_usage_usecase;
-    let identity_repo = &app.identity_repo;
+    let delete_usage_usecase = app.delete_usage_usecase();
+    let identity_repo = app.identity_repo();
 
     // ユーザーのメールアドレスを取得
     let owner_email = user_resolver::resolve_user_email(&user.id, identity_repo).await?;
@@ -98,7 +103,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
             SlackMessageContent::new().with_text(message_text),
         );
 
-        let session = app.slack_client.open_session(&app.bot_token);
+        let session = app.slack_client().open_session(app.bot_token());
         if let Err(e) = session.chat_post_ephemeral(&ephemeral_req).await {
             error!("❌ エフェメラルメッセージ送信失敗: {}", e);
         }

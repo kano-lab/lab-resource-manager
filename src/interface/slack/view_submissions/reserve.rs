@@ -1,6 +1,7 @@
 //! リソース予約モーダル送信ハンドラ
 
 use crate::domain::aggregates::resource_usage::value_objects::resource::{Gpu, Resource};
+use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
@@ -11,18 +12,22 @@ use slack_morphism::prelude::*;
 use tracing::{error, info};
 
 /// リソース予約モーダル送信を処理
-pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
-    app: &SlackApp<R>,
+pub async fn handle<R, N>(
+    app: &SlackApp<R, N>,
     view_submission: &SlackInteractionViewSubmissionEvent,
-) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>>
+where
+    R: ResourceUsageRepository + Send + Sync + 'static,
+    N: Notifier + Send + Sync + 'static,
+{
     info!("🔍 予約フォームから値を抽出中...");
 
     let user_id = view_submission.user.id.clone();
 
     // Get dependencies
-    let create_usage_usecase = &app.create_resource_usage_usecase;
-    let identity_repo = &app.identity_repo;
-    let config = &app.resource_config;
+    let create_usage_usecase = app.create_resource_usage_usecase();
+    let identity_repo = app.identity_repo();
+    let config = app.resource_config();
 
     // Extract form values
     let resource_type =
@@ -140,7 +145,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     // channel_id を取得
     let channel_id = app
-        .user_channel_map
+        .user_channel_map()
         .read()
         .unwrap()
         .get(&user_id)
@@ -168,7 +173,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         SlackMessageContent::new().with_text(message_text),
     );
 
-    let session = app.slack_client.open_session(&app.bot_token);
+    let session = app.slack_client().open_session(app.bot_token());
     session.chat_post_ephemeral(&ephemeral_req).await?;
 
     // モーダルを閉じる

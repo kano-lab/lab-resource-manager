@@ -1,5 +1,6 @@
 //! モーダル状態変更ハンドラ（リソースタイプ、サーバー選択）
 
+use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
@@ -11,18 +12,22 @@ use tracing::{error, info};
 /// モーダル状態変更を処理（リソースタイプ選択、サーバー選択）
 ///
 /// 適切なフィールドを表示するようモーダルを動的に更新
-pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
-    app: &SlackApp<R>,
+pub async fn handle<R, N>(
+    app: &SlackApp<R, N>,
     block_actions: &SlackInteractionBlockActionsEvent,
     action: &SlackInteractionActionInfo,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    R: ResourceUsageRepository + Send + Sync + 'static,
+    N: Notifier + Send + Sync + 'static,
+{
     let action_id = action.action_id.to_string();
     info!("🔄 モーダル更新トリガー検出: {}", action_id);
 
     // Get dependencies
-    let config = &app.resource_config;
-    let slack_client = &app.slack_client;
-    let bot_token = &app.bot_token;
+    let config = app.resource_config();
+    let slack_client = app.slack_client();
+    let bot_token = app.bot_token();
 
     // Determine new values based on action
     let new_resource_type = if action_id == ACTION_RESERVE_RESOURCE_TYPE {

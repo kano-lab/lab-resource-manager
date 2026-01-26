@@ -2,6 +2,7 @@
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
+use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::{ACTION_LINK_EMAIL_INPUT, ACTION_USER_SELECT};
@@ -12,10 +13,14 @@ use tracing::{error, info};
 /// ユーザーリンクモーダル送信を処理
 ///
 /// 他のユーザーをメールアドレスに紐付け、カレンダーアクセス権を付与（管理者用）
-pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
-    app: &SlackApp<R>,
+pub async fn handle<R, N>(
+    app: &SlackApp<R, N>,
     view_submission: &SlackInteractionViewSubmissionEvent,
-) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>>
+where
+    R: ResourceUsageRepository + Send + Sync + 'static,
+    N: Notifier + Send + Sync + 'static,
+{
     info!("ユーザーリンクを処理中...");
 
     let user_id = view_submission.user.id.clone();
@@ -35,7 +40,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     // ユーザーをリンク
     let link_result = match &email_result {
         Ok(email) => app
-            .grant_access_usecase
+            .grant_access_usecase()
             .execute(ExternalSystem::Slack, target_user_id.clone(), email.clone())
             .await
             .map_err(|e| e.into()),
@@ -44,7 +49,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
 
     // channel_id を取得
     let channel_id = app
-        .user_channel_map
+        .user_channel_map()
         .read()
         .unwrap()
         .get(&user_id)
@@ -77,7 +82,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
         SlackMessageContent::new().with_text(message_text),
     );
 
-    let session = app.slack_client.open_session(&app.bot_token);
+    let session = app.slack_client().open_session(app.bot_token());
     session.chat_post_ephemeral(&ephemeral_req).await?;
 
     // モーダルを閉じる
