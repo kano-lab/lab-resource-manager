@@ -2,24 +2,6 @@
 //!
 //! このバイナリは、ユーザーがGmailアカウントを登録し、
 //! 共有リソースカレンダーへのアクセス権を取得できるSlack Botを実行します。
-//!
-//! ## 使い方
-//!
-//! ```bash
-//! # 環境変数を指定して実行
-//! SLACK_BOT_TOKEN=xoxb-... \
-//! GOOGLE_SERVICE_ACCOUNT_KEY=/path/to/key.json \
-//! cargo run --bin lab-resource-manager
-//! ```
-//!
-//! ## 環境変数
-//!
-//! - `SLACK_BOT_TOKEN`: Slack Bot User OAuth Token (必須, xoxb-...)
-//! - `SLACK_APP_TOKEN`: Socket Mode用のSlack App-Level Token (必須, xapp-...)
-//! - `GOOGLE_SERVICE_ACCOUNT_KEY`: Google サービスアカウントJSONキーのパス (必須)
-//! - `RESOURCE_CONFIG`: リソース設定ファイルのパス (デフォルト: config/resources.toml)
-//! - `IDENTITY_LINKS_FILE`: ID紐付けファイルのパス (デフォルト: data/identity_links.json)
-//! - `GOOGLE_CALENDAR_MAPPINGS_FILE`: カレンダーIDマッピングファイルのパス (デフォルト: data/google_calendar_mappings.json)
 use lab_resource_manager::{
     application::usecases::{
         create_resource_usage::CreateResourceUsageUseCase,
@@ -29,7 +11,7 @@ use lab_resource_manager::{
         update_resource_usage::UpdateResourceUsageUseCase,
     },
     infrastructure::{
-        config::load_config,
+        config::{load_config, load_from_env},
         notifier::NotificationRouter,
         repositories::{
             identity_link::JsonFileIdentityLinkRepository,
@@ -39,8 +21,6 @@ use lab_resource_manager::{
     },
     interface::slack::SlackApp,
 };
-use std::env;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -55,37 +35,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .install_default()
         .ok();
 
-    let service_account_key = env::var("GOOGLE_SERVICE_ACCOUNT_KEY")
-        .expect("環境変数 GOOGLE_SERVICE_ACCOUNT_KEY が必要です");
-
-    // デフォルト値を持つオプションの環境変数
-    let resource_config_path =
-        env::var("RESOURCE_CONFIG").unwrap_or_else(|_| "config/resources.toml".to_string());
-
-    let identity_links_file =
-        env::var("IDENTITY_LINKS_FILE").unwrap_or_else(|_| "data/identity_links.json".to_string());
-
-    let calendar_mappings_file = env::var("GOOGLE_CALENDAR_MAPPINGS_FILE")
-        .unwrap_or_else(|_| "data/google_calendar_mappings.json".to_string());
+    // アプリケーション設定の読み込み
+    let app_config = load_from_env()?;
 
     println!("🤖 Slack Bot を起動しています...");
-    println!("📁 リソース設定ファイル: {}", resource_config_path);
-    println!("📁 ID紐付けファイル: {}", identity_links_file);
+    println!(
+        "📁 リソース設定ファイル: {}",
+        app_config.resource_config_path.display()
+    );
+    println!(
+        "📁 ID紐付けファイル: {}",
+        app_config.identity_links_file.display()
+    );
 
-    // 設定の読み込み
-    let config = load_config(&resource_config_path)?;
+    // リソース設定の読み込み
+    let config = load_config(&app_config.resource_config_path)?;
     println!(
         "✅ 設定を読み込みました: {} サーバー, {} 部屋",
         config.servers.len(),
         config.rooms.len()
     );
 
-    // インフラストラクチャの初期化
-    let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new(PathBuf::from(
-        identity_links_file,
-    )));
+    // サービスアカウントキーパスの検証
+    let service_account_key_path = app_config
+        .google_service_account_key_path
+        .to_str()
+        .ok_or("サービスアカウントキーパスが不正なUTF-8です")?;
 
-    let calendar_service = Arc::new(GoogleCalendarAccessService::new(&service_account_key).await?);
+    // インフラストラクチャの初期化
+    let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new(
+        app_config.identity_links_file.clone(),
+    ));
+
+    let calendar_service =
+        Arc::new(GoogleCalendarAccessService::new(service_account_key_path).await?);
     println!("✅ Google Calendar サービスを初期化しました");
 
     // ユースケースの作成
@@ -109,9 +92,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // リソース使用予定リポジトリの作成（予約機能用）
     let resource_usage_repo = Arc::new(
         GoogleCalendarUsageRepository::new(
-            &service_account_key,
+            service_account_key_path,
             config_arc.as_ref().clone(),
-            PathBuf::from(&calendar_mappings_file),
+            app_config.calendar_mappings_file.clone(),
         )
         .await?,
     );
@@ -125,8 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(DeleteResourceUsageUseCase::new(resource_usage_repo.clone()));
 
     // Tokenの読み込み
-    let bot_token = env::var("SLACK_BOT_TOKEN").expect("環境変数 SLACK_BOT_TOKEN が必要です");
-    let bot_token = SlackApiToken::new(bot_token.into());
+    let bot_token = SlackApiToken::new(app_config.slack_bot_token.clone().into());
 
     // SlackAppの作成
     let slack_client = Arc::new(SlackClient::new(SlackClientHyperConnector::new()?));
@@ -155,8 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ 通知機能を初期化しました");
 
     // Socket Modeのセットアップ
-    let app_token =
-        env::var("SLACK_APP_TOKEN").expect("Socket Mode には環境変数 SLACK_APP_TOKEN が必要です");
+    let slack_app_token = app_config.slack_app_token.clone();
 
     println!("🚀 Bot の準備ができました！");
     println!("   /register-calendar <your-email@gmail.com>");
@@ -302,21 +283,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔌 Slack Socket Mode に接続しています...");
 
     socket_mode_listener
-        .listen_for(&SlackApiToken::new(app_token.into()))
+        .listen_for(&SlackApiToken::new(slack_app_token.into()))
         .await?;
 
     println!("✅ Slack Socket Mode に接続しました！");
     println!("🎉 Bot がスラッシュコマンドを待機しています");
     println!();
 
-    // ポーリング間隔（デフォルト: 60秒）
-    let polling_interval_secs: u64 = env::var("POLLING_INTERVAL")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(60);
     println!(
         "🔍 カレンダー監視を開始します（間隔: {}秒）",
-        polling_interval_secs
+        app_config.polling_interval_secs
     );
     println!();
     println!("Bot を停止するには Ctrl+C を押してください");
@@ -324,8 +300,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // バックグラウンドでポーリングタスクを実行
     let polling_handle = {
         let notify_usecase = notify_usecase.clone();
+        let polling_interval = Duration::from_secs(app_config.polling_interval_secs);
         tokio::spawn(async move {
-            let interval = Duration::from_secs(polling_interval_secs);
             loop {
                 match notify_usecase.poll_once().await {
                     Ok(_) => {}
@@ -333,7 +309,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         eprintln!("❌ ポーリングエラー: {}", e);
                     }
                 }
-                tokio::time::sleep(interval).await;
+                tokio::time::sleep(polling_interval).await;
             }
         })
     };

@@ -111,7 +111,9 @@ impl ResourceConfig {
 }
 
 /// TOMLファイルからリソース設定を読み込む
-pub fn load_config(path: &str) -> Result<ResourceConfig, Box<dyn std::error::Error>> {
+pub fn load_config(
+    path: impl AsRef<std::path::Path>,
+) -> Result<ResourceConfig, Box<dyn std::error::Error>> {
     let content = fs::read_to_string(path)?;
     let config: ResourceConfig = toml::from_str(&content)?;
     Ok(config)
