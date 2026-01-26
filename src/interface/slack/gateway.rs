@@ -2,13 +2,18 @@
 //!
 //! 受信したSlackイベントを適切なハンドラにルーティング
 
+use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use slack_morphism::prelude::*;
 use tracing::error;
 
-impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
+impl<R, N> SlackApp<R, N>
+where
+    R: ResourceUsageRepository + Send + Sync + 'static,
+    N: Notifier + Send + Sync + 'static,
+{
     /// スラッシュコマンドイベントをルーティング
     ///
     /// # 引数
@@ -23,7 +28,7 @@ impl<R: ResourceUsageRepository + Send + Sync + 'static> SlackApp<R> {
         let command = event.command.0.as_str();
 
         // user_id -> channel_id マッピングを更新
-        self.user_channel_map
+        self.user_channel_map()
             .write()
             .unwrap()
             .insert(event.user_id.clone(), event.channel_id.clone());

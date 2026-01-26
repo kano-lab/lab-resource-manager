@@ -1,5 +1,6 @@
 //! 予約編集ボタンハンドラ
 
+use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::CALLBACK_RESERVE_UPDATE;
@@ -10,11 +11,15 @@ use slack_morphism::prelude::*;
 use tracing::error;
 
 /// 予約編集ボタンのクリックを処理
-pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
-    app: &SlackApp<R>,
+pub async fn handle<R, N>(
+    app: &SlackApp<R, N>,
     block_actions: &SlackInteractionBlockActionsEvent,
     action: &SlackInteractionActionInfo,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    R: ResourceUsageRepository + Send + Sync + 'static,
+    N: Notifier + Send + Sync + 'static,
+{
     let Some(usage_id_str) = &action.value else {
         error!("❌ usage_idが取得できませんでした");
         return Ok(());
@@ -26,10 +31,10 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     };
 
     // 依存性を取得
-    let slack_client = &app.slack_client;
-    let bot_token = &app.bot_token;
-    let identity_repo = &app.identity_repo;
-    let config = &app.resource_config;
+    let slack_client = app.slack_client();
+    let bot_token = app.bot_token();
+    let identity_repo = app.identity_repo();
+    let config = app.resource_config();
 
     let trigger_id = &block_actions.trigger_id;
 
@@ -49,7 +54,7 @@ pub async fn handle<R: ResourceUsageRepository + Send + Sync + 'static>(
     if let SlackInteractionActionContainer::Message(msg) = &block_actions.container
         && let Some(channel_id) = &msg.channel_id
     {
-        app.user_channel_map
+        app.user_channel_map()
             .write()
             .unwrap()
             .insert(user.id.clone(), channel_id.clone());
