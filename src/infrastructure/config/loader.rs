@@ -17,10 +17,7 @@ pub enum ConfigLoadError {
     MissingEnvVar(&'static str),
     /// 環境変数の値が不正
     #[error("環境変数 {name} の値が不正です: {reason}")]
-    InvalidEnvVar {
-        name: &'static str,
-        reason: String,
-    },
+    InvalidEnvVar { name: &'static str, reason: String },
 }
 
 /// 環境変数から設定を読み込む
@@ -50,10 +47,11 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
     let polling_interval_secs = env::var("POLLING_INTERVAL")
         .ok()
         .map(|s| {
-            s.parse::<u64>().map_err(|_| ConfigLoadError::InvalidEnvVar {
-                name: "POLLING_INTERVAL",
-                reason: "正の整数である必要があります".to_string(),
-            })
+            s.parse::<u64>()
+                .map_err(|_| ConfigLoadError::InvalidEnvVar {
+                    name: "POLLING_INTERVAL",
+                    reason: "正の整数である必要があります".to_string(),
+                })
         })
         .transpose()?
         .unwrap_or(defaults::POLLING_INTERVAL_SECS);

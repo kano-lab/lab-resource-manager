@@ -12,7 +12,8 @@ pub const RESOURCE_CONFIG_PATH: &str = "/etc/lab-resource-manager/resources.toml
 pub const IDENTITY_LINKS_FILE: &str = "/var/lib/lab-resource-manager/identity_links.json";
 
 /// カレンダーIDマッピングファイルのデフォルトパス
-pub const CALENDAR_MAPPINGS_FILE: &str = "/var/lib/lab-resource-manager/google_calendar_mappings.json";
+pub const CALENDAR_MAPPINGS_FILE: &str =
+    "/var/lib/lab-resource-manager/google_calendar_mappings.json";
 
 /// ポーリング間隔のデフォルト値（秒）
 pub const POLLING_INTERVAL_SECS: u64 = 60;

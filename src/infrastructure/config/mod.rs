@@ -17,7 +17,7 @@ pub mod loader;
 pub mod resource_config;
 
 pub use app_config::AppConfig;
-pub use loader::{load_from_env, ConfigLoadError};
+pub use loader::{ConfigLoadError, load_from_env};
 pub use resource_config::{
     DeviceConfig, NotificationConfig, ResourceConfig, RoomConfig, ServerConfig, load_config,
 };
