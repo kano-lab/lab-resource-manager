@@ -7,11 +7,10 @@ use tracing::error;
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-use crate::domain::aggregates::resource_usage::service::{format_resources, format_time_period};
-use crate::domain::aggregates::resource_usage::value_objects::Resource;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
 use crate::infrastructure::notifier::senders::sender::{NotificationContext, Sender};
+use crate::infrastructure::notifier::template_renderer::TemplateRenderer;
 use crate::interface::slack::constants::{ACTION_CANCEL_RESERVATION, ACTION_EDIT_RESERVATION};
 
 /// Slack通知設定
@@ -68,22 +67,6 @@ impl SlackSender {
         Ok(())
     }
 
-    /// リソースタイプに応じたラベルを生成
-    fn get_resource_label(resources: &[Resource]) -> &'static str {
-        if resources.is_empty() {
-            return "📦 予約リソース";
-        }
-
-        let has_gpu = resources.iter().any(|r| matches!(r, Resource::Gpu(_)));
-        let has_room = resources.iter().any(|r| matches!(r, Resource::Room { .. }));
-
-        match (has_gpu, has_room) {
-            (true, false) => "💻 予約GPU",
-            (false, true) => "🏢 予約部屋",
-            _ => "📦 予約リソース", // 混在または不明
-        }
-    }
-
     /// ユーザー表示名をフォーマット（Slackメンション or メールアドレス）
     fn format_user(
         email: &EmailAddress,
@@ -97,39 +80,26 @@ impl SlackSender {
         email.as_str().to_string()
     }
 
-    /// イベントからSlack用のメッセージを構築
+    /// イベントからSlack用のメッセージを構築（テンプレートレンダラー使用）
     fn format_message(context: &NotificationContext) -> String {
         let usage = Self::extract_usage_from_event(context.event);
         let user_display = Self::format_user(usage.owner_email(), context.identity_link);
-        let resources = format_resources(usage.resources());
-        let time_period = format_time_period(usage.time_period(), context.timezone);
-        let resource_label = Self::get_resource_label(usage.resources());
 
-        // 備考がある場合は追加
-        let notes_section = usage
-            .notes()
-            .filter(|n| !n.is_empty())
-            .map(|n| format!("\n\n📝 備考\n{}", n))
-            .unwrap_or_default();
+        let renderer = TemplateRenderer::new(
+            &context.customization.templates,
+            &context.customization.format,
+            context.timezone,
+        );
 
         match context.event {
             NotificationEvent::ResourceUsageCreated(_) => {
-                format!(
-                    "🔔 新規予約\n👤 {}\n\n📅 期間\n{}\n\n{}\n{}{}",
-                    user_display, time_period, resource_label, resources, notes_section
-                )
+                renderer.render_created(usage, &user_display)
             }
             NotificationEvent::ResourceUsageUpdated(_) => {
-                format!(
-                    "🔄 予約更新\n👤 {}\n\n📅 期間\n{}\n\n{}\n{}{}",
-                    user_display, time_period, resource_label, resources, notes_section
-                )
+                renderer.render_updated(usage, &user_display)
             }
             NotificationEvent::ResourceUsageDeleted(_) => {
-                format!(
-                    "🗑️ 予約削除\n👤 {}\n\n📅 期間\n{}\n\n{}\n{}{}",
-                    user_display, time_period, resource_label, resources, notes_section
-                )
+                renderer.render_deleted(usage, &user_display)
             }
         }
     }

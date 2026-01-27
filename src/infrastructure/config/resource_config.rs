@@ -1,4 +1,7 @@
 use crate::domain::aggregates::resource_usage::value_objects::Resource;
+use crate::infrastructure::config::notification_format::{
+    FormatConfig, NotificationCustomization, TemplateConfig,
+};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -16,12 +19,24 @@ pub enum NotificationConfig {
         /// タイムゾーン（オプション）
         #[serde(default)]
         timezone: Option<String>,
+        /// メッセージテンプレート（オプション）
+        #[serde(default)]
+        templates: Option<TemplateConfig>,
+        /// フォーマット設定（オプション）
+        #[serde(default)]
+        format: Option<FormatConfig>,
     },
     /// テスト/開発用モック通知設定
     Mock {
         /// タイムゾーン（オプション）
         #[serde(default)]
         timezone: Option<String>,
+        /// メッセージテンプレート（オプション）
+        #[serde(default)]
+        templates: Option<TemplateConfig>,
+        /// フォーマット設定（オプション）
+        #[serde(default)]
+        format: Option<FormatConfig>,
     },
 }
 
@@ -30,7 +45,22 @@ impl NotificationConfig {
     pub fn timezone(&self) -> Option<&str> {
         match self {
             NotificationConfig::Slack { timezone, .. } => timezone.as_deref(),
-            NotificationConfig::Mock { timezone } => timezone.as_deref(),
+            NotificationConfig::Mock { timezone, .. } => timezone.as_deref(),
+        }
+    }
+
+    /// カスタマイズ設定を取得（デフォルト値込み）
+    pub fn customization(&self) -> NotificationCustomization {
+        match self {
+            NotificationConfig::Slack {
+                templates, format, ..
+            }
+            | NotificationConfig::Mock {
+                templates, format, ..
+            } => NotificationCustomization {
+                templates: templates.clone().unwrap_or_default(),
+                format: format.clone().unwrap_or_default(),
+            },
         }
     }
 }

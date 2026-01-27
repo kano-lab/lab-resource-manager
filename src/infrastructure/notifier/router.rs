@@ -85,6 +85,7 @@ impl NotificationRouter {
             event,
             identity_link: identity_link.as_ref(),
             timezone: config.timezone(),
+            customization: config.customization(),
         };
 
         match config {

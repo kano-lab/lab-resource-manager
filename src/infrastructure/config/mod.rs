@@ -13,11 +13,16 @@ pub mod app_config;
 pub mod defaults;
 /// 設定の読み込み
 pub mod loader;
+/// 通知フォーマット設定
+pub mod notification_format;
 /// リソース設定の定義と読み込み
 pub mod resource_config;
 
 pub use app_config::AppConfig;
 pub use loader::{ConfigLoadError, load_from_env};
+pub use notification_format::{
+    DateFormat, FormatConfig, NotificationCustomization, ResourceStyle, TemplateConfig, TimeStyle,
+};
 pub use resource_config::{
     DeviceConfig, NotificationConfig, ResourceConfig, RoomConfig, ServerConfig, load_config,
 };
