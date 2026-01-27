@@ -19,7 +19,8 @@ impl MockSender {
         Self
     }
 
-    /// イベントから簡易的なメッセージを構築（テンプレートレンダラー使用）
+    /// イベントからテンプレートレンダラーを用いてメッセージを構築
+    /// （Slack送信時と同等のフォーマット出力）
     fn format_message(&self, context: &NotificationContext) -> String {
         let usage = match context.event {
             NotificationEvent::ResourceUsageCreated(u) => u,

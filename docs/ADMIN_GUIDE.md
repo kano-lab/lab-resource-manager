@@ -124,8 +124,8 @@ date_format = "md"           # Date format
 | `{user}` | User name/Slack mention |
 | `{resource}` | Resource information |
 | `{time}` | Time period |
-| `{notes}` | Notes section with heading (expands to `\n\n📝 Notes\n...` if present, empty if absent) |
-| `{resource_label}` | Resource label (e.g., GPU Reservation) |
+| `{notes}` | Notes section with heading (expands to `\n\n📝 備考\n...` if present, empty if absent) |
+| `{resource_label}` | Resource label (e.g., 💻 予約GPU; label text is in Japanese) |
 
 **resource_style options:**
 
