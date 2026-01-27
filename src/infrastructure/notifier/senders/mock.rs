@@ -1,5 +1,5 @@
-use crate::domain::aggregates::resource_usage::service::{format_resources, format_time_period};
 use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
+use crate::infrastructure::notifier::template_renderer::TemplateRenderer;
 use async_trait::async_trait;
 
 use super::sender::{NotificationContext, Sender};
@@ -19,7 +19,8 @@ impl MockSender {
         Self
     }
 
-    /// イベントから簡易的なメッセージを構築
+    /// イベントからテンプレートレンダラーを用いてメッセージを構築
+    /// （Slack送信時と同等のフォーマット出力）
     fn format_message(&self, context: &NotificationContext) -> String {
         let usage = match context.event {
             NotificationEvent::ResourceUsageCreated(u) => u,
@@ -28,28 +29,17 @@ impl MockSender {
         };
 
         let user = usage.owner_email().as_str();
-        let resources = format_resources(usage.resources());
-        let time_period = format_time_period(usage.time_period(), context.timezone);
+
+        let renderer = TemplateRenderer::new(
+            &context.customization.templates,
+            &context.customization.format,
+            context.timezone,
+        );
 
         match context.event {
-            NotificationEvent::ResourceUsageCreated(_) => {
-                format!(
-                    "🔔 新規予約\n{} が {} を予約しました\n期間: {}",
-                    user, resources, time_period
-                )
-            }
-            NotificationEvent::ResourceUsageUpdated(_) => {
-                format!(
-                    "🔄 予約更新\n{} が {} の予約を変更しました\n期間: {}",
-                    user, resources, time_period
-                )
-            }
-            NotificationEvent::ResourceUsageDeleted(_) => {
-                format!(
-                    "🗑️ 予約削除\n{} が {} の予約をキャンセルしました\n期間: {}",
-                    user, resources, time_period
-                )
-            }
+            NotificationEvent::ResourceUsageCreated(_) => renderer.render_created(usage, user),
+            NotificationEvent::ResourceUsageUpdated(_) => renderer.render_updated(usage, user),
+            NotificationEvent::ResourceUsageDeleted(_) => renderer.render_deleted(usage, user),
         }
     }
 }
