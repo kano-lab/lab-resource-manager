@@ -229,7 +229,10 @@ mod tests {
             0,
             "A100".to_string(),
         ))];
-        assert_eq!(TemplateRenderer::get_resource_label(&resources), "💻 予約GPU");
+        assert_eq!(
+            TemplateRenderer::get_resource_label(&resources),
+            "💻 予約GPU"
+        );
     }
 
     #[test]

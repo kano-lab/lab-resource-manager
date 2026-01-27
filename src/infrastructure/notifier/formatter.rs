@@ -214,10 +214,7 @@ mod tests {
     use crate::domain::aggregates::resource_usage::value_objects::Gpu;
     use chrono::TimeZone;
 
-    fn create_test_period(
-        start_hour: u32,
-        end_hour: u32,
-    ) -> TimePeriod {
+    fn create_test_period(start_hour: u32, end_hour: u32) -> TimePeriod {
         let start = Utc.with_ymd_and_hms(2024, 1, 15, start_hour, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 15, end_hour, 0, 0).unwrap();
         TimePeriod::new(start, end).unwrap()
