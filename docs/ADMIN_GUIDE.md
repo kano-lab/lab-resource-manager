@@ -141,7 +141,7 @@ date_format = "md"           # Date format
 |-------|----------------|
 | `full` (default) | 2024-01-15 19:00 - 2024-01-15 21:00 (Asia/Tokyo) |
 | `smart` | 1/15 19:00-21:00 (omits end date if same day) |
-| `relative` | Today 19:00-21:00, Tomorrow 10:00-12:00 |
+| `relative` | 今日 19:00-21:00, 明日 10:00-12:00 |
 
 **date_format options:**
 
