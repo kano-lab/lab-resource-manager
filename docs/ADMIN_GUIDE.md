@@ -93,6 +93,64 @@ timezone (where the bot is running). When a timezone is configured, times will b
 converted to that timezone and displayed with the timezone name, making it easier to
 understand local times.
 
+### 4. Notification Message Customization (Optional)
+
+You can customize notification message templates and formatting:
+
+```toml
+[[servers.notifications]]
+type = "slack"
+bot_token = "xoxb-YOUR-BOT-TOKEN"
+channel_id = "C01234567..."
+timezone = "Asia/Tokyo"
+
+# Message templates (optional)
+[servers.notifications.templates]
+created = "{user} is using {resource} at {time}"
+updated = "{user} changed reservation: {resource} {time}"
+deleted = "{user} cancelled reservation: {resource}"
+
+# Format settings (optional)
+[servers.notifications.format]
+resource_style = "compact"   # Resource display style
+time_style = "smart"         # Time display style
+date_format = "md"           # Date format
+```
+
+**Placeholders:**
+
+| Placeholder | Description |
+|-------------|-------------|
+| `{user}` | User name/Slack mention |
+| `{resource}` | Resource information |
+| `{time}` | Time period |
+| `{notes}` | Notes (if present) |
+| `{resource_label}` | Resource label (e.g., GPU Reservation) |
+
+**resource_style options:**
+
+| Value | Example Output |
+|-------|----------------|
+| `full` (default) | Thalys / A100 80GB PCIe / GPU:0 |
+| `compact` | Thalys 0,1,2 |
+| `server_only` | Thalys |
+
+**time_style options:**
+
+| Value | Example Output |
+|-------|----------------|
+| `full` (default) | 2024-01-15 19:00 - 2024-01-15 21:00 (Asia/Tokyo) |
+| `smart` | 1/15 19:00-21:00 (omits end date if same day) |
+| `relative` | Today 19:00-21:00, Tomorrow 10:00-12:00 |
+
+**date_format options:**
+
+| Value | Example Output |
+|-------|----------------|
+| `ymd` (default) | 2024-01-15 |
+| `md` | 1/15 |
+| `md_japanese` | 1月15日 |
+
 ## Running the System
 
 ### Service Management

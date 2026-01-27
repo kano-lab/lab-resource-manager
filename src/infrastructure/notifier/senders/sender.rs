@@ -1,5 +1,6 @@
 use crate::domain::aggregates::identity_link::entity::IdentityLink;
 use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
+use crate::infrastructure::config::NotificationCustomization;
 use async_trait::async_trait;
 
 /// 通知送信に必要なコンテキスト情報
@@ -10,6 +11,8 @@ pub struct NotificationContext<'a> {
     pub identity_link: Option<&'a IdentityLink>,
     /// タイムゾーン（オプション）
     pub timezone: Option<&'a str>,
+    /// カスタマイズ設定
+    pub customization: NotificationCustomization,
 }
 
 /// 通知メッセージを送信する機能を提供するtrait

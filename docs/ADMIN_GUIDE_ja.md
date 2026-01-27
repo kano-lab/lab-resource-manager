@@ -91,6 +91,64 @@ channel_id = "C01234567..."
 設定すると、時刻がそのタイムゾーンに変換され、タイムゾーン名と共に表示されるため、
 ローカル時刻が分かりやすくなります。
 
+### 4. 通知メッセージのカスタマイズ（オプション）
+
+通知メッセージのテンプレートとフォーマットをカスタマイズできます:
+
+```toml
+[[servers.notifications]]
+type = "slack"
+bot_token = "xoxb-YOUR-BOT-TOKEN"
+channel_id = "C01234567..."
+timezone = "Asia/Tokyo"
+
+# メッセージテンプレート（オプション）
+[servers.notifications.templates]
+created = "{user}が{resource}を{time}使います"
+updated = "{user}が予約を変更: {resource} {time}"
+deleted = "{user}が予約をキャンセル: {resource}"
+
+# フォーマット設定（オプション）
+[servers.notifications.format]
+resource_style = "compact"   # リソース表示スタイル
+time_style = "smart"         # 時刻表示スタイル
+date_format = "md"           # 日付フォーマット
+```
+
+**プレースホルダー:**
+
+| プレースホルダー | 説明 |
+|------------------|------|
+| `{user}` | ユーザー名/Slackメンション |
+| `{resource}` | リソース情報 |
+| `{time}` | 期間 |
+| `{notes}` | 備考（存在する場合） |
+| `{resource_label}` | リソースラベル（例: 💻 予約GPU） |
+
+**resource_style オプション:**
+
+| 値 | 出力例 |
+|----|--------|
+| `full`（デフォルト） | Thalys / A100 80GB PCIe / GPU:0 |
+| `compact` | Thalys 0,1,2 |
+| `server_only` | Thalys |
+
+**time_style オプション:**
+
+| 値 | 出力例 |
+|----|--------|
+| `full`（デフォルト） | 2024-01-15 19:00 - 2024-01-15 21:00 (Asia/Tokyo) |
+| `smart` | 1/15 19:00-21:00（同日なら終了日省略） |
+| `relative` | 今日 19:00-21:00、明日 10:00-12:00 |
+
+**date_format オプション:**
+
+| 値 | 出力例 |
+|----|--------|
+| `ymd`（デフォルト） | 2024-01-15 |
+| `md` | 1/15 |
+| `md_japanese` | 1月15日 |
+
 ## システムの起動
 
 ### サービス管理
