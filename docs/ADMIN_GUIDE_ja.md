@@ -122,7 +122,7 @@ date_format = "md"           # 日付フォーマット
 | `{user}` | ユーザー名/Slackメンション |
 | `{resource}` | リソース情報 |
 | `{time}` | 期間 |
-| `{notes}` | 備考（存在する場合） |
+| `{notes}` | 備考セクション（`\n\n📝 備考\n...`形式で展開、なければ空文字） |
 | `{resource_label}` | リソースラベル（例: 💻 予約GPU） |
 
 **resource_style オプション:**

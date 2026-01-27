@@ -87,7 +87,10 @@ impl<'a> TemplateRenderer<'a> {
         self.render(template, usage, user_display)
     }
 
-    /// テンプレートをレンダリング
+    /// テンプレートをレンダリング（シングルパス方式）
+    ///
+    /// チェーン式の`replace`だと置換後の値にプレースホルダーが含まれる場合に
+    /// 誤置換が発生する可能性があるため、シングルパスで処理する。
     fn render(&self, template: &str, usage: &ResourceUsage, user_display: &str) -> String {
         let resources_formatted =
             format_resources_styled(usage.resources(), self.format.resource_style);
@@ -107,13 +110,51 @@ impl<'a> TemplateRenderer<'a> {
 
         let resource_label = Self::get_resource_label(usage.resources());
 
-        template
-            .replace(placeholders::USER, user_display)
-            .replace(placeholders::RESOURCES, &resources_formatted)
-            .replace(placeholders::RESOURCE, &resources_formatted)
-            .replace(placeholders::TIME, &time_formatted)
-            .replace(placeholders::NOTES, &notes_formatted)
-            .replace(placeholders::RESOURCE_LABEL, resource_label)
+        // シングルパスでテンプレートを走査し、プレースホルダーのみ置換する
+        let mut result = String::with_capacity(template.len() + resources_formatted.len() * 2);
+        let mut chars = template.char_indices().peekable();
+
+        while let Some((i, _)) = chars.next() {
+            let rest = &template[i..];
+
+            // 長いプレースホルダーから順にチェック（{resource_label}と{resource}の順序に注意）
+            if rest.starts_with(placeholders::RESOURCE_LABEL) {
+                result.push_str(resource_label);
+                // プレースホルダー分の文字をスキップ
+                for _ in 1..placeholders::RESOURCE_LABEL.chars().count() {
+                    chars.next();
+                }
+            } else if rest.starts_with(placeholders::RESOURCES) {
+                result.push_str(&resources_formatted);
+                for _ in 1..placeholders::RESOURCES.chars().count() {
+                    chars.next();
+                }
+            } else if rest.starts_with(placeholders::RESOURCE) {
+                result.push_str(&resources_formatted);
+                for _ in 1..placeholders::RESOURCE.chars().count() {
+                    chars.next();
+                }
+            } else if rest.starts_with(placeholders::USER) {
+                result.push_str(user_display);
+                for _ in 1..placeholders::USER.chars().count() {
+                    chars.next();
+                }
+            } else if rest.starts_with(placeholders::TIME) {
+                result.push_str(&time_formatted);
+                for _ in 1..placeholders::TIME.chars().count() {
+                    chars.next();
+                }
+            } else if rest.starts_with(placeholders::NOTES) {
+                result.push_str(&notes_formatted);
+                for _ in 1..placeholders::NOTES.chars().count() {
+                    chars.next();
+                }
+            } else {
+                result.push(template[i..].chars().next().unwrap());
+            }
+        }
+
+        result
     }
 
     /// リソースタイプに応じたラベルを取得
