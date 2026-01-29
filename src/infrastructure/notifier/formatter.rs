@@ -334,7 +334,11 @@ mod tests {
 
         let result = format_time_relative(&period, Some("Asia/Tokyo"), DateFormat::Md);
         // The relative format includes spaces around the hyphen
-        assert!(result.contains(" - "), "Expected ' - ' in relative time format, got: {}", result);
+        assert!(
+            result.contains(" - "),
+            "Expected ' - ' in relative time format, got: {}",
+            result
+        );
         assert!(result.contains("19:00") && result.contains("21:00"));
     }
 
