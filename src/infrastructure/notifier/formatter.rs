@@ -104,7 +104,7 @@ fn format_time_full(period: &TimePeriod, timezone_str: Option<&str>) -> String {
     crate::domain::aggregates::resource_usage::service::format_time_period(period, timezone_str)
 }
 
-/// スマート形式: 同日なら終了日省略 "1/15 19:00-21:00"
+/// スマート形式: 同日なら終了日省略 "1/15 19:00 - 21:00"
 fn format_time_smart(
     period: &TimePeriod,
     timezone_str: Option<&str>,
@@ -115,9 +115,9 @@ fn format_time_smart(
     let date_fmt = date_format_string(date_format);
 
     if start.date_naive() == end.date_naive() {
-        // 同日: "1/15 19:00-21:00"
+        // 同日: "1/15 19:00 - 21:00"
         format!(
-            "{} {}-{}",
+            "{} {} - {}",
             start.format(date_fmt),
             start.format("%H:%M"),
             end.format("%H:%M")
@@ -134,7 +134,7 @@ fn format_time_smart(
     }
 }
 
-/// 相対形式: "今日 19:00-21:00", "明日 10:00-12:00"
+/// 相対形式: "今日 19:00 - 21:00", "明日 10:00 - 12:00"
 fn format_time_relative(
     period: &TimePeriod,
     timezone_str: Option<&str>,
@@ -167,7 +167,7 @@ fn format_time_relative(
 
     if start.date_naive() == end.date_naive() {
         format!(
-            "{} {}-{}",
+            "{} {} - {}",
             date_str,
             start.format("%H:%M"),
             end.format("%H:%M")
@@ -297,7 +297,7 @@ mod tests {
         let period = create_test_period(10, 12);
 
         let result = format_time_smart(&period, Some("Asia/Tokyo"), DateFormat::Md);
-        assert_eq!(result, "1/15 19:00-21:00");
+        assert_eq!(result, "1/15 19:00 - 21:00");
     }
 
     #[test]
@@ -305,7 +305,7 @@ mod tests {
         let period = create_test_period(10, 12);
 
         let result = format_time_smart(&period, Some("Asia/Tokyo"), DateFormat::MdJapanese);
-        assert_eq!(result, "1月15日 19:00-21:00");
+        assert_eq!(result, "1月15日 19:00 - 21:00");
     }
 
     #[test]
@@ -315,7 +315,7 @@ mod tests {
 
         let result = format_time_smart(&period, Some("Asia/Tokyo"), DateFormat::Md);
         // JST: Jan 16 07:00 - Jan 16 15:00 (same day in JST)
-        assert_eq!(result, "1/16 07:00-15:00");
+        assert_eq!(result, "1/16 07:00 - 15:00");
     }
 
     #[test]
@@ -323,7 +323,7 @@ mod tests {
         let period = create_test_period(10, 12);
 
         let result = format_time_smart(&period, Some("Asia/Tokyo"), DateFormat::Ymd);
-        assert_eq!(result, "2024-01-15 19:00-21:00");
+        assert_eq!(result, "2024-01-15 19:00 - 21:00");
     }
 
     #[test]

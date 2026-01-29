@@ -30,8 +30,8 @@ channel_id = "C01234567..."
 #   - server_only: "Thalys"
 # time_style = "full"        # "full" | "smart" | "relative"
 #   - full: "2024-01-15 19:00 - 2024-01-15 21:00 (Asia/Tokyo)"
-#   - smart: "1/15 19:00-21:00" (同日なら終了日省略)
-#   - relative: "今日 19:00-21:00", "明日 10:00-12:00"
+#   - smart: "1/15 19:00 - 21:00" (同日なら終了日省略)
+#   - relative: "今日 19:00 - 21:00", "明日 10:00 - 12:00"
 # date_format = "ymd"        # "ymd" | "md" | "md_japanese"
 #   - ymd: "2024-01-15"
 #   - md: "1/15"
