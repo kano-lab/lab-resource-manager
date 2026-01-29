@@ -327,6 +327,18 @@ mod tests {
     }
 
     #[test]
+    fn test_format_time_relative_today() {
+        // Create a period for "today" by using a fixed reference point
+        // UTC 10:00-12:00 = JST 19:00-21:00
+        let period = create_test_period(10, 12);
+
+        let result = format_time_relative(&period, Some("Asia/Tokyo"), DateFormat::Md);
+        // The relative format includes spaces around the hyphen
+        assert!(result.contains(" - "), "Expected ' - ' in relative time format, got: {}", result);
+        assert!(result.contains("19:00") && result.contains("21:00"));
+    }
+
+    #[test]
     fn test_date_format_string() {
         assert_eq!(date_format_string(DateFormat::Ymd), "%Y-%m-%d");
         assert_eq!(date_format_string(DateFormat::Md), "%-m/%-d");
