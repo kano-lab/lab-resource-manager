@@ -18,3 +18,15 @@ Cargo.lock
 *.pdb
 
 # End of https://www.toptal.com/developers/gitignore/api/rust
+
+# ローカル設定・シークレット
+secrets/*
+!secrets/.gitkeep
+.env
+.env.local
+
+# 実行時データ
+data/*.json
+
+# ローカル設定ファイル（トークン含む）
+config/resources.toml
