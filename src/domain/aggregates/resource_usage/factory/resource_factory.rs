@@ -1,5 +1,8 @@
 use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
 
+/// 全デバイス指定を表すデバイス指定記法
+pub const SPEC_ALL: &str = "all";
+
 /// デバイス指定記法からResourceオブジェクトを生成するファクトリ
 pub struct ResourceFactory;
 
@@ -7,6 +10,7 @@ impl ResourceFactory {
     /// デバイス指定記法から Resource のリストを生成
     ///
     /// # 記法
+    /// - 全て: "all" → サーバーの全デバイス
     /// - 単一: "0" → \[0\]
     /// - 範囲: "0-2" → \[0, 1, 2\]
     /// - 複数: "0,2,5" → \[0, 2, 5\]
@@ -15,6 +19,7 @@ impl ResourceFactory {
     /// # Arguments
     /// * `spec` - デバイス指定文字列
     /// * `server_name` - サーバー名
+    /// * `all_device_ids` - サーバーの全デバイスIDリスト（"all"指定時に使用）
     /// * `device_lookup` - デバイスIDからモデル名を取得するクロージャ
     ///
     /// # Returns
@@ -26,9 +31,14 @@ impl ResourceFactory {
     pub fn create_gpus_from_spec(
         spec: &str,
         server_name: &str,
+        all_device_ids: &[u32],
         device_lookup: impl Fn(u32) -> Option<String>,
     ) -> Result<Vec<Resource>, ResourceFactoryError> {
-        let device_numbers = Self::parse_device_numbers(spec)?;
+        let device_numbers = if spec == SPEC_ALL {
+            all_device_ids.to_vec()
+        } else {
+            Self::parse_device_numbers(spec)?
+        };
 
         let mut resources = Vec::new();
         for device_num in device_numbers {
@@ -214,10 +224,12 @@ mod tests {
     #[test]
     fn test_create_gpus_from_spec() {
         let resources =
-            ResourceFactory::create_gpus_from_spec("0-1", "Thalys", |device_id| match device_id {
-                0 => Some("A100".to_string()),
-                1 => Some("A100".to_string()),
-                _ => None,
+            ResourceFactory::create_gpus_from_spec("0-1", "Thalys", &[0, 1], |device_id| {
+                match device_id {
+                    0 => Some("A100".to_string()),
+                    1 => Some("A100".to_string()),
+                    _ => None,
+                }
             })
             .unwrap();
 
@@ -225,11 +237,28 @@ mod tests {
     }
 
     #[test]
+    fn test_create_gpus_from_spec_all() {
+        let resources =
+            ResourceFactory::create_gpus_from_spec(SPEC_ALL, "Thalys", &[0, 1, 2], |device_id| {
+                match device_id {
+                    0 | 1 => Some("A100".to_string()),
+                    2 => Some("RTX6000".to_string()),
+                    _ => None,
+                }
+            })
+            .unwrap();
+
+        assert_eq!(resources.len(), 3);
+    }
+
+    #[test]
     fn test_create_gpus_device_not_found() {
         let result =
-            ResourceFactory::create_gpus_from_spec("0-2", "Thalys", |device_id| match device_id {
-                0 | 1 => Some("A100".to_string()),
-                _ => None,
+            ResourceFactory::create_gpus_from_spec("0-2", "Thalys", &[0, 1], |device_id| {
+                match device_id {
+                    0 | 1 => Some("A100".to_string()),
+                    _ => None,
+                }
             });
 
         assert!(matches!(
