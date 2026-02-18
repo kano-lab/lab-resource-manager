@@ -112,23 +112,24 @@ pub fn create_reserve_modal(
     SlackView::Modal(modal_view)
 }
 
-/// サーバーのデバイスリストから選択肢を生成
+/// サーバーのデバイスリストから選択肢を生成（先頭に「全てのデバイス」オプション付き）
 fn create_device_options(
     server: &crate::infrastructure::config::resource_config::ServerConfig,
 ) -> Vec<SlackBlockChoiceItem<SlackBlockText>> {
-    server
-        .devices
-        .iter()
-        .map(|device| {
-            SlackBlockChoiceItem::new(
-                SlackBlockText::Plain(SlackBlockPlainText::from(format!(
-                    "Device {} ({})",
-                    device.id, device.model
-                ))),
-                device.id.to_string(),
-            )
-        })
-        .collect()
+    let mut options = vec![SlackBlockChoiceItem::new(
+        SlackBlockText::Plain(SlackBlockPlainText::from("全てのデバイス".to_string())),
+        VALUE_ALL_DEVICES.to_string(),
+    )];
+    options.extend(server.devices.iter().map(|device| {
+        SlackBlockChoiceItem::new(
+            SlackBlockText::Plain(SlackBlockPlainText::from(format!(
+                "Device {} ({})",
+                device.id, device.model
+            ))),
+            device.id.to_string(),
+        )
+    }));
+    options
 }
 
 /// GPUサーバー選択ブロックを追加

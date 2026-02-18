@@ -85,8 +85,7 @@ where
             extract_form_data::get_selected_options(view_submission, ACTION_RESERVE_DEVICES);
         info!("  → 選択デバイス数: {}", device_id_values.len());
 
-        if device_id_values.is_empty() {
-            // No specific devices selected - reserve entire server (all devices)
+        let all_devices = || {
             server_config
                 .devices
                 .iter()
@@ -98,6 +97,11 @@ where
                     ))
                 })
                 .collect()
+        };
+
+        if device_id_values.is_empty() || device_id_values.iter().any(|v| v == VALUE_ALL_DEVICES) {
+            // 未選択 or 「全てのデバイス」選択 → サーバーの全デバイスを予約
+            all_devices()
         } else {
             // Parse device IDs from values
             let mut gpu_resources = Vec::new();
