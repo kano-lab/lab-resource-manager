@@ -60,8 +60,25 @@ jobs:
           cp -r deploy/ dist/
           cd dist && tar -czvf ../lab-resource-manager-${{ matrix.target }}.tar.gz *
 
-      - name: Upload Release Artifacts
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab-resource-manager-${{ matrix.target }}
+          path: lab-resource-manager-${{ matrix.target }}.tar.gz
+
+  release:
+    name: Upload Release Artifacts
+    needs: [release-please, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.release-please.outputs.tag_name }}
-          files: lab-resource-manager-${{ matrix.target }}.tar.gz
+          files: artifacts/*.tar.gz
