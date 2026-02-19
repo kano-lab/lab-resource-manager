@@ -1,7 +1,7 @@
 use super::id_mapper::{ExternalId, IdMapper};
 use crate::domain::aggregates::resource_usage::{
     entity::ResourceUsage,
-    factory::ResourceFactory,
+    factory::{ResourceFactory, SPEC_ALL},
     value_objects::{Resource, TimePeriod, UsageId},
 };
 use crate::domain::common::EmailAddress;
@@ -296,7 +296,7 @@ impl GoogleCalendarUsageRepository {
                 .iter()
                 .all(|d| device_numbers.contains(&d.id))
         {
-            return Some(crate::domain::aggregates::resource_usage::factory::SPEC_ALL.to_string());
+            return Some(SPEC_ALL.to_string());
         }
 
         device_numbers.sort_unstable();

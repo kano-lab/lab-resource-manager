@@ -249,6 +249,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(resources.len(), 3);
+        assert_eq!(
+            resources,
+            vec![
+                Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string())),
+                Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string())),
+                Resource::Gpu(Gpu::new("Thalys".to_string(), 2, "RTX6000".to_string())),
+            ]
+        );
     }
 
     #[test]
