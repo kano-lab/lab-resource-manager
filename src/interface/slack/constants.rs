@@ -11,6 +11,8 @@ pub const ACTION_RESERVE_SERVER_SELECT: &str = "reserve_server_select";
 pub const ACTION_RESERVE_ROOM_SELECT: &str = "reserve_room_select";
 /// デバイス（GPU）選択のチェックボックスアクション
 pub const ACTION_RESERVE_DEVICES: &str = "reserve_devices";
+/// 全デバイス選択を表すチェックボックス値（ドメイン層の SPEC_ALL と同値）
+pub const VALUE_ALL_DEVICES: &str = "all";
 /// 予約開始日の日付ピッカーアクション
 pub const ACTION_RESERVE_START_DATE: &str = "reserve_start_date";
 /// 予約開始時刻のタイムピッカーアクション

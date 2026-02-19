@@ -1,7 +1,7 @@
 use super::id_mapper::{ExternalId, IdMapper};
 use crate::domain::aggregates::resource_usage::{
     entity::ResourceUsage,
-    factory::ResourceFactory,
+    factory::{ResourceFactory, SPEC_ALL},
     value_objects::{Resource, TimePeriod, UsageId},
 };
 use crate::domain::common::EmailAddress;
@@ -254,7 +254,8 @@ impl GoogleCalendarUsageRepository {
             RepositoryError::Unknown(format!("サーバーが見つかりません: {}", resource_context))
         })?;
 
-        ResourceFactory::create_gpus_from_spec(title, &server.name, |device_id| {
+        let all_device_ids: Vec<u32> = server.devices.iter().map(|d| d.id).collect();
+        ResourceFactory::create_gpus_from_spec(title, &server.name, &all_device_ids, |device_id| {
             server
                 .devices
                 .iter()
@@ -267,7 +268,8 @@ impl GoogleCalendarUsageRepository {
     /// ResourcesからGPUデバイス仕様文字列を生成
     ///
     /// GPUリソースからデバイス番号を抽出してソートし、
-    /// カンマ区切りの文字列として返す（例: "0,1,5,7"）
+    /// カンマ区切りの文字列として返す（例: "0,1,5,7"）。
+    /// サーバーの全デバイスが含まれている場合は "all" を返す。
     fn format_gpu_spec(&self, resources: &[Resource]) -> Option<String> {
         let mut device_numbers: Vec<u32> = resources
             .iter()
@@ -279,6 +281,22 @@ impl GoogleCalendarUsageRepository {
 
         if device_numbers.is_empty() {
             return None;
+        }
+
+        // サーバーの全デバイスが含まれている場合は "all" を返す
+        let server_name = resources.iter().find_map(|r| match r {
+            Resource::Gpu(gpu) => Some(gpu.server()),
+            _ => None,
+        });
+        if let Some(server_name) = server_name
+            && let Some(server) = self.config.get_server(server_name)
+            && device_numbers.len() == server.devices.len()
+            && server
+                .devices
+                .iter()
+                .all(|d| device_numbers.contains(&d.id))
+        {
+            return Some(SPEC_ALL.to_string());
         }
 
         device_numbers.sort_unstable();
