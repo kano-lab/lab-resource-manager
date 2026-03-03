@@ -1,5 +1,6 @@
 //! リソース予約モーダルビルダー
 
+use crate::domain::aggregates::resource_usage::factory::SPEC_ALL;
 use crate::infrastructure::config::ResourceConfig;
 use crate::interface::slack::constants::*;
 use chrono::{Local, Timelike};
@@ -118,7 +119,7 @@ fn create_device_options(
 ) -> Vec<SlackBlockChoiceItem<SlackBlockText>> {
     let mut options = vec![SlackBlockChoiceItem::new(
         SlackBlockText::Plain(SlackBlockPlainText::from("全てのデバイス".to_string())),
-        VALUE_ALL_DEVICES.to_string(),
+        SPEC_ALL.to_string(),
     )];
     options.extend(server.devices.iter().map(|device| {
         SlackBlockChoiceItem::new(

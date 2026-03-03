@@ -3,7 +3,10 @@ use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
 /// 全デバイス指定を表すデバイス指定記法
 pub const SPEC_ALL: &str = "all";
 
-/// デバイス指定記法からResourceオブジェクトを生成するファクトリ
+/// デバイス指定記法と Resource オブジェクトを相互変換するファクトリ
+///
+/// サーバーのデバイスカタログ `&[(u32, String)]` を共通の入力として、
+/// パース（spec → Resources）とフォーマット（Resources → spec）の対称な操作を提供する。
 pub struct ResourceFactory;
 
 impl ResourceFactory {
@@ -19,56 +22,84 @@ impl ResourceFactory {
     /// # Arguments
     /// * `spec` - デバイス指定文字列
     /// * `server_name` - サーバー名
-    /// * `all_device_ids` - サーバーの全デバイスIDリスト（"all"指定時に使用）
-    /// * `device_lookup` - デバイスIDからモデル名を取得するクロージャ
-    ///
-    /// # Returns
-    /// Resourceのリスト
-    ///
-    /// # Errors
-    /// - デバイス指定の形式が不正な場合
-    /// - 指定されたデバイスが存在しない場合
+    /// * `server_devices` - サーバーのデバイスカタログ（ID, モデル名）
     pub fn create_gpus_from_spec(
         spec: &str,
         server_name: &str,
-        all_device_ids: &[u32],
-        device_lookup: impl Fn(u32) -> Option<String>,
+        server_devices: &[(u32, String)],
     ) -> Result<Vec<Resource>, ResourceFactoryError> {
         let device_numbers = if spec == SPEC_ALL {
-            all_device_ids.to_vec()
+            server_devices.iter().map(|(id, _)| *id).collect()
         } else {
             Self::parse_device_numbers(spec)?
         };
 
         let mut resources = Vec::new();
         for device_num in device_numbers {
-            let model =
-                device_lookup(device_num).ok_or_else(|| ResourceFactoryError::DeviceNotFound {
+            let model = server_devices
+                .iter()
+                .find(|(id, _)| *id == device_num)
+                .map(|(_, model)| model.clone())
+                .ok_or_else(|| ResourceFactoryError::DeviceNotFound {
                     server: server_name.to_string(),
                     device_id: device_num,
                 })?;
 
-            let gpu = Gpu::new(server_name.to_string(), device_num, model);
-            resources.push(Resource::Gpu(gpu));
+            resources.push(Resource::Gpu(Gpu::new(
+                server_name.to_string(),
+                device_num,
+                model,
+            )));
         }
 
         Ok(resources)
     }
 
-    /// デバイス番号のパース（内部ヘルパー）
+    /// Resource のリストからデバイス指定記法を生成
     ///
-    /// "0-2,5,7-9" のような記法をパースして、個別のデバイス番号のリストに展開します。
+    /// サーバーの全デバイスが含まれている場合は "all" を返す。
+    /// それ以外はデバイス番号のカンマ区切り（例: "0,1,5,7"）を返す。
     ///
     /// # Arguments
-    /// * `spec` - デバイス指定文字列
+    /// * `resources` - GPUリソースのリスト
+    /// * `server_devices` - サーバーのデバイスカタログ（ID, モデル名）
+    pub fn format_gpu_spec(
+        resources: &[Resource],
+        server_devices: &[(u32, String)],
+    ) -> Option<String> {
+        let mut device_numbers: Vec<u32> = resources
+            .iter()
+            .filter_map(|r| match r {
+                Resource::Gpu(gpu) => Some(gpu.device_number()),
+                _ => None,
+            })
+            .collect();
+
+        if device_numbers.is_empty() {
+            return None;
+        }
+
+        if device_numbers.len() == server_devices.len()
+            && server_devices
+                .iter()
+                .all(|(id, _)| device_numbers.contains(id))
+        {
+            return Some(SPEC_ALL.to_string());
+        }
+
+        device_numbers.sort_unstable();
+        Some(
+            device_numbers
+                .iter()
+                .map(|n| n.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        )
+    }
+
+    /// デバイス番号のパース（内部ヘルパー）
     ///
-    /// # Returns
-    /// デバイス番号のリスト
-    ///
-    /// # Errors
-    /// - 形式が不正な場合
-    /// - 数値として解釈できない場合
-    /// - 範囲指定が不正な場合
+    /// "0-2,5,7-9" のような記法をパースして、個別のデバイス番号のリストに展開する。
     fn parse_device_numbers(spec: &str) -> Result<Vec<u32>, ResourceFactoryError> {
         let mut numbers = Vec::new();
 
@@ -164,6 +195,14 @@ impl crate::domain::errors::DomainError for ResourceFactoryError {}
 mod tests {
     use super::*;
 
+    fn test_devices() -> Vec<(u32, String)> {
+        vec![
+            (0, "A100".to_string()),
+            (1, "A100".to_string()),
+            (2, "RTX6000".to_string()),
+        ]
+    }
+
     #[test]
     fn test_parse_single_device() {
         let result = ResourceFactory::parse_device_numbers("0").unwrap();
@@ -223,32 +262,18 @@ mod tests {
 
     #[test]
     fn test_create_gpus_from_spec() {
-        let resources =
-            ResourceFactory::create_gpus_from_spec("0-1", "Thalys", &[0, 1], |device_id| {
-                match device_id {
-                    0 => Some("A100".to_string()),
-                    1 => Some("A100".to_string()),
-                    _ => None,
-                }
-            })
-            .unwrap();
+        let devices = test_devices();
+        let resources = ResourceFactory::create_gpus_from_spec("0-1", "Thalys", &devices).unwrap();
 
         assert_eq!(resources.len(), 2);
     }
 
     #[test]
     fn test_create_gpus_from_spec_all() {
+        let devices = test_devices();
         let resources =
-            ResourceFactory::create_gpus_from_spec(SPEC_ALL, "Thalys", &[0, 1, 2], |device_id| {
-                match device_id {
-                    0 | 1 => Some("A100".to_string()),
-                    2 => Some("RTX6000".to_string()),
-                    _ => None,
-                }
-            })
-            .unwrap();
+            ResourceFactory::create_gpus_from_spec(SPEC_ALL, "Thalys", &devices).unwrap();
 
-        assert_eq!(resources.len(), 3);
         assert_eq!(
             resources,
             vec![
@@ -261,17 +286,41 @@ mod tests {
 
     #[test]
     fn test_create_gpus_device_not_found() {
-        let result =
-            ResourceFactory::create_gpus_from_spec("0-2", "Thalys", &[0, 1], |device_id| {
-                match device_id {
-                    0 | 1 => Some("A100".to_string()),
-                    _ => None,
-                }
-            });
+        let devices = vec![(0, "A100".to_string()), (1, "A100".to_string())];
+        let result = ResourceFactory::create_gpus_from_spec("0-2", "Thalys", &devices);
 
         assert!(matches!(
             result,
             Err(ResourceFactoryError::DeviceNotFound { .. })
         ));
+    }
+
+    #[test]
+    fn test_format_gpu_spec_all_devices() {
+        let devices = test_devices();
+        let resources =
+            ResourceFactory::create_gpus_from_spec(SPEC_ALL, "Thalys", &devices).unwrap();
+
+        assert_eq!(
+            ResourceFactory::format_gpu_spec(&resources, &devices),
+            Some("all".to_string())
+        );
+    }
+
+    #[test]
+    fn test_format_gpu_spec_partial_devices() {
+        let devices = test_devices();
+        let resources = ResourceFactory::create_gpus_from_spec("0,2", "Thalys", &devices).unwrap();
+
+        assert_eq!(
+            ResourceFactory::format_gpu_spec(&resources, &devices),
+            Some("0,2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_format_gpu_spec_empty() {
+        let devices = test_devices();
+        assert_eq!(ResourceFactory::format_gpu_spec(&[], &devices), None);
     }
 }

@@ -1,5 +1,6 @@
 //! リソース予約モーダル送信ハンドラ
 
+use crate::domain::aggregates::resource_usage::factory::SPEC_ALL;
 use crate::domain::aggregates::resource_usage::value_objects::resource::{Gpu, Resource};
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ResourceUsageRepository;
@@ -99,7 +100,7 @@ where
                 .collect()
         };
 
-        if device_id_values.is_empty() || device_id_values.iter().any(|v| v == VALUE_ALL_DEVICES) {
+        if device_id_values.is_empty() || device_id_values.iter().any(|v| v == SPEC_ALL) {
             // 未選択 or 「全てのデバイス」選択 → サーバーの全デバイスを予約
             all_devices()
         } else {

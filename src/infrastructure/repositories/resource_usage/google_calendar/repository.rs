@@ -1,7 +1,7 @@
 use super::id_mapper::{ExternalId, IdMapper};
 use crate::domain::aggregates::resource_usage::{
     entity::ResourceUsage,
-    factory::{ResourceFactory, SPEC_ALL},
+    factory::ResourceFactory,
     value_objects::{Resource, TimePeriod, UsageId},
 };
 use crate::domain::common::EmailAddress;
@@ -254,60 +254,16 @@ impl GoogleCalendarUsageRepository {
             RepositoryError::Unknown(format!("サーバーが見つかりません: {}", resource_context))
         })?;
 
-        let all_device_ids: Vec<u32> = server.devices.iter().map(|d| d.id).collect();
-        ResourceFactory::create_gpus_from_spec(title, &server.name, &all_device_ids, |device_id| {
-            server
-                .devices
-                .iter()
-                .find(|d| d.id == device_id)
-                .map(|d| d.model.clone())
-        })
-        .map_err(|e| RepositoryError::Unknown(e.to_string()))
+        let server_devices = Self::to_device_catalog(&server.devices);
+        ResourceFactory::create_gpus_from_spec(title, &server.name, &server_devices)
+            .map_err(|e| RepositoryError::Unknown(e.to_string()))
     }
 
-    /// ResourcesからGPUデバイス仕様文字列を生成
-    ///
-    /// GPUリソースからデバイス番号を抽出してソートし、
-    /// カンマ区切りの文字列として返す（例: "0,1,5,7"）。
-    /// サーバーの全デバイスが含まれている場合は "all" を返す。
-    fn format_gpu_spec(&self, resources: &[Resource]) -> Option<String> {
-        let mut device_numbers: Vec<u32> = resources
-            .iter()
-            .filter_map(|r| match r {
-                Resource::Gpu(gpu) => Some(gpu.device_number()),
-                _ => None,
-            })
-            .collect();
-
-        if device_numbers.is_empty() {
-            return None;
-        }
-
-        // サーバーの全デバイスが含まれている場合は "all" を返す
-        let server_name = resources.iter().find_map(|r| match r {
-            Resource::Gpu(gpu) => Some(gpu.server()),
-            _ => None,
-        });
-        if let Some(server_name) = server_name
-            && let Some(server) = self.config.get_server(server_name)
-            && device_numbers.len() == server.devices.len()
-            && server
-                .devices
-                .iter()
-                .all(|d| device_numbers.contains(&d.id))
-        {
-            return Some(SPEC_ALL.to_string());
-        }
-
-        device_numbers.sort_unstable();
-
-        Some(
-            device_numbers
-                .iter()
-                .map(|n| n.to_string())
-                .collect::<Vec<_>>()
-                .join(","),
-        )
+    /// DeviceConfig スライスをドメイン層のデバイスカタログ形式に変換
+    fn to_device_catalog(
+        devices: &[crate::infrastructure::config::resource_config::DeviceConfig],
+    ) -> Vec<(u32, String)> {
+        devices.iter().map(|d| (d.id, d.model.clone())).collect()
     }
 
     /// ResourceUsageから適切なカレンダーIDを取得
@@ -376,9 +332,15 @@ impl GoogleCalendarUsageRepository {
     fn create_event_from_usage(&self, usage: &ResourceUsage) -> Result<Event, RepositoryError> {
         // 注: get_calendar_id_for_usageで検証済みのため、resources()[0]は安全に使用できる
         let summary = match &usage.resources()[0] {
-            Resource::Gpu(_) => self.format_gpu_spec(usage.resources()).ok_or_else(|| {
-                RepositoryError::Unknown("GPUデバイス仕様の生成に失敗しました".to_string())
-            })?,
+            Resource::Gpu(gpu) => {
+                let server = self.config.get_server(gpu.server()).ok_or_else(|| {
+                    RepositoryError::Unknown(format!("サーバーが見つかりません: {}", gpu.server()))
+                })?;
+                let server_devices = Self::to_device_catalog(&server.devices);
+                ResourceFactory::format_gpu_spec(usage.resources(), &server_devices).ok_or_else(
+                    || RepositoryError::Unknown("GPUデバイス仕様の生成に失敗しました".to_string()),
+                )?
+            }
             Resource::Room { name } => name.clone(),
         };
 
