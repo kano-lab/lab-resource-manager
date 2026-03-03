@@ -10,4 +10,4 @@
 /// リソースファクトリの実装
 pub mod resource_factory;
 
-pub use resource_factory::{ResourceFactory, ResourceFactoryError};
+pub use resource_factory::{ResourceFactory, ResourceFactoryError, SPEC_ALL};

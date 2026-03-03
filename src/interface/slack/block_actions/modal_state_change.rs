@@ -62,7 +62,7 @@ where
             );
             view_container.view_id.clone()
         }
-        SlackInteractionActionContainer::Message(_) => {
+        _ => {
             error!("❌ モーダル外のインタラクションです");
             return Ok(());
         }
