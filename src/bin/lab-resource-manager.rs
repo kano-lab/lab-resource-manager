@@ -3,12 +3,14 @@
 //! このバイナリは、ユーザーがGmailアカウントを登録し、
 //! 共有リソースカレンダーへのアクセス権を取得できるSlack Botを実行します。
 
+use chrono::Duration as ChronoDuration;
 use lab_resource_manager::{
     application::usecases::{
         create_resource_usage::CreateResourceUsageUseCase,
         delete_resource_usage::DeleteResourceUsageUseCase,
         grant_user_resource_access::GrantUserResourceAccessUseCase,
         notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase,
+        reconcile_observed_usages::ReconcileObservedUsagesUseCase,
         update_resource_usage::UpdateResourceUsageUseCase,
     },
     infrastructure::{
@@ -18,7 +20,9 @@ use lab_resource_manager::{
             identity_link::JsonFileIdentityLinkRepository,
             resource_usage::google_calendar::GoogleCalendarUsageRepository,
         },
+        reservation_proposal::SlackReservationProposalNotifier,
         resource_collection_access::GoogleCalendarAccessService,
+        resource_usage_observer::SharedFileResourceUsageObserver,
     },
     interface::slack::SlackApp,
 };
@@ -84,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let notifier = NotificationRouter::new(resource_config.as_ref().clone(), identity_repo.clone());
     let notify_usecase = Arc::new(
-        NotifyFutureResourceUsageChangesUseCase::new(resource_usage_repo, notifier)
+        NotifyFutureResourceUsageChangesUseCase::new(resource_usage_repo.clone(), notifier)
             .await
             .map_err(|e| format!("通知UseCaseの初期化に失敗: {}", e))?,
     );
@@ -92,6 +96,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Slackインフラ
     let slack_client = Arc::new(SlackClient::new(SlackClientHyperConnector::new()?));
     let bot_token = SlackApiToken::new(app_config.slack_bot_token.clone().into());
+
+    // ===========================================
+    // 実利用観測（オプション機能、GPU_USAGE_REPORTS_DIR未設定なら無効）
+    // ===========================================
+    let reconcile_handle =
+        if let Some(gpu_usage_reports_dir) = app_config.gpu_usage_reports_dir.clone() {
+            let observer = Arc::new(SharedFileResourceUsageObserver::new(
+                gpu_usage_reports_dir,
+                resource_config.clone(),
+                ChronoDuration::seconds(app_config.gpu_usage_max_staleness_secs as i64),
+            ));
+            let proposal_notifier = SlackReservationProposalNotifier::new(
+                slack_client.clone(),
+                SlackApiToken::new(app_config.slack_bot_token.clone().into()),
+                identity_repo.clone(),
+            );
+            let reconcile_notifier =
+                NotificationRouter::new(resource_config.as_ref().clone(), identity_repo.clone());
+
+            let reconcile_usecase = Arc::new(ReconcileObservedUsagesUseCase::new(
+                resource_usage_repo.clone(),
+                observer,
+                identity_repo.clone(),
+                proposal_notifier,
+                reconcile_notifier,
+                ChronoDuration::seconds(app_config.unreserved_usage_threshold_secs as i64),
+                app_config.reservation_proposal_duration_candidates.clone(),
+            ));
+
+            let interval = std::time::Duration::from_secs(app_config.polling_interval_secs);
+            println!("🔍 実利用観測機能を有効化しました");
+            Some(tokio::spawn(async move {
+                loop {
+                    if let Err(e) = reconcile_usecase.poll_once().await {
+                        eprintln!("❌ 実利用観測ポーリングエラー: {}", e);
+                    }
+                    tokio::time::sleep(interval).await;
+                }
+            }))
+        } else {
+            println!("ℹ️  GPU_USAGE_REPORTS_DIR未設定のため、実利用観測機能は無効です");
+            None
+        };
 
     // ===========================================
     // アプリケーションの組み立てと実行
@@ -112,6 +159,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.run()
         .await
         .map_err(|e| -> Box<dyn std::error::Error> { e })?;
+
+    if let Some(handle) = reconcile_handle {
+        handle.abort();
+    }
 
     Ok(())
 }
