@@ -194,24 +194,24 @@ cron登録する必要があります。このバイナリはリリースアー�
 1. `gpu-usage-reporter`を監視対象の全サーバーに配置する
 2. 各サーバーのcrontabに、そのサーバー自身の名前で登録する（1分間隔の例）:
 
-```cron
-# Thalys側のcrontab
-* * * * * /usr/local/bin/gpu-usage-reporter \
-    --server-name Thalys --output-dir /mnt/shared/lrm-gpu-status
+   ```cron
+   # Thalys側のcrontab
+   * * * * * /usr/local/bin/gpu-usage-reporter \
+       --server-name Thalys --output-dir /mnt/shared/lrm-gpu-status
 
-# Freccia側のcrontab
-* * * * * /usr/local/bin/gpu-usage-reporter \
-    --server-name Freccia --output-dir /mnt/shared/lrm-gpu-status
+   # Freccia側のcrontab
+   * * * * * /usr/local/bin/gpu-usage-reporter \
+       --server-name Freccia --output-dir /mnt/shared/lrm-gpu-status
 
-# Lyria側のcrontab
-* * * * * /usr/local/bin/gpu-usage-reporter \
-    --server-name Lyria --output-dir /mnt/shared/lrm-gpu-status
-```
+   # Lyria側のcrontab
+   * * * * * /usr/local/bin/gpu-usage-reporter \
+       --server-name Lyria --output-dir /mnt/shared/lrm-gpu-status
+   ```
 
-`--output-dir`はどのサーバーからも同じ共有ディレクトリを指す必要があります（前提条件参照）。
-`--server-name`には`config/resources.toml`の`servers[].name`と一致する値を、
-**そのサーバー自身の名前で**指定してください（他サーバーの名前を指定すると誤ったサーバーの
-レポートとして上書きされます）。
+   `--output-dir`はどのサーバーからも同じ共有ディレクトリを指す必要があります（前提条件参照）。
+   `--server-name`には`config/resources.toml`の`servers[].name`と一致する値を、
+   **そのサーバー自身の名前で**指定してください（他サーバーの名前を指定すると誤ったサーバーの
+   レポートとして上書きされます）。
 
 3. 出力される`{server名を小文字化}.json`のスキーマ:
 

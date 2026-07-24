@@ -200,24 +200,24 @@ Freccia and Lyria, each with its own `--server-name`.
 1. Deploy `gpu-usage-reporter` to every monitored server.
 2. Register it in each server's crontab, using that server's own name (example: every minute):
 
-```cron
-# crontab on Thalys
-* * * * * /usr/local/bin/gpu-usage-reporter \
-    --server-name Thalys --output-dir /mnt/shared/lrm-gpu-status
+   ```cron
+   # crontab on Thalys
+   * * * * * /usr/local/bin/gpu-usage-reporter \
+       --server-name Thalys --output-dir /mnt/shared/lrm-gpu-status
 
-# crontab on Freccia
-* * * * * /usr/local/bin/gpu-usage-reporter \
-    --server-name Freccia --output-dir /mnt/shared/lrm-gpu-status
+   # crontab on Freccia
+   * * * * * /usr/local/bin/gpu-usage-reporter \
+       --server-name Freccia --output-dir /mnt/shared/lrm-gpu-status
 
-# crontab on Lyria
-* * * * * /usr/local/bin/gpu-usage-reporter \
-    --server-name Lyria --output-dir /mnt/shared/lrm-gpu-status
-```
+   # crontab on Lyria
+   * * * * * /usr/local/bin/gpu-usage-reporter \
+       --server-name Lyria --output-dir /mnt/shared/lrm-gpu-status
+   ```
 
-`--output-dir` must point to the same shared directory from every server (see
-Prerequisites). `--server-name` must match a `servers[].name` value in
-`config/resources.toml`, using **that server's own name** — pointing it at another
-server's name overwrites that other server's report with the wrong data.
+   `--output-dir` must point to the same shared directory from every server (see
+   Prerequisites). `--server-name` must match a `servers[].name` value in
+   `config/resources.toml`, using **that server's own name** — pointing it at another
+   server's name overwrites that other server's report with the wrong data.
 
 3. The resulting `{lowercased server name}.json` schema:
 
