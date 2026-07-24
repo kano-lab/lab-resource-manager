@@ -38,9 +38,12 @@ impl NotificationRouter {
 
     fn collect_notification_configs(&self, event: &NotificationEvent) -> Vec<NotificationConfig> {
         let resources = match event {
-            NotificationEvent::ResourceUsageCreated(usage) => usage.resources(),
-            NotificationEvent::ResourceUsageUpdated(usage) => usage.resources(),
-            NotificationEvent::ResourceUsageDeleted(usage) => usage.resources(),
+            NotificationEvent::ResourceUsageCreated(usage)
+            | NotificationEvent::ResourceUsageUpdated(usage)
+            | NotificationEvent::ResourceUsageDeleted(usage) => usage.resources(),
+            NotificationEvent::UnauthorizedUsageDetected { reserved_usage, .. } => {
+                reserved_usage.resources()
+            }
         };
 
         let mut configs = HashSet::new();
@@ -58,9 +61,10 @@ impl NotificationRouter {
         event: &NotificationEvent,
     ) -> Result<(), NotificationError> {
         let usage = match event {
-            NotificationEvent::ResourceUsageCreated(u) => u,
-            NotificationEvent::ResourceUsageUpdated(u) => u,
-            NotificationEvent::ResourceUsageDeleted(u) => u,
+            NotificationEvent::ResourceUsageCreated(u)
+            | NotificationEvent::ResourceUsageUpdated(u)
+            | NotificationEvent::ResourceUsageDeleted(u) => u,
+            NotificationEvent::UnauthorizedUsageDetected { reserved_usage, .. } => reserved_usage,
         };
 
         let user_email = usage.owner_email();

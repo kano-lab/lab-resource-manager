@@ -19,6 +19,8 @@ pub mod placeholders {
     pub const NOTES: &str = "{notes}";
     /// リソースラベル（💻 予約GPU等）
     pub const RESOURCE_LABEL: &str = "{resource_label}";
+    /// 実際の利用者表示名/メンション（無断使用検知でのみ使用）
+    pub const ACTUAL_USER: &str = "{actual_user}";
 }
 
 /// デフォルトテンプレート（現在のハードコード値と同等）
@@ -34,6 +36,8 @@ pub mod defaults {
         "🗑️ 予約削除\n👤 {user}\n\n📅 期間\n{time}\n\n{resource_label}\n{resource}{notes}";
     /// 予約競合時のデフォルトテンプレート
     pub const CONFLICT: &str = "⚠️ 予約が重複しています\n👤 予約者\n{user}\n\n📅 競合する期間\n{time}\n\n{resource_label}\n{resource}{notes}";
+    /// 無断使用検知時のデフォルトテンプレート
+    pub const UNAUTHORIZED: &str = "⚠️ 無断使用を検知\n👤 予約者: {user}\n👤 利用者: {actual_user}\n\n📅 予約期間\n{time}\n\n{resource_label}\n{resource}{notes}";
 }
 
 /// テンプレートレンダラー
@@ -70,6 +74,7 @@ impl<'a> TemplateRenderer<'a> {
             usage.time_period(),
             usage.notes().map(String::as_str),
             user_display,
+            None,
         )
     }
 
@@ -86,6 +91,7 @@ impl<'a> TemplateRenderer<'a> {
             usage.time_period(),
             usage.notes().map(String::as_str),
             user_display,
+            None,
         )
     }
 
@@ -102,6 +108,7 @@ impl<'a> TemplateRenderer<'a> {
             usage.time_period(),
             usage.notes().map(String::as_str),
             user_display,
+            None,
         )
     }
 
@@ -126,6 +133,34 @@ impl<'a> TemplateRenderer<'a> {
             existing_usage.time_period(),
             existing_usage.notes().map(String::as_str),
             user_display,
+            None,
+        )
+    }
+
+    /// 無断使用検知メッセージをレンダリング
+    ///
+    /// # Arguments
+    /// * `usage` - 本来の予約
+    /// * `owner_display` - 予約者の表示名/メンション（`{user}`）
+    /// * `actual_user_display` - 実際の利用者の表示名/メンション（`{actual_user}`）
+    pub fn render_unauthorized(
+        &self,
+        usage: &ResourceUsage,
+        owner_display: &str,
+        actual_user_display: &str,
+    ) -> String {
+        let template = self
+            .templates
+            .unauthorized
+            .as_deref()
+            .unwrap_or(defaults::UNAUTHORIZED);
+        self.render(
+            template,
+            usage.resources(),
+            usage.time_period(),
+            usage.notes().map(String::as_str),
+            owner_display,
+            Some(actual_user_display),
         )
     }
 
@@ -140,6 +175,7 @@ impl<'a> TemplateRenderer<'a> {
         time_period: &TimePeriod,
         notes: Option<&str>,
         user_display: &str,
+        actual_user_display: Option<&str>,
     ) -> String {
         let resources_formatted = format_resources_styled(resources, self.format.resource_style);
 
@@ -175,6 +211,11 @@ impl<'a> TemplateRenderer<'a> {
             } else if rest.starts_with(placeholders::RESOURCE) {
                 result.push_str(&resources_formatted);
                 for _ in 1..placeholders::RESOURCE.len() {
+                    chars.next();
+                }
+            } else if rest.starts_with(placeholders::ACTUAL_USER) {
+                result.push_str(actual_user_display.unwrap_or_default());
+                for _ in 1..placeholders::ACTUAL_USER.len() {
                     chars.next();
                 }
             } else if rest.starts_with(placeholders::USER) {
@@ -268,6 +309,7 @@ mod tests {
             updated: None,
             deleted: None,
             conflict: None,
+            unauthorized: None,
         };
         let format = FormatConfig {
             resource_style: ResourceStyle::Compact,

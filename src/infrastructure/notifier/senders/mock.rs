@@ -22,14 +22,6 @@ impl MockSender {
     /// イベントからテンプレートレンダラーを用いてメッセージを構築
     /// （Slack送信時と同等のフォーマット出力）
     fn format_message(&self, context: &NotificationContext) -> String {
-        let usage = match context.event {
-            NotificationEvent::ResourceUsageCreated(u) => u,
-            NotificationEvent::ResourceUsageUpdated(u) => u,
-            NotificationEvent::ResourceUsageDeleted(u) => u,
-        };
-
-        let user = usage.owner_email().as_str();
-
         let renderer = TemplateRenderer::new(
             &context.customization.templates,
             &context.customization.format,
@@ -37,9 +29,29 @@ impl MockSender {
         );
 
         match context.event {
-            NotificationEvent::ResourceUsageCreated(_) => renderer.render_created(usage, user),
-            NotificationEvent::ResourceUsageUpdated(_) => renderer.render_updated(usage, user),
-            NotificationEvent::ResourceUsageDeleted(_) => renderer.render_deleted(usage, user),
+            NotificationEvent::ResourceUsageCreated(usage) => {
+                renderer.render_created(usage, usage.owner_email().as_str())
+            }
+            NotificationEvent::ResourceUsageUpdated(usage) => {
+                renderer.render_updated(usage, usage.owner_email().as_str())
+            }
+            NotificationEvent::ResourceUsageDeleted(usage) => {
+                renderer.render_deleted(usage, usage.owner_email().as_str())
+            }
+            NotificationEvent::UnauthorizedUsageDetected {
+                reserved_usage,
+                actual_user_email,
+            } => {
+                let actual_display = actual_user_email
+                    .as_ref()
+                    .map(|e| e.as_str().to_string())
+                    .unwrap_or_else(|| "不明".to_string());
+                renderer.render_unauthorized(
+                    reserved_usage,
+                    reserved_usage.owner_email().as_str(),
+                    &actual_display,
+                )
+            }
         }
     }
 }
