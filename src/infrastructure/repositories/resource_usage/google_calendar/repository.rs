@@ -216,10 +216,16 @@ impl GoogleCalendarUsageRepository {
         let title = event.summary.as_ref().unwrap_or(&default_title);
         let items = self.parse_resources(title, resource_context)?;
 
-        // descriptionから備考を抽出（"予約者: xxx"の行を除外）
+        // descriptionの1行目（"予約者: xxx"）を除いた残り全体を備考として抽出
+        // Google Calendar上で直接編集された場合、空行の有無は保証されないため
+        // 改行1回で区切られたケースにも対応する
         let notes = event.description.as_ref().and_then(|desc| {
-            // "予約者: xxx\n\n備考" の形式から備考部分を抽出
-            desc.split_once("\n\n").map(|(_, notes)| notes.to_string())
+            let rest = desc.splitn(2, '\n').nth(1)?.trim();
+            if rest.is_empty() {
+                None
+            } else {
+                Some(rest.to_string())
+            }
         });
 
         ResourceUsage::reconstruct(id, user, time_period, items, notes)
