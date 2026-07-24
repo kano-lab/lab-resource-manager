@@ -35,7 +35,9 @@ impl FromStr for ExternalSystem {
         if s.eq_ignore_ascii_case("slack") {
             return Ok(ExternalSystem::Slack);
         }
-        if s.get(..3).is_some_and(|prefix| prefix.eq_ignore_ascii_case("os:")) {
+        if s.get(..3)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("os:"))
+        {
             return Ok(ExternalSystem::Os {
                 server: s[3..].to_string(),
             });

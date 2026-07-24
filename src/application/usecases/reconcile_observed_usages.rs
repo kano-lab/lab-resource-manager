@@ -111,10 +111,7 @@ where
         usages.iter().find(|usage| {
             usage.time_period().start() <= now
                 && now < usage.time_period().end()
-                && usage
-                    .resources()
-                    .iter()
-                    .any(|r| r.conflicts_with(resource))
+                && usage.resources().iter().any(|r| r.conflicts_with(resource))
         })
     }
 
@@ -199,6 +196,7 @@ mod tests {
         value_objects::{ExternalIdentity, ExternalSystem},
     };
     use crate::domain::aggregates::resource_usage::value_objects::{Gpu, TimePeriod};
+    use crate::domain::ports::NotificationError;
     use crate::domain::ports::repositories::RepositoryError;
     use crate::infrastructure::repositories::resource_usage::mock::MockUsageRepository;
     use crate::infrastructure::reservation_proposal::MockReservationProposalNotifier;

@@ -110,7 +110,10 @@ impl SharedFileResourceUsageObserver {
 
     fn build_observed_usages(&self, report: &GpuUsageReport) -> Vec<ObservedUsage> {
         let Some(server_config) = self.resource_config.get_server(&report.server) else {
-            warn!("未設定のサーバーからの観測データを無視します: {}", report.server);
+            warn!(
+                "未設定のサーバーからの観測データを無視します: {}",
+                report.server
+            );
             return Vec::new();
         };
 
@@ -125,8 +128,11 @@ impl SharedFileResourceUsageObserver {
                     .model
                     .clone();
 
-                let resource =
-                    Resource::Gpu(Gpu::new(report.server.clone(), process.device_number, model));
+                let resource = Resource::Gpu(Gpu::new(
+                    report.server.clone(),
+                    process.device_number,
+                    model,
+                ));
                 let identity = ExternalIdentity::new(
                     ExternalSystem::Os {
                         server: report.server.clone(),

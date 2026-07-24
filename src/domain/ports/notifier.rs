@@ -1,7 +1,7 @@
 // NOTE: これ以上肥大化するようであればnotifierディレクトリを作成してその中に適宜分割する
 use crate::domain::{
-    aggregates::resource_usage::entity::ResourceUsage, common::EmailAddress,
-    errors::DomainError, ports::PortError,
+    aggregates::resource_usage::entity::ResourceUsage, common::EmailAddress, errors::DomainError,
+    ports::PortError,
 };
 use async_trait::async_trait;
 use std::fmt;

@@ -413,6 +413,7 @@ mod tests {
             updated: None,
             deleted: None,
             conflict: Some("{user}が既に{resource}を{time}で予約済みです".to_string()),
+            unauthorized: None,
         };
         let format = FormatConfig::default();
 

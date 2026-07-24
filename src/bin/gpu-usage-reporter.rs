@@ -76,11 +76,13 @@ fn collect_entries() -> Result<Vec<GpuUsageProcessEntry>, Box<dyn std::error::Er
 
     let mut entries: Vec<GpuUsageProcessEntry> = grouped
         .into_iter()
-        .map(|((device_number, os_user), started_at)| GpuUsageProcessEntry {
-            device_number,
-            os_user,
-            started_at,
-        })
+        .map(
+            |((device_number, os_user), started_at)| GpuUsageProcessEntry {
+                device_number,
+                os_user,
+                started_at,
+            },
+        )
         .collect();
     entries.sort_by(|a, b| {
         a.device_number
