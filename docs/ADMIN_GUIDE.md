@@ -248,9 +248,16 @@ the same shared directory used by `gpu-usage-reporter` above to enable it:
 
 When enabled, a user whose OS account is linked (`/link-user`) and who also has a linked
 Slack account will receive a DM with buttons for each duration candidate; clicking one
-creates the reservation retroactively starting from when usage was first observed. Usage
-that conflicts with someone else's existing reservation only triggers a notification (no
-automatic action is taken).
+creates the reservation retroactively starting from when usage was first observed.
+
+Usage that conflicts with someone else's existing reservation (i.e. someone is using a
+resource reserved by someone else) sends a DM directly to the person actually using it — not
+a broadcast to the resource's notification channel — asking them to stop or make their own
+reservation. This DM requires the actual user's OS account to be linked to an email address
+that also has a linked Slack account; if the OS account observed on the server isn't linked
+to anyone, the event is skipped entirely (whether it's unauthorized use is undecidable
+without knowing who it is), so linking every server user via `/link-user` is required for
+this detection to work.
 
 **Current limitation**: this wiring has been verified with unit/integration tests using
 mock adapters, but sending an actual Slack DM (via `conversations.open`/`chat.postMessage`)

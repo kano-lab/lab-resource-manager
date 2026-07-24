@@ -25,10 +25,6 @@ pub struct TemplateConfig {
     /// 予約競合時のテンプレート（`{user}`/`{time}`/`{resource}`等は競合した既存予約の情報）
     #[serde(default)]
     pub conflict: Option<String>,
-
-    /// 無断使用検知時のテンプレート
-    #[serde(default)]
-    pub unauthorized: Option<String>,
 }
 
 /// リソース表示スタイル
@@ -125,7 +121,6 @@ mod tests {
         assert!(config.updated.is_none());
         assert!(config.deleted.is_none());
         assert!(config.conflict.is_none());
-        assert!(config.unauthorized.is_none());
     }
 
     #[test]

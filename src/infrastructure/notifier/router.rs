@@ -41,9 +41,6 @@ impl NotificationRouter {
             NotificationEvent::ResourceUsageCreated(usage)
             | NotificationEvent::ResourceUsageUpdated(usage)
             | NotificationEvent::ResourceUsageDeleted(usage) => usage.resources(),
-            NotificationEvent::UnauthorizedUsageDetected { reserved_usage, .. } => {
-                reserved_usage.resources()
-            }
         };
 
         let mut configs = HashSet::new();
@@ -64,7 +61,6 @@ impl NotificationRouter {
             NotificationEvent::ResourceUsageCreated(u)
             | NotificationEvent::ResourceUsageUpdated(u)
             | NotificationEvent::ResourceUsageDeleted(u) => u,
-            NotificationEvent::UnauthorizedUsageDetected { reserved_usage, .. } => reserved_usage,
         };
 
         let user_email = usage.owner_email();

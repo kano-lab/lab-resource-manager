@@ -4,8 +4,8 @@ use crate::domain::aggregates::resource_usage::value_objects::Resource;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{IdentityLinkRepository, ResourceUsageRepository};
 use crate::domain::ports::{
-    NotificationEvent, Notifier, ObservedUsage, ReservationProposal, ReservationProposalNotifier,
-    ResourceUsageObserver,
+    ObservedUsage, ReservationProposal, ReservationProposalNotifier, ResourceUsageObserver,
+    UnauthorizedUsageNotifier,
 };
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashSet;
@@ -16,7 +16,8 @@ use tracing::error;
 ///
 /// # 検知ロジック
 /// - 予約と一致する利用者による利用: 何もしない（正常）
-/// - 予約と異なる利用者による利用（無断使用）: `Notifier`で通知するのみ（アクションは取らない）
+/// - 予約と異なる利用者による利用（無断使用）: `UnauthorizedUsageNotifier`で本人に直接通知する
+/// - 利用者の身元が不明（IdentityLink未登録）: 無断使用かどうか原理的に判定できないためスキップする
 /// - 予約が存在しない利用: `unreserved_threshold`以上継続していれば、
 ///   `ReservationProposalNotifier`経由で利用者本人に事後予約を提案する
 ///
@@ -24,31 +25,31 @@ use tracing::error;
 /// 同一の観測セッション（リソース＋観測開始時刻）に対しては一度だけ提案する。
 /// この状態はビジネス不変条件ではなくUX上のスパム防止に過ぎないため、
 /// プロセス内メモリのみで保持し、永続化しない。
-pub struct ReconcileObservedUsagesUseCase<R, O, I, P, N>
+pub struct ReconcileObservedUsagesUseCase<R, O, I, P, U>
 where
     R: ResourceUsageRepository,
     O: ResourceUsageObserver,
     I: IdentityLinkRepository,
     P: ReservationProposalNotifier,
-    N: Notifier,
+    U: UnauthorizedUsageNotifier,
 {
     repository: Arc<R>,
     observer: Arc<O>,
     identity_repo: Arc<I>,
     proposal_notifier: P,
-    notifier: N,
+    unauthorized_notifier: U,
     unreserved_threshold: Duration,
     duration_candidates: Vec<Duration>,
     proposed_keys: tokio::sync::Mutex<HashSet<(Resource, DateTime<Utc>)>>,
 }
 
-impl<R, O, I, P, N> ReconcileObservedUsagesUseCase<R, O, I, P, N>
+impl<R, O, I, P, U> ReconcileObservedUsagesUseCase<R, O, I, P, U>
 where
     R: ResourceUsageRepository,
     O: ResourceUsageObserver,
     I: IdentityLinkRepository,
     P: ReservationProposalNotifier,
-    N: Notifier,
+    U: UnauthorizedUsageNotifier,
 {
     /// 新しいユースケースインスタンスを作成
     ///
@@ -60,7 +61,7 @@ where
         observer: Arc<O>,
         identity_repo: Arc<I>,
         proposal_notifier: P,
-        notifier: N,
+        unauthorized_notifier: U,
         unreserved_threshold: Duration,
         duration_candidates: Vec<Duration>,
     ) -> Self {
@@ -69,7 +70,7 @@ where
             observer,
             identity_repo,
             proposal_notifier,
-            notifier,
+            unauthorized_notifier,
             unreserved_threshold,
             duration_candidates,
             proposed_keys: tokio::sync::Mutex::new(HashSet::new()),
@@ -137,11 +138,9 @@ where
             return Ok(());
         }
 
-        let event = NotificationEvent::UnauthorizedUsageDetected {
-            reserved_usage: reservation.clone(),
-            actual_user_email: Some(actual_email),
-        };
-        self.notifier.notify(event).await?;
+        self.unauthorized_notifier
+            .notify(reservation, &actual_email)
+            .await?;
         Ok(())
     }
 
@@ -272,20 +271,27 @@ mod tests {
     }
 
     #[derive(Clone, Default)]
-    struct RecordingNotifier {
-        events: Arc<StdMutex<Vec<NotificationEvent>>>,
+    struct RecordingUnauthorizedUsageNotifier {
+        notified: Arc<StdMutex<Vec<(ResourceUsage, EmailAddress)>>>,
     }
 
-    impl RecordingNotifier {
-        fn recorded_events(&self) -> Vec<NotificationEvent> {
-            self.events.lock().unwrap().clone()
+    impl RecordingUnauthorizedUsageNotifier {
+        fn notified(&self) -> Vec<(ResourceUsage, EmailAddress)> {
+            self.notified.lock().unwrap().clone()
         }
     }
 
     #[async_trait]
-    impl Notifier for RecordingNotifier {
-        async fn notify(&self, event: NotificationEvent) -> Result<(), NotificationError> {
-            self.events.lock().unwrap().push(event);
+    impl UnauthorizedUsageNotifier for RecordingUnauthorizedUsageNotifier {
+        async fn notify(
+            &self,
+            reserved_usage: &ResourceUsage,
+            actual_user_email: &EmailAddress,
+        ) -> Result<(), NotificationError> {
+            self.notified
+                .lock()
+                .unwrap()
+                .push((reserved_usage.clone(), actual_user_email.clone()));
             Ok(())
         }
     }
@@ -372,19 +378,19 @@ mod tests {
             MockResourceUsageObserver,
             InMemoryIdentityLinkRepository,
             MockReservationProposalNotifier,
-            RecordingNotifier,
+            RecordingUnauthorizedUsageNotifier,
         >,
         Arc<MockUsageRepository>,
         Arc<MockResourceUsageObserver>,
         Arc<InMemoryIdentityLinkRepository>,
         MockReservationProposalNotifier,
-        RecordingNotifier,
+        RecordingUnauthorizedUsageNotifier,
     ) {
         let repository = Arc::new(MockUsageRepository::new());
         let observer = Arc::new(MockResourceUsageObserver::new());
         let identity_repo = Arc::new(InMemoryIdentityLinkRepository::default());
         let proposal_notifier = MockReservationProposalNotifier::new();
-        let notifier = RecordingNotifier::default();
+        let notifier = RecordingUnauthorizedUsageNotifier::default();
 
         let usecase = ReconcileObservedUsagesUseCase::new(
             repository.clone(),
@@ -415,7 +421,7 @@ mod tests {
             MockResourceUsageObserver,
             InMemoryIdentityLinkRepository,
             FailingReservationProposalNotifier,
-            RecordingNotifier,
+            RecordingUnauthorizedUsageNotifier,
         >,
         Arc<MockResourceUsageObserver>,
         Arc<InMemoryIdentityLinkRepository>,
@@ -425,7 +431,7 @@ mod tests {
         let observer = Arc::new(MockResourceUsageObserver::new());
         let identity_repo = Arc::new(InMemoryIdentityLinkRepository::default());
         let proposal_notifier = FailingReservationProposalNotifier::new();
-        let notifier = RecordingNotifier::default();
+        let notifier = RecordingUnauthorizedUsageNotifier::default();
 
         let usecase = ReconcileObservedUsagesUseCase::new(
             repository,
@@ -519,7 +525,7 @@ mod tests {
 
         usecase.poll_once().await.unwrap();
 
-        assert!(notifier.recorded_events().is_empty());
+        assert!(notifier.notified().is_empty());
         assert!(proposal_notifier.sent_proposals().is_empty());
     }
 
@@ -545,21 +551,11 @@ mod tests {
 
         usecase.poll_once().await.unwrap();
 
-        let events = notifier.recorded_events();
-        assert_eq!(events.len(), 1);
-        match &events[0] {
-            NotificationEvent::UnauthorizedUsageDetected {
-                reserved_usage,
-                actual_user_email,
-            } => {
-                assert_eq!(reserved_usage.owner_email().as_str(), "owner@example.com");
-                assert_eq!(
-                    actual_user_email.as_ref().map(|e| e.as_str()),
-                    Some("other@example.com")
-                );
-            }
-            other => panic!("unexpected event: {:?}", other),
-        }
+        let notified = notifier.notified();
+        assert_eq!(notified.len(), 1);
+        let (reserved_usage, actual_user_email) = &notified[0];
+        assert_eq!(reserved_usage.owner_email().as_str(), "owner@example.com");
+        assert_eq!(actual_user_email.as_str(), "other@example.com");
 
         // 未予約提案は発生しない（既に予約が存在するため）
         assert!(proposal_notifier.sent_proposals().is_empty());
@@ -588,7 +584,7 @@ mod tests {
         usecase.poll_once().await.unwrap();
 
         // 利用者の身元が不明なため、無断使用かどうか原理的に判定できずスキップされる
-        assert!(notifier.recorded_events().is_empty());
+        assert!(notifier.notified().is_empty());
         assert!(proposal_notifier.sent_proposals().is_empty());
     }
 

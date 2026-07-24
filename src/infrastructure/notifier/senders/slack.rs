@@ -101,18 +101,6 @@ impl SlackSender {
                 let user_display = Self::format_user(usage.owner_email(), context.identity_link);
                 renderer.render_deleted(usage, &user_display)
             }
-            NotificationEvent::UnauthorizedUsageDetected {
-                reserved_usage,
-                actual_user_email,
-            } => {
-                let owner_display =
-                    Self::format_user(reserved_usage.owner_email(), context.identity_link);
-                let actual_display = actual_user_email
-                    .as_ref()
-                    .map(|e| e.as_str().to_string())
-                    .unwrap_or_else(|| "不明".to_string());
-                renderer.render_unauthorized(reserved_usage, &owner_display, &actual_display)
-            }
         }
     }
 
@@ -122,7 +110,6 @@ impl SlackSender {
             NotificationEvent::ResourceUsageCreated(u)
             | NotificationEvent::ResourceUsageUpdated(u)
             | NotificationEvent::ResourceUsageDeleted(u) => u,
-            NotificationEvent::UnauthorizedUsageDetected { reserved_usage, .. } => reserved_usage,
         }
     }
 

@@ -38,20 +38,6 @@ impl MockSender {
             NotificationEvent::ResourceUsageDeleted(usage) => {
                 renderer.render_deleted(usage, usage.owner_email().as_str())
             }
-            NotificationEvent::UnauthorizedUsageDetected {
-                reserved_usage,
-                actual_user_email,
-            } => {
-                let actual_display = actual_user_email
-                    .as_ref()
-                    .map(|e| e.as_str().to_string())
-                    .unwrap_or_else(|| "不明".to_string());
-                renderer.render_unauthorized(
-                    reserved_usage,
-                    reserved_usage.owner_email().as_str(),
-                    &actual_display,
-                )
-            }
         }
     }
 }

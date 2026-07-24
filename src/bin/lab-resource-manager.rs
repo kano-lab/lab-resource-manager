@@ -23,6 +23,7 @@ use lab_resource_manager::{
         reservation_proposal::SlackReservationProposalNotifier,
         resource_collection_access::GoogleCalendarAccessService,
         resource_usage_observer::SharedFileResourceUsageObserver,
+        unauthorized_usage_notifier::SlackUnauthorizedUsageNotifier,
     },
     interface::slack::SlackApp,
 };
@@ -112,15 +113,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SlackApiToken::new(app_config.slack_bot_token.clone().into()),
                 identity_repo.clone(),
             );
-            let reconcile_notifier =
-                NotificationRouter::new(resource_config.as_ref().clone(), identity_repo.clone());
+            let unauthorized_notifier = SlackUnauthorizedUsageNotifier::new(
+                slack_client.clone(),
+                SlackApiToken::new(app_config.slack_bot_token.clone().into()),
+                identity_repo.clone(),
+            );
 
             let reconcile_usecase = Arc::new(ReconcileObservedUsagesUseCase::new(
                 resource_usage_repo.clone(),
                 observer,
                 identity_repo.clone(),
                 proposal_notifier,
-                reconcile_notifier,
+                unauthorized_notifier,
                 ChronoDuration::seconds(app_config.unreserved_usage_threshold_secs as i64),
                 app_config.reservation_proposal_duration_candidates.clone(),
             ));
