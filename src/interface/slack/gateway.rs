@@ -184,7 +184,9 @@ where
             let action_id = action.action_id.to_string();
 
             match action_id.as_str() {
-                ACTION_RESERVE_RESOURCE_TYPE | ACTION_RESERVE_SERVER_SELECT => {
+                ACTION_RESERVE_RESOURCE_TYPE
+                | ACTION_RESERVE_SERVER_SELECT
+                | ACTION_LINK_TARGET_TYPE => {
                     crate::interface::slack::block_actions::modal_state_change::handle(
                         self,
                         block_actions,

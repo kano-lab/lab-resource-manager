@@ -22,7 +22,7 @@ where
     info!("🔗 ユーザーリンクモーダルを開きます");
 
     // ユーザーリンクモーダルを作成
-    let modal = views::modals::link_user::create();
+    let modal = views::modals::link_user::create(app.resource_config(), None);
 
     // モーダルを開く
     modals::open(

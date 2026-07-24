@@ -41,6 +41,12 @@ pub const ACTION_EMAIL_INPUT: &str = "email_input";
 pub const ACTION_USER_SELECT: &str = "user_select";
 /// リンク先メールアドレス入力フィールドのアクション
 pub const ACTION_LINK_EMAIL_INPUT: &str = "link_email_input";
+/// リンク対象の種類（Slackユーザー/OSユーザー名）選択のラジオボタンアクション
+pub const ACTION_LINK_TARGET_TYPE: &str = "link_target_type";
+/// OSユーザー名リンク時のサーバー選択のセレクトメニューアクション
+pub const ACTION_LINK_SERVER_SELECT: &str = "link_server_select";
+/// OSユーザー名入力フィールドのアクション
+pub const ACTION_LINK_OS_USERNAME_INPUT: &str = "link_os_username_input";
 
 // アクションID - 予約リストボタン
 /// 予約編集ボタンのアクション
