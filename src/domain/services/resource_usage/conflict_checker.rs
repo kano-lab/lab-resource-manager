@@ -145,11 +145,19 @@ mod tests {
     async fn collects_all_conflicting_resources_not_just_the_first() {
         let alice_usage = usage_with(
             "alice@example.com",
-            vec![Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()))],
+            vec![Resource::Gpu(Gpu::new(
+                "Thalys".to_string(),
+                0,
+                "A100".to_string(),
+            ))],
         );
         let bob_usage = usage_with(
             "bob@example.com",
-            vec![Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string()))],
+            vec![Resource::Gpu(Gpu::new(
+                "Thalys".to_string(),
+                1,
+                "A100".to_string(),
+            ))],
         );
         let repository = StubRepository {
             overlapping: vec![alice_usage, bob_usage],
@@ -184,7 +192,11 @@ mod tests {
     async fn no_conflict_when_resources_are_disjoint() {
         let alice_usage = usage_with(
             "alice@example.com",
-            vec![Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()))],
+            vec![Resource::Gpu(Gpu::new(
+                "Thalys".to_string(),
+                0,
+                "A100".to_string(),
+            ))],
         );
         let repository = StubRepository {
             overlapping: vec![alice_usage],

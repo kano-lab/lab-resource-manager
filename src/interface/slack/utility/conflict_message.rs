@@ -42,11 +42,9 @@ async fn build_one(
     resource_config: &ResourceConfig,
     identity_repo: &Arc<dyn IdentityLinkRepository>,
 ) -> String {
-    let owner_display = user_resolver::resolve_display_name(
-        conflict.existing_usage.owner_email(),
-        identity_repo,
-    )
-    .await;
+    let owner_display =
+        user_resolver::resolve_display_name(conflict.existing_usage.owner_email(), identity_repo)
+            .await;
 
     // 競合先リソースに紐づく通知設定を流用し、テンプレート/フォーマットを一致させる
     let notification_config = resource_config
