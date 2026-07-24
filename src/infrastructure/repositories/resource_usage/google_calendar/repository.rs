@@ -142,6 +142,9 @@ impl GoogleCalendarUsageRepository {
         calendar_id: &str,
         resource_context: &str,
     ) -> Result<ResourceUsage, RepositoryError> {
+        // アプリ経由で作成されたイベントのdescription 1行目に付与されるメタデータ行の接頭辞
+        const OWNER_LINE_PREFIX: &str = "予約者: ";
+
         // Event ID から Domain ID を取得
         let event_id = event.id.clone().unwrap_or_default();
 
@@ -182,7 +185,7 @@ impl GoogleCalendarUsageRepository {
                     // "予約者: user@example.com" の形式から抽出
                     desc.lines()
                         .next()
-                        .and_then(|line| line.strip_prefix("予約者: "))
+                        .and_then(|line| line.strip_prefix(OWNER_LINE_PREFIX))
                 })
                 .ok_or_else(|| {
                     RepositoryError::Unknown(
@@ -216,15 +219,20 @@ impl GoogleCalendarUsageRepository {
         let title = event.summary.as_ref().unwrap_or(&default_title);
         let items = self.parse_resources(title, resource_context)?;
 
-        // descriptionの1行目（"予約者: xxx"）を除いた残り全体を備考として抽出
-        // Google Calendar上で直接編集された場合、空行の有無は保証されないため
-        // 改行1回で区切られたケースにも対応する
+        // アプリ経由で作成されたイベントはdescriptionの1行目に"予約者: xxx"を含むため、
+        // その行を除いた残りを備考とする。Googleカレンダー上で直接作成されたイベントには
+        // このメタデータ行が無いため、description全体をそのまま備考として扱う
         let notes = event.description.as_ref().and_then(|desc| {
-            let rest = desc.split_once('\n')?.1.trim();
-            if rest.is_empty() {
+            let body = if desc.starts_with(OWNER_LINE_PREFIX) {
+                desc.split_once('\n').map(|(_, rest)| rest).unwrap_or("")
+            } else {
+                desc.as_str()
+            };
+            let body = body.trim();
+            if body.is_empty() {
                 None
             } else {
-                Some(rest.to_string())
+                Some(body.to_string())
             }
         });
 
