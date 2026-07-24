@@ -281,19 +281,20 @@ sudo systemctl enable lab-resource-manager
 
 ### Administrator Commands
 
-Administrators can register other users' email addresses:
+Administrators can link another person's identity to their email address:
 
 ```text
-/link-user <@slack_user> <email@example.com>
+/link-user
 ```
 
-**Example:**
+This opens a modal where a radio button switches between two link targets:
 
-```text
-/link-user @bob bob@example.com
-```
-
-This command links the specified Slack user with an email address and grants access to Google Calendar resources.
+- **Slack User**: select a Slack user and enter their email address. Grants Google Calendar
+  access, same as before.
+- **OS Username**: select the GPU server and enter the person's OS username together with
+  their email address. This is what makes the unreserved-usage-proposal and
+  unauthorized-usage-DM features described above able to identify who is actually running a
+  process — without it, an observed OS username can never be resolved to a person.
 
 ## Installation
 
