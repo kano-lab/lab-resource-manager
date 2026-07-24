@@ -10,6 +10,7 @@ use crate::domain::ports::{
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashSet;
 use std::sync::Arc;
+use tracing::error;
 
 /// 実サーバーの利用状況と予約を突き合わせ、未予約利用の提案・無断使用の通知を行うユースケース
 ///
@@ -85,7 +86,13 @@ where
         let current_usages = self.repository.find_future().await?;
 
         for usage in &observed {
-            self.reconcile_one(usage, &current_usages, now).await?;
+            if let Err(e) = self.reconcile_one(usage, &current_usages, now).await {
+                error!(
+                    "実利用の突合処理に失敗しました (resource={}): {}",
+                    usage.resource(),
+                    e
+                );
+            }
         }
 
         Ok(())
@@ -150,7 +157,7 @@ where
             return Ok(());
         };
 
-        if !self.mark_proposed_if_new(observed).await {
+        if self.already_proposed(observed).await {
             return Ok(());
         }
 
@@ -161,15 +168,23 @@ where
             observed.active_since(),
             self.duration_candidates.clone(),
         );
+        // 提案の送信（Slack DM等）が失敗しうるため、成功後にのみ「提案済み」として記録する。
+        // 先に記録してしまうと、送信失敗時に永久に再試行されなくなる。
         self.proposal_notifier.propose(proposal).await?;
+        self.mark_proposed(observed).await;
         Ok(())
     }
 
-    /// 未提案なら提案済みとして記録しtrueを返す。既に提案済みならfalseを返す
-    async fn mark_proposed_if_new(&self, observed: &ObservedUsage) -> bool {
+    /// 既に提案済みかどうかを確認
+    async fn already_proposed(&self, observed: &ObservedUsage) -> bool {
         let key = (observed.resource().clone(), observed.active_since());
-        let mut proposed = self.proposed_keys.lock().await;
-        proposed.insert(key)
+        self.proposed_keys.lock().await.contains(&key)
+    }
+
+    /// 提案済みとして記録する
+    async fn mark_proposed(&self, observed: &ObservedUsage) {
+        let key = (observed.resource().clone(), observed.active_since());
+        self.proposed_keys.lock().await.insert(key);
     }
 
     /// 観測された外部識別情報からメールアドレスを解決する（IdentityLink未登録ならNone）
@@ -272,8 +287,60 @@ mod tests {
         }
     }
 
+    /// 指定したメールアドレス宛の提案だけを失敗させられるテスト用ダブル
+    #[derive(Clone, Default)]
+    struct FailingReservationProposalNotifier {
+        fail_for_emails: Arc<StdMutex<HashSet<String>>>,
+        succeeded_emails: Arc<StdMutex<Vec<String>>>,
+        call_count: Arc<StdMutex<u32>>,
+    }
+
+    impl FailingReservationProposalNotifier {
+        fn new() -> Self {
+            Self::default()
+        }
+
+        fn fail_for(&self, email: &str) {
+            self.fail_for_emails
+                .lock()
+                .unwrap()
+                .insert(email.to_string());
+        }
+
+        fn allow(&self, email: &str) {
+            self.fail_for_emails.lock().unwrap().remove(email);
+        }
+
+        fn call_count(&self) -> u32 {
+            *self.call_count.lock().unwrap()
+        }
+
+        fn succeeded_emails(&self) -> Vec<String> {
+            self.succeeded_emails.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl ReservationProposalNotifier for FailingReservationProposalNotifier {
+        async fn propose(&self, proposal: ReservationProposal) -> Result<(), NotificationError> {
+            *self.call_count.lock().unwrap() += 1;
+            let email = proposal.owner_email().as_str().to_string();
+            if self.fail_for_emails.lock().unwrap().contains(&email) {
+                return Err(NotificationError::SendFailure(
+                    "test induced failure".to_string(),
+                ));
+            }
+            self.succeeded_emails.lock().unwrap().push(email);
+            Ok(())
+        }
+    }
+
     fn gpu_resource() -> Resource {
         Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()))
+    }
+
+    fn gpu_resource_device1() -> Resource {
+        Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string()))
     }
 
     /// gpu_resource()と同じサーバー("Thalys")に紐づくOS識別子
@@ -334,6 +401,40 @@ mod tests {
             proposal_notifier,
             notifier,
         )
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn make_usecase_with_failing_notifier(
+        threshold_minutes: i64,
+    ) -> (
+        ReconcileObservedUsagesUseCase<
+            MockUsageRepository,
+            MockResourceUsageObserver,
+            InMemoryIdentityLinkRepository,
+            FailingReservationProposalNotifier,
+            RecordingNotifier,
+        >,
+        Arc<MockResourceUsageObserver>,
+        Arc<InMemoryIdentityLinkRepository>,
+        FailingReservationProposalNotifier,
+    ) {
+        let repository = Arc::new(MockUsageRepository::new());
+        let observer = Arc::new(MockResourceUsageObserver::new());
+        let identity_repo = Arc::new(InMemoryIdentityLinkRepository::default());
+        let proposal_notifier = FailingReservationProposalNotifier::new();
+        let notifier = RecordingNotifier::default();
+
+        let usecase = ReconcileObservedUsagesUseCase::new(
+            repository,
+            observer.clone(),
+            identity_repo.clone(),
+            proposal_notifier.clone(),
+            notifier,
+            Duration::minutes(threshold_minutes),
+            vec![Duration::hours(1), Duration::hours(2), Duration::hours(3)],
+        );
+
+        (usecase, observer, identity_repo, proposal_notifier)
     }
 
     #[tokio::test]
@@ -459,5 +560,65 @@ mod tests {
 
         // 未予約提案は発生しない（既に予約が存在するため）
         assert!(proposal_notifier.sent_proposals().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_propose_failure_allows_retry_on_next_poll() {
+        let (usecase, observer, identity_repo, proposal_notifier) =
+            make_usecase_with_failing_notifier(15);
+        identity_repo.add_link("user@example.com", os_system(), "kkawaguchi");
+        proposal_notifier.fail_for("user@example.com");
+
+        let active_since = Utc::now() - Duration::minutes(20);
+        observer.set_active_usages(vec![ObservedUsage::new(
+            gpu_resource(),
+            ExternalIdentity::new(os_system(), "kkawaguchi".to_string()),
+            active_since,
+        )]);
+
+        // 1回目: propose()が失敗する→「提案済み」として記録されない
+        usecase.poll_once().await.unwrap();
+        assert_eq!(proposal_notifier.call_count(), 1);
+        assert!(proposal_notifier.succeeded_emails().is_empty());
+
+        // 2回目: 送信が成功するようにしてから再度ポーリング→再試行される
+        proposal_notifier.allow("user@example.com");
+        usecase.poll_once().await.unwrap();
+        assert_eq!(proposal_notifier.call_count(), 2);
+        assert_eq!(
+            proposal_notifier.succeeded_emails(),
+            vec!["user@example.com".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_one_failure_does_not_block_other_usages() {
+        let (usecase, observer, identity_repo, proposal_notifier) =
+            make_usecase_with_failing_notifier(15);
+        identity_repo.add_link("userA@example.com", os_system(), "kkawaguchiA");
+        identity_repo.add_link("userB@example.com", os_system(), "kkawaguchiB");
+        proposal_notifier.fail_for("userA@example.com");
+
+        let active_since = Utc::now() - Duration::minutes(20);
+        observer.set_active_usages(vec![
+            ObservedUsage::new(
+                gpu_resource(),
+                ExternalIdentity::new(os_system(), "kkawaguchiA".to_string()),
+                active_since,
+            ),
+            ObservedUsage::new(
+                gpu_resource_device1(),
+                ExternalIdentity::new(os_system(), "kkawaguchiB".to_string()),
+                active_since,
+            ),
+        ]);
+
+        usecase.poll_once().await.unwrap();
+
+        assert_eq!(proposal_notifier.call_count(), 2);
+        assert_eq!(
+            proposal_notifier.succeeded_emails(),
+            vec!["userB@example.com".to_string()]
+        );
     }
 }
