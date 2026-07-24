@@ -1,6 +1,7 @@
 // NOTE: これ以上肥大化するようであればnotifierディレクトリを作成してその中に適宜分割する
 use crate::domain::{
-    aggregates::resource_usage::entity::ResourceUsage, errors::DomainError, ports::PortError,
+    aggregates::resource_usage::entity::ResourceUsage, common::EmailAddress, errors::DomainError,
+    ports::PortError,
 };
 use async_trait::async_trait;
 use std::fmt;
@@ -14,6 +15,13 @@ pub enum NotificationEvent {
     ResourceUsageUpdated(ResourceUsage),
     /// リソース使用予定が削除された
     ResourceUsageDeleted(ResourceUsage),
+    /// 予約と異なる利用者によるリソース利用を検知した（無断使用）
+    UnauthorizedUsageDetected {
+        /// 本来の予約
+        reserved_usage: ResourceUsage,
+        /// 実際に利用していたと推定される利用者（IdentityLink未登録の場合はNone）
+        actual_user_email: Option<EmailAddress>,
+    },
 }
 
 /// 通知サービスのポート

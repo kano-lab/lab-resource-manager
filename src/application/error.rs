@@ -3,6 +3,7 @@ use crate::domain::aggregates::resource_usage::errors::ResourceUsageError;
 use crate::domain::ports::{
     notifier::NotificationError, repositories::RepositoryError,
     resource_collection_access::ResourceCollectionAccessError,
+    resource_usage_observer::ObservationError,
 };
 use crate::domain::services::resource_usage::errors::{ConflictCheckError, ResourceConflictError};
 use std::fmt;
@@ -18,6 +19,8 @@ pub enum ApplicationError {
     Notification(NotificationError),
     /// リソースコレクションへのアクセス中に発生したエラー
     ResourceCollectionAccess(ResourceCollectionAccessError),
+    /// 実サーバーの利用状況観測中に発生したエラー
+    Observation(ObservationError),
 
     /// リソース使用に関するドメインエラー
     ResourceUsage(ResourceUsageError),
@@ -56,6 +59,7 @@ impl fmt::Display for ApplicationError {
             ApplicationError::ResourceCollectionAccess(e) => {
                 write!(f, "リソースコレクションアクセスエラー: {}", e)
             }
+            ApplicationError::Observation(e) => write!(f, "利用状況観測エラー: {}", e),
             ApplicationError::ResourceUsage(e) => write!(f, "リソース使用エラー: {}", e),
             ApplicationError::IdentityLink(e) => write!(f, "ID紐付けエラー: {}", e),
             ApplicationError::ExternalSystemAlreadyLinked {
@@ -94,6 +98,7 @@ impl std::error::Error for ApplicationError {
             ApplicationError::Repository(e) => Some(e),
             ApplicationError::Notification(e) => Some(e),
             ApplicationError::ResourceCollectionAccess(e) => Some(e),
+            ApplicationError::Observation(e) => Some(e),
             ApplicationError::ResourceUsage(e) => Some(e),
             ApplicationError::IdentityLink(e) => Some(e),
             ApplicationError::ExternalSystemAlreadyLinked { .. } => None,
@@ -143,5 +148,11 @@ impl From<NotificationError> for ApplicationError {
 impl From<ResourceCollectionAccessError> for ApplicationError {
     fn from(e: ResourceCollectionAccessError) -> Self {
         ApplicationError::ResourceCollectionAccess(e)
+    }
+}
+
+impl From<ObservationError> for ApplicationError {
+    fn from(e: ObservationError) -> Self {
+        ApplicationError::Observation(e)
     }
 }

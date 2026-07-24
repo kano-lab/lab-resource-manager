@@ -47,3 +47,7 @@ pub const ACTION_LINK_EMAIL_INPUT: &str = "link_email_input";
 pub const ACTION_EDIT_RESERVATION: &str = "edit_reservation";
 /// 予約キャンセルボタンのアクション
 pub const ACTION_CANCEL_RESERVATION: &str = "cancel_reservation";
+
+// アクションID - 事後予約提案DM
+/// 事後予約提案の受諾ボタンのアクション
+pub const ACTION_ACCEPT_RESERVATION_PROPOSAL: &str = "accept_reservation_proposal";

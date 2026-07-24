@@ -55,6 +55,8 @@ pub mod list_all_future_resource_usages;
 pub mod list_user_resource_usages;
 /// 未来のリソース使用変更を監視して通知するユースケース
 pub mod notify_future_resource_usage_changes;
+/// 実サーバーの利用状況と予約を突き合わせるユースケース
+pub mod reconcile_observed_usages;
 /// リソース使用予定を更新するユースケース
 pub mod update_resource_usage;
 
@@ -65,4 +67,5 @@ pub use grant_user_resource_access::GrantUserResourceAccessUseCase;
 pub use list_all_future_resource_usages::ListAllFutureResourceUsagesUseCase;
 pub use list_user_resource_usages::ListUserResourceUsagesUseCase;
 pub use notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase;
+pub use reconcile_observed_usages::ReconcileObservedUsagesUseCase;
 pub use update_resource_usage::UpdateResourceUsageUseCase;

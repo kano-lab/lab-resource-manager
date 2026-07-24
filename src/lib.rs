@@ -106,7 +106,9 @@ pub mod interface;
 /// ```
 pub mod prelude {
     // Use cases
-    pub use crate::application::usecases::NotifyFutureResourceUsageChangesUseCase;
+    pub use crate::application::usecases::{
+        NotifyFutureResourceUsageChangesUseCase, ReconcileObservedUsagesUseCase,
+    };
 
     // Application errors
     pub use crate::application::error::ApplicationError;
@@ -123,6 +125,8 @@ pub mod prelude {
     pub use crate::domain::ports::{
         notifier::{NotificationError, NotificationEvent, Notifier},
         repositories::{RepositoryError, ResourceUsageRepository},
+        reservation_proposal::{ReservationProposal, ReservationProposalNotifier},
+        resource_usage_observer::{ObservationError, ObservedUsage, ResourceUsageObserver},
     };
 
     // Infrastructure implementations
@@ -137,6 +141,11 @@ pub mod prelude {
             resource_usage::{
                 google_calendar::GoogleCalendarUsageRepository, mock::MockUsageRepository,
             },
+        },
+        reservation_proposal::MockReservationProposalNotifier,
+        resource_usage_observer::{
+            GpuUsageProcessEntry, GpuUsageReport, MockResourceUsageObserver,
+            SharedFileResourceUsageObserver,
         },
     };
 }

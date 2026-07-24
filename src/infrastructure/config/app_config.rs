@@ -3,6 +3,7 @@
 //! このモジュールは設定値の型定義のみを担当し、
 //! デフォルト値や読み込み方法は別モジュールで定義される。
 
+use chrono::Duration;
 use std::path::PathBuf;
 
 /// アプリケーション全体の設定
@@ -22,4 +23,12 @@ pub struct AppConfig {
     pub calendar_mappings_file: PathBuf,
     /// ポーリング間隔（秒）
     pub polling_interval_secs: u64,
+    /// GPU利用状況レポートの共有ディレクトリ（未設定なら実利用観測機能を無効化）
+    pub gpu_usage_reports_dir: Option<PathBuf>,
+    /// GPU利用状況レポートを鮮度切れとみなす経過時間（秒）
+    pub gpu_usage_max_staleness_secs: u64,
+    /// 未予約利用を提案対象とみなす継続時間の閾値（秒）
+    pub unreserved_usage_threshold_secs: u64,
+    /// 事後予約提案で提示する利用時間の候補
+    pub reservation_proposal_duration_candidates: Vec<Duration>,
 }

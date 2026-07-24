@@ -167,6 +167,97 @@ conflict is silently dropped.
 | `md` | 1/15 |
 | `md_japanese` | 1月15日 |
 
+### 5. GPU Usage Observer Adapter Setup (Optional, Experimental)
+
+The monitoring component that cross-references actual GPU usage against reservations
+(e.g., detecting unreserved usage) is pluggable via the `ResourceUsageObserver` port, so
+it can be adapted to each lab's infrastructure. Two implementations are currently
+available:
+
+| Implementation | Purpose |
+|-----------------|---------|
+| Mock | Testing/development only (always returns empty results) |
+| `SharedFileResourceUsageObserver` | Reads GPU usage per server via a shared filesystem |
+
+To use `SharedFileResourceUsageObserver`, you need to register the `gpu-usage-reporter`
+binary as a cron job on each GPU server. This binary ships alongside the main
+`lab-resource-manager` binary in the release archive (e.g.,
+`lab-resource-manager-x86_64-unknown-linux-musl.tar.gz`).
+
+**Prerequisites:**
+
+- A shared directory (e.g., NFS) readable/writable from every monitored server (e.g., Thalys, Freccia, Lyria)
+- `nvidia-smi`, `getconf`, and `getent` available on each server (all standard on typical
+  Linux setups). `gpu-usage-reporter` itself is a musl static build with no other runtime
+  dependencies.
+
+**Setup steps:**
+
+This binary is the "reporting side" of the setup. Deploy it to **every monitored server
+individually** — not just the one running the LRM binary (e.g., Thalys) — including
+Freccia and Lyria, each with its own `--server-name`.
+
+1. Deploy `gpu-usage-reporter` to every monitored server.
+2. Register it in each server's crontab, using that server's own name (example: every minute):
+
+   ```cron
+   # crontab on Thalys
+   * * * * * /usr/local/bin/gpu-usage-reporter \
+       --server-name Thalys --output-dir /mnt/shared/lrm-gpu-status
+
+   # crontab on Freccia
+   * * * * * /usr/local/bin/gpu-usage-reporter \
+       --server-name Freccia --output-dir /mnt/shared/lrm-gpu-status
+
+   # crontab on Lyria
+   * * * * * /usr/local/bin/gpu-usage-reporter \
+       --server-name Lyria --output-dir /mnt/shared/lrm-gpu-status
+   ```
+
+   `--output-dir` must point to the same shared directory from every server (see
+   Prerequisites). `--server-name` must match a `servers[].name` value in
+   `config/resources.toml`, using **that server's own name** — pointing it at another
+   server's name overwrites that other server's report with the wrong data.
+
+3. The resulting `{lowercased server name}.json` schema:
+
+```json
+{
+  "server": "Thalys",
+  "generated_at": "2026-07-24T12:00:00+00:00",
+  "processes": [
+    {"device_number": 0, "os_user": "kkawaguchi", "started_at": "2026-07-24T10:00:00+00:00"}
+  ]
+}
+```
+
+Files older than a configured staleness threshold (5 minutes by default) are ignored, so a
+stopped cron job doesn't cause stale usage data to be mistaken for still-active usage.
+
+**Enabling the feature on the main binary side:** the reconciliation loop (comparing
+observed usage against reservations, proposing a post-hoc reservation via Slack DM, and
+notifying on unauthorized usage) is disabled by default. Set `GPU_USAGE_REPORTS_DIR` to
+the same shared directory used by `gpu-usage-reporter` above to enable it:
+
+| Environment variable | Default | Purpose |
+|-----------------------|---------|---------|
+| `GPU_USAGE_REPORTS_DIR` | (unset = feature disabled) | Shared directory read by `SharedFileResourceUsageObserver` |
+| `GPU_USAGE_MAX_STALENESS_SECS` | `300` | How old a report can be before it's ignored |
+| `UNRESERVED_USAGE_THRESHOLD_SECS` | `600` | How long unreserved usage must continue before a proposal is sent |
+| `RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS` | `1,2,3,5,8` | Comma-separated hour candidates offered in the Slack DM |
+
+When enabled, a user whose OS account is linked (`/link-user`) and who also has a linked
+Slack account will receive a DM with buttons for each duration candidate; clicking one
+creates the reservation retroactively starting from when usage was first observed. Usage
+that conflicts with someone else's existing reservation only triggers a notification (no
+automatic action is taken).
+
+**Current limitation**: this wiring has been verified with unit/integration tests using
+mock adapters, but sending an actual Slack DM (via `conversations.open`/`chat.postMessage`)
+and running `gpu-usage-reporter` against a real GPU server have not been verified in a live
+environment yet. The Slack app needs the `im:write` and `chat:write` scopes for the DM to
+work.
+
 ## Running the System
 
 ### Service Management

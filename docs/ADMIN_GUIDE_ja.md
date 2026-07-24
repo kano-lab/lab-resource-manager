@@ -163,6 +163,92 @@ date_format = "md"           # 日付フォーマット
 | `md` | 1/15 |
 | `md_japanese` | 1月15日 |
 
+### 5. GPU実利用状況監視アダプタの設定（オプション・実験的機能）
+
+実際のGPU利用状況を予約と突き合わせる機能（未予約利用の検知等）の監視部分は、
+`ResourceUsageObserver`ポートの実装を差し替えることで研究室のインフラに合わせられます。
+現時点で提供している実装は以下の2つです。
+
+| 実装 | 用途 |
+|------|------|
+| Mock | テスト・開発用（常に空の結果を返す） |
+| `SharedFileResourceUsageObserver` | 共有ファイルシステム経由で各サーバーのGPU利用状況を読み取る |
+
+`SharedFileResourceUsageObserver`を使う場合、各GPUサーバー側で`gpu-usage-reporter`バイナリを
+cron登録する必要があります。このバイナリはリリースアーカイブ
+（`lab-resource-manager-x86_64-unknown-linux-musl.tar.gz`等）に`lab-resource-manager`本体と
+一緒に同梱されています。
+
+**前提条件:**
+
+- 監視対象の全サーバー（例: Thalys, Freccia, Lyria）から読み書きできる共有ディレクトリ（NFS等）
+- 各サーバーに`nvidia-smi`・`getconf`・`getent`（いずれも標準的なLinux環境に含まれる）があること。
+  `gpu-usage-reporter`自体はmuslスタティックビルドのため、これ以外の実行時依存はない
+
+**セットアップ手順:**
+
+このバイナリは「送り出す側」の設定です。LRM本体が動くサーバー（例: Thalys）だけでなく、
+**監視対象の全サーバー（Thalys・Freccia・Lyriaそれぞれ）に個別にデプロイ**し、
+各サーバー自身の`--server-name`を指定してcron登録してください。
+
+1. `gpu-usage-reporter`を監視対象の全サーバーに配置する
+2. 各サーバーのcrontabに、そのサーバー自身の名前で登録する（1分間隔の例）:
+
+   ```cron
+   # Thalys側のcrontab
+   * * * * * /usr/local/bin/gpu-usage-reporter \
+       --server-name Thalys --output-dir /mnt/shared/lrm-gpu-status
+
+   # Freccia側のcrontab
+   * * * * * /usr/local/bin/gpu-usage-reporter \
+       --server-name Freccia --output-dir /mnt/shared/lrm-gpu-status
+
+   # Lyria側のcrontab
+   * * * * * /usr/local/bin/gpu-usage-reporter \
+       --server-name Lyria --output-dir /mnt/shared/lrm-gpu-status
+   ```
+
+   `--output-dir`はどのサーバーからも同じ共有ディレクトリを指す必要があります（前提条件参照）。
+   `--server-name`には`config/resources.toml`の`servers[].name`と一致する値を、
+   **そのサーバー自身の名前で**指定してください（他サーバーの名前を指定すると誤ったサーバーの
+   レポートとして上書きされます）。
+
+3. 出力される`{server名を小文字化}.json`のスキーマ:
+
+```json
+{
+  "server": "Thalys",
+  "generated_at": "2026-07-24T12:00:00+00:00",
+  "processes": [
+    {"device_number": 0, "os_user": "kkawaguchi", "started_at": "2026-07-24T10:00:00+00:00"}
+  ]
+}
+```
+
+`generated_at`から一定時間（既定5分想定）経過したファイルは古いデータとみなされ無視されます。
+cronが停止した場合に古い利用状況を「今も使用中」と誤判定しないための仕組みです。
+
+**LRM本体側での機能有効化:** 実利用と予約の突合処理（未予約利用の事後予約提案をSlack DMで送る、
+無断使用を通知する）はデフォルトでは無効です。上記の`gpu-usage-reporter`と同じ共有ディレクトリを
+`GPU_USAGE_REPORTS_DIR`に指定すると有効になります。
+
+| 環境変数 | デフォルト値 | 用途 |
+|---------|-------------|------|
+| `GPU_USAGE_REPORTS_DIR` | (未設定=機能無効) | `SharedFileResourceUsageObserver`が読み取る共有ディレクトリ |
+| `GPU_USAGE_MAX_STALENESS_SECS` | `300` | レポートを無視し始める経過時間（秒） |
+| `UNRESERVED_USAGE_THRESHOLD_SECS` | `600` | 未予約利用を提案対象とみなす継続時間の閾値（秒） |
+| `RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS` | `1,2,3,5,8` | Slack DMで提示する利用時間候補（時間、カンマ区切り） |
+
+有効化すると、OSアカウントが紐付け済み（`/link-user`）かつSlackアカウントも紐付け済みの利用者に、
+利用時間候補ごとのボタン付きDMが送られます。ボタンを押すと、実際に利用が始まった時刻から
+遡って予約が作成されます。他人の既存予約と競合する利用を検知した場合は通知のみを行い、
+自動的な操作は行いません。
+
+**現時点での制限**: この配線はモックアダプタを使ったユニット/統合テストで検証済みですが、
+実際のSlack DM送信（`conversations.open`/`chat.postMessage`）と、実GPUサーバーでの
+`gpu-usage-reporter`の動作確認は、実運用環境ではまだ行われていません。Slack DMの送信には
+Slackアプリに`im:write`・`chat:write`スコープが必要です。
+
 ## システムの起動
 
 ### サービス管理

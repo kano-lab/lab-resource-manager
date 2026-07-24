@@ -184,6 +184,37 @@ mod tests {
     }
 
     #[test]
+    fn test_link_os_identity_per_server() {
+        // OSユーザー名の名前空間はサーバーごとに異なりうるため、
+        // 同じ利用者が複数サーバーのOSユーザーをそれぞれリンクできる必要がある
+        let email = EmailAddress::new("user@example.com".to_string()).unwrap();
+        let mut identity = IdentityLink::new(email);
+
+        let thalys_id = ExternalIdentity::new(
+            ExternalSystem::Os {
+                server: "Thalys".to_string(),
+            },
+            "kkawaguchi".to_string(),
+        );
+        let freccia_id = ExternalIdentity::new(
+            ExternalSystem::Os {
+                server: "Freccia".to_string(),
+            },
+            "kkawaguchi2".to_string(),
+        );
+
+        identity.link_external_identity(thalys_id).unwrap();
+        identity.link_external_identity(freccia_id).unwrap();
+
+        assert!(identity.has_identity_for_system(&ExternalSystem::Os {
+            server: "Thalys".to_string()
+        }));
+        assert!(identity.has_identity_for_system(&ExternalSystem::Os {
+            server: "Freccia".to_string()
+        }));
+    }
+
+    #[test]
     fn test_unlink_external_identity() {
         let email = EmailAddress::new("user@example.com".to_string()).unwrap();
         let mut identity = IdentityLink::new(email);
