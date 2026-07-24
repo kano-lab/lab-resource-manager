@@ -1,12 +1,10 @@
 use crate::domain::aggregates::identity_link::errors::IdentityLinkError;
-use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::aggregates::resource_usage::errors::ResourceUsageError;
-use crate::domain::aggregates::resource_usage::value_objects::Resource;
 use crate::domain::ports::{
     notifier::NotificationError, repositories::RepositoryError,
     resource_collection_access::ResourceCollectionAccessError,
 };
-use crate::domain::services::resource_usage::errors::ResourceConflictError;
+use crate::domain::services::resource_usage::errors::{ConflictCheckError, ResourceConflictError};
 use std::fmt;
 
 /// Application層で発生するエラーの列挙型
@@ -36,16 +34,14 @@ pub enum ApplicationError {
 
     /// リソースの競合エラー
     ///
-    /// 競合したリソースと既存の使用予定を構造化データとして保持する。
+    /// リクエストしたリソースのうち競合した全件を構造化データとして保持する。
     /// インターフェース層が設定（テンプレート・フォーマットスタイル）に基づいて
     /// ユーザー向けメッセージを組み立てられるようにするため。
-    /// `existing_usage`は`Box`で保持し、`ApplicationError`全体の
-    /// サイズ肥大化（`clippy::result_large_err`）を避けている。
+    /// `Vec`で保持しているため`ApplicationError`全体のサイズは肥大化しない
+    /// （`clippy::result_large_err`）。
     ResourceConflict {
-        /// 競合しているリソース
-        resource: Resource,
-        /// 競合している既存の使用予定
-        existing_usage: Box<ResourceUsage>,
+        /// 競合した全件（リクエストしたリソースごとに最大1件）
+        conflicts: Vec<ResourceConflictError>,
     },
 
     /// 認可エラー（権限不足）
@@ -72,16 +68,18 @@ impl fmt::Display for ApplicationError {
                     email, external_system
                 )
             }
-            ApplicationError::ResourceConflict {
-                resource,
-                existing_usage,
-            } => {
-                write!(
-                    f,
-                    "リソース {} は既に使用予定 {} で使用されています",
-                    resource,
-                    existing_usage.id().as_str()
-                )
+            ApplicationError::ResourceConflict { conflicts } => {
+                let messages: Vec<String> = conflicts
+                    .iter()
+                    .map(|c| {
+                        format!(
+                            "リソース {} は既に使用予定 {} で使用されています",
+                            c.resource,
+                            c.existing_usage.id().as_str()
+                        )
+                    })
+                    .collect();
+                write!(f, "{}", messages.join("; "))
             }
             ApplicationError::Unauthorized(msg) => {
                 write!(f, "権限不足: {}", msg)
@@ -99,7 +97,9 @@ impl std::error::Error for ApplicationError {
             ApplicationError::ResourceUsage(e) => Some(e),
             ApplicationError::IdentityLink(e) => Some(e),
             ApplicationError::ExternalSystemAlreadyLinked { .. } => None,
-            ApplicationError::ResourceConflict { .. } => None,
+            ApplicationError::ResourceConflict { conflicts } => conflicts
+                .first()
+                .map(|c| c as &(dyn std::error::Error + 'static)),
             ApplicationError::Unauthorized(_) => None,
         }
     }
@@ -123,11 +123,13 @@ impl From<IdentityLinkError> for ApplicationError {
     }
 }
 
-impl From<ResourceConflictError> for ApplicationError {
-    fn from(e: ResourceConflictError) -> Self {
-        ApplicationError::ResourceConflict {
-            resource: e.resource,
-            existing_usage: e.existing_usage,
+impl From<ConflictCheckError> for ApplicationError {
+    fn from(e: ConflictCheckError) -> Self {
+        match e {
+            ConflictCheckError::Conflict(conflicts) => {
+                ApplicationError::ResourceConflict { conflicts }
+            }
+            ConflictCheckError::Repository(repo_err) => ApplicationError::Repository(repo_err),
         }
     }
 }

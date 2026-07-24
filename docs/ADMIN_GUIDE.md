@@ -127,6 +127,12 @@ shown to the user who attempted the reservation, using the format/template
 settings of the conflicting resource's notification config (not a
 resource-wide broadcast).
 
+If a single reservation request covers multiple resources (e.g. reserving
+an entire server) and more than one of them conflicts — possibly with
+different existing reservations — the template is rendered once per
+conflicting resource and the resulting messages are shown together, so no
+conflict is silently dropped.
+
 **Placeholders:**
 
 | Placeholder | Description |

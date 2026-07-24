@@ -163,13 +163,9 @@ where
                 usage_id.as_str()
             )
         }
-        Err(ApplicationError::ResourceConflict {
-            resource,
-            existing_usage,
-        }) => {
-            error!("❌ 予約作成に失敗: リソース競合 ({})", resource);
-            let conflict_detail =
-                conflict_message::build(&resource, &existing_usage, config, identity_repo).await;
+        Err(ApplicationError::ResourceConflict { conflicts }) => {
+            error!("❌ 予約作成に失敗: リソース競合 ({}件)", conflicts.len());
+            let conflict_detail = conflict_message::build(&conflicts, config, identity_repo).await;
             format!("❌ 予約の作成に失敗しました\n\n{}", conflict_detail)
         }
         Err(e) => {

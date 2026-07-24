@@ -78,17 +78,10 @@ where
     // エフェメラルメッセージで結果を送信
     let message_text = match update_result {
         Ok(_) => "✅ 予約を更新しました".to_string(),
-        Err(ApplicationError::ResourceConflict {
-            resource,
-            existing_usage,
-        }) => {
-            let conflict_detail = conflict_message::build(
-                &resource,
-                &existing_usage,
-                app.resource_config(),
-                app.identity_repo(),
-            )
-            .await;
+        Err(ApplicationError::ResourceConflict { conflicts }) => {
+            let conflict_detail =
+                conflict_message::build(&conflicts, app.resource_config(), app.identity_repo())
+                    .await;
             format!("❌ 予約の更新に失敗しました\n\n{}", conflict_detail)
         }
         Err(e) => {

@@ -22,7 +22,9 @@ impl ResourceConflictChecker {
     /// * `exclude_usage_id` - チェックから除外するUsageID（更新時に自分自身を除外するため）
     ///
     /// # Returns
-    /// 競合がない場合はOk(())、競合がある場合はエラー
+    /// 競合がない場合はOk(())、競合がある場合はエラー。
+    /// 複数リソースを同時にリクエストした場合、競合したリソースが複数あれば
+    /// その全件をまとめて返す（最初の1件で打ち切らない）。
     ///
     /// # Errors
     /// - 競合するリソースがある場合
@@ -37,7 +39,9 @@ impl ResourceConflictChecker {
         // 指定期間と重複する予約を検索
         let overlapping = repository.find_overlapping(time_period).await?;
 
-        // リソースの競合チェック
+        // リソースごとに競合をチェックし、全件収集する
+        let mut conflicts = Vec::new();
+
         for new_resource in resources {
             for existing_usage in &overlapping {
                 // 除外対象の場合はスキップ
@@ -47,18 +51,156 @@ impl ResourceConflictChecker {
                     continue;
                 }
 
-                // 既存予約のリソースと競合チェック
-                for existing_resource in existing_usage.resources() {
-                    if new_resource.conflicts_with(existing_resource) {
-                        return Err(ConflictCheckError::Conflict(ResourceConflictError::new(
-                            new_resource.clone(),
-                            existing_usage.clone(),
-                        )));
-                    }
+                let conflicts_with_this_usage = existing_usage
+                    .resources()
+                    .iter()
+                    .any(|existing_resource| new_resource.conflicts_with(existing_resource));
+
+                if conflicts_with_this_usage {
+                    conflicts.push(ResourceConflictError::new(
+                        new_resource.clone(),
+                        existing_usage.clone(),
+                    ));
+                    break;
                 }
             }
         }
 
-        Ok(())
+        if conflicts.is_empty() {
+            Ok(())
+        } else {
+            Err(ConflictCheckError::Conflict(conflicts))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
+    use crate::domain::aggregates::resource_usage::value_objects::Gpu;
+    use crate::domain::common::EmailAddress;
+    use crate::domain::ports::repositories::RepositoryError;
+    use async_trait::async_trait;
+    use chrono::{TimeZone, Utc};
+
+    /// `find_overlapping`の戻り値だけを固定できるテスト用リポジトリ
+    struct StubRepository {
+        overlapping: Vec<ResourceUsage>,
+    }
+
+    #[async_trait]
+    impl ResourceUsageRepository for StubRepository {
+        async fn find_by_id(
+            &self,
+            _id: &UsageId,
+        ) -> Result<Option<ResourceUsage>, RepositoryError> {
+            unimplemented!("このテストでは使用しない")
+        }
+
+        async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
+            unimplemented!("このテストでは使用しない")
+        }
+
+        async fn find_overlapping(
+            &self,
+            _time_period: &TimePeriod,
+        ) -> Result<Vec<ResourceUsage>, RepositoryError> {
+            Ok(self.overlapping.clone())
+        }
+
+        async fn find_by_owner(
+            &self,
+            _owner_email: &EmailAddress,
+        ) -> Result<Vec<ResourceUsage>, RepositoryError> {
+            unimplemented!("このテストでは使用しない")
+        }
+
+        async fn save(&self, _usage: &ResourceUsage) -> Result<(), RepositoryError> {
+            unimplemented!("このテストでは使用しない")
+        }
+
+        async fn delete(&self, _id: &UsageId) -> Result<(), RepositoryError> {
+            unimplemented!("このテストでは使用しない")
+        }
+    }
+
+    fn test_period() -> TimePeriod {
+        let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
+        TimePeriod::new(start, end).unwrap()
+    }
+
+    fn usage_with(owner: &str, resources: Vec<Resource>) -> ResourceUsage {
+        ResourceUsage::new(
+            EmailAddress::new(owner.to_string()).unwrap(),
+            test_period(),
+            resources,
+            None,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn collects_all_conflicting_resources_not_just_the_first() {
+        let alice_usage = usage_with(
+            "alice@example.com",
+            vec![Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()))],
+        );
+        let bob_usage = usage_with(
+            "bob@example.com",
+            vec![Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string()))],
+        );
+        let repository = StubRepository {
+            overlapping: vec![alice_usage, bob_usage],
+        };
+
+        // GPU:0(alice)とGPU:1(bob)の両方をまとめて予約しようとして、両方競合する
+        let requested = vec![
+            Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string())),
+            Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string())),
+        ];
+
+        let checker = ResourceConflictChecker::new();
+        let result = checker
+            .check_conflicts(&repository, &test_period(), &requested, None)
+            .await;
+
+        let Err(ConflictCheckError::Conflict(conflicts)) = result else {
+            panic!("expected Conflict, got {result:?}");
+        };
+
+        // 最初の1件で打ち切らず、両方の競合が報告される
+        assert_eq!(conflicts.len(), 2);
+        let owners: Vec<&str> = conflicts
+            .iter()
+            .map(|c| c.existing_usage.owner_email().as_str())
+            .collect();
+        assert!(owners.contains(&"alice@example.com"));
+        assert!(owners.contains(&"bob@example.com"));
+    }
+
+    #[tokio::test]
+    async fn no_conflict_when_resources_are_disjoint() {
+        let alice_usage = usage_with(
+            "alice@example.com",
+            vec![Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()))],
+        );
+        let repository = StubRepository {
+            overlapping: vec![alice_usage],
+        };
+
+        let requested = vec![Resource::Gpu(Gpu::new(
+            "Thalys".to_string(),
+            1,
+            "A100".to_string(),
+        ))];
+
+        let checker = ResourceConflictChecker::new();
+        let result = checker
+            .check_conflicts(&repository, &test_period(), &requested, None)
+            .await;
+
+        assert!(result.is_ok());
     }
 }
