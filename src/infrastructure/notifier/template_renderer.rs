@@ -33,8 +33,7 @@ pub mod defaults {
     pub const DELETED: &str =
         "🗑️ 予約削除\n👤 {user}\n\n📅 期間\n{time}\n\n{resource_label}\n{resource}{notes}";
     /// 予約競合時のデフォルトテンプレート
-    pub const CONFLICT: &str =
-        "⚠️ 予約が重複しています\n👤 予約者\n{user}\n\n📅 競合する期間\n{time}\n\n{resource_label}\n{resource}{notes}";
+    pub const CONFLICT: &str = "⚠️ 予約が重複しています\n👤 予約者\n{user}\n\n📅 競合する期間\n{time}\n\n{resource_label}\n{resource}{notes}";
 }
 
 /// テンプレートレンダラー
@@ -356,8 +355,7 @@ mod tests {
         let conflicting_resource =
             Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
 
-        let result =
-            renderer.render_conflict(&conflicting_resource, &existing_usage, "<@U67890>");
+        let result = renderer.render_conflict(&conflicting_resource, &existing_usage, "<@U67890>");
 
         assert!(result.contains("⚠️ 予約が重複しています"));
         assert!(result.contains("<@U67890>"));
