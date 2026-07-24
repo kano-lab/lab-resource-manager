@@ -128,15 +128,18 @@ where
         observed: &ObservedUsage,
         reservation: &ResourceUsage,
     ) -> Result<(), ApplicationError> {
-        let actual_email = self.resolve_email(observed).await?;
+        // 利用者の身元が不明な場合、無断使用かどうか原理的に判定できないためスキップする
+        let Some(actual_email) = self.resolve_email(observed).await? else {
+            return Ok(());
+        };
 
-        if actual_email.as_ref() == Some(reservation.owner_email()) {
+        if &actual_email == reservation.owner_email() {
             return Ok(());
         }
 
         let event = NotificationEvent::UnauthorizedUsageDetected {
             reserved_usage: reservation.clone(),
-            actual_user_email: actual_email,
+            actual_user_email: Some(actual_email),
         };
         self.notifier.notify(event).await?;
         Ok(())
@@ -559,6 +562,33 @@ mod tests {
         }
 
         // 未予約提案は発生しない（既に予約が存在するため）
+        assert!(proposal_notifier.sent_proposals().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_reserved_unknown_identity_skips_notification() {
+        let (usecase, repo, observer, _identity_repo, proposal_notifier, notifier) =
+            make_usecase(15);
+        // 誰にもリンクされていないOS識別子（IdentityLink未登録）
+
+        let now = Utc::now();
+        let reservation = make_reservation(
+            "owner@example.com",
+            now - Duration::hours(1),
+            now + Duration::hours(1),
+        );
+        repo.save(&reservation).await.unwrap();
+
+        observer.set_active_usages(vec![ObservedUsage::new(
+            gpu_resource(),
+            ExternalIdentity::new(os_system(), "unknown".to_string()),
+            now - Duration::minutes(30),
+        )]);
+
+        usecase.poll_once().await.unwrap();
+
+        // 利用者の身元が不明なため、無断使用かどうか原理的に判定できずスキップされる
+        assert!(notifier.recorded_events().is_empty());
         assert!(proposal_notifier.sent_proposals().is_empty());
     }
 
