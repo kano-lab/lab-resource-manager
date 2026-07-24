@@ -233,32 +233,31 @@ impl GoogleCalendarUsageRepository {
         // Googleカレンダー上で直接作成されたイベント（マーカーも予約者行も無し）は
         // description全体をそのまま備考として扱う
         let notes = event.description.as_ref().and_then(|desc| {
-            let body: String = if let Some((before_begin, after_begin)) =
-                desc.split_once(MANAGED_SECTION_BEGIN)
-            {
-                match after_begin.split_once(MANAGED_SECTION_END) {
-                    Some((_, after_end)) => {
-                        let before = before_begin.trim();
-                        let after = after_end.trim();
-                        if before.is_empty() {
-                            after.to_string()
-                        } else if after.is_empty() {
-                            before.to_string()
-                        } else {
-                            format!("{before}\n\n{after}")
+            let body: String =
+                if let Some((before_begin, after_begin)) = desc.split_once(MANAGED_SECTION_BEGIN) {
+                    match after_begin.split_once(MANAGED_SECTION_END) {
+                        Some((_, after_end)) => {
+                            let before = before_begin.trim();
+                            let after = after_end.trim();
+                            if before.is_empty() {
+                                after.to_string()
+                            } else if after.is_empty() {
+                                before.to_string()
+                            } else {
+                                format!("{before}\n\n{after}")
+                            }
                         }
+                        // 開始マーカーのみで終了マーカーが無い想定外の編集は、
+                        // 安全側に倒してdescription全体を備考として扱う
+                        None => desc.clone(),
                     }
-                    // 開始マーカーのみで終了マーカーが無い想定外の編集は、
-                    // 安全側に倒してdescription全体を備考として扱う
-                    None => desc.clone(),
-                }
-            } else if desc.starts_with(OWNER_LINE_PREFIX) {
-                desc.split_once('\n')
-                    .map(|(_, rest)| rest.to_string())
-                    .unwrap_or_default()
-            } else {
-                desc.clone()
-            };
+                } else if desc.starts_with(OWNER_LINE_PREFIX) {
+                    desc.split_once('\n')
+                        .map(|(_, rest)| rest.to_string())
+                        .unwrap_or_default()
+                } else {
+                    desc.clone()
+                };
             let body = body.trim();
             if body.is_empty() {
                 None
