@@ -39,11 +39,13 @@ pub enum ApplicationError {
     /// 競合したリソースと既存の使用予定を構造化データとして保持する。
     /// インターフェース層が設定（テンプレート・フォーマットスタイル）に基づいて
     /// ユーザー向けメッセージを組み立てられるようにするため。
+    /// `existing_usage`は`Box`で保持し、`ApplicationError`全体の
+    /// サイズ肥大化（`clippy::result_large_err`）を避けている。
     ResourceConflict {
         /// 競合しているリソース
         resource: Resource,
         /// 競合している既存の使用予定
-        existing_usage: ResourceUsage,
+        existing_usage: Box<ResourceUsage>,
     },
 
     /// 認可エラー（権限不足）

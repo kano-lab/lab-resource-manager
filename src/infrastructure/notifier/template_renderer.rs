@@ -361,7 +361,7 @@ mod tests {
         assert!(result.contains("<@U67890>"));
         assert!(result.contains("Thalys"));
         // 競合リソースは1件のみなので、既存予約の2台目(GPU:1)は含まれない
-        assert!(!result.contains("GPU#1"));
+        assert!(!result.contains("GPU:1"));
     }
 
     #[test]
@@ -382,7 +382,7 @@ mod tests {
         let result = renderer.render_conflict(&conflicting_resource, &existing_usage, "田中太郎");
 
         assert!(result.contains("田中太郎が既に"));
-        assert!(result.contains("GPU#1"));
+        assert!(result.contains("GPU:1"));
         assert!(result.contains("予約済みです"));
     }
 

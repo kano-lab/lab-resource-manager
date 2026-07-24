@@ -11,19 +11,21 @@ use std::fmt;
 /// 競合したリソースと既存の使用予定そのものを保持する。
 /// メッセージ文言はインターフェース層が設定に基づいて組み立てられるよう、
 /// ここでは構造化データのまま渡す。
+/// `existing_usage`は`ResourceUsage`をそのまま持たせると`Result`の
+/// エラー型が肥大化する（`clippy::result_large_err`）ため`Box`で保持する。
 #[derive(Debug)]
 pub struct ResourceConflictError {
     /// 競合しているリソース
     pub resource: Resource,
     /// 競合している既存の使用予定
-    pub existing_usage: ResourceUsage,
+    pub existing_usage: Box<ResourceUsage>,
 }
 
 impl ResourceConflictError {
     pub fn new(resource: Resource, existing_usage: ResourceUsage) -> Self {
         Self {
             resource,
-            existing_usage,
+            existing_usage: Box::new(existing_usage),
         }
     }
 }
