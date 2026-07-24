@@ -234,10 +234,29 @@ Freccia and Lyria, each with its own `--server-name`.
 Files older than a configured staleness threshold (5 minutes by default) are ignored, so a
 stopped cron job doesn't cause stale usage data to be mistaken for still-active usage.
 
-**Current limitation**: Only the JSON output from this script has been verified working.
-The main binary's periodic read of this file to cross-reference reservations, and the
-Slack notification of detected mismatches, are still under development — `AppConfig` does
-not yet have environment variables for this observer.
+**Enabling the feature on the main binary side:** the reconciliation loop (comparing
+observed usage against reservations, proposing a post-hoc reservation via Slack DM, and
+notifying on unauthorized usage) is disabled by default. Set `GPU_USAGE_REPORTS_DIR` to
+the same shared directory used by `gpu-usage-reporter` above to enable it:
+
+| Environment variable | Default | Purpose |
+|-----------------------|---------|---------|
+| `GPU_USAGE_REPORTS_DIR` | (unset = feature disabled) | Shared directory read by `SharedFileResourceUsageObserver` |
+| `GPU_USAGE_MAX_STALENESS_SECS` | `300` | How old a report can be before it's ignored |
+| `UNRESERVED_USAGE_THRESHOLD_SECS` | `600` | How long unreserved usage must continue before a proposal is sent |
+| `RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS` | `1,2,3,5,8` | Comma-separated hour candidates offered in the Slack DM |
+
+When enabled, a user whose OS account is linked (`/link-user`) and who also has a linked
+Slack account will receive a DM with buttons for each duration candidate; clicking one
+creates the reservation retroactively starting from when usage was first observed. Usage
+that conflicts with someone else's existing reservation only triggers a notification (no
+automatic action is taken).
+
+**Current limitation**: this wiring has been verified with unit/integration tests using
+mock adapters, but sending an actual Slack DM (via `conversations.open`/`chat.postMessage`)
+and running `gpu-usage-reporter` against a real GPU server have not been verified in a live
+environment yet. The Slack app needs the `im:write` and `chat:write` scopes for the DM to
+work.
 
 ## Running the System
 
