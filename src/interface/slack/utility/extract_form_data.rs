@@ -16,7 +16,7 @@ pub fn get_plain_text_input(
     let state = view_submission.view.state_params.state.as_ref()?;
     let values = &state.values;
 
-    for (_block_id, actions_map) in values.iter() {
+    for actions_map in values.values() {
         for (action_id, value) in actions_map.iter() {
             if action_id.to_string() == action_id_str {
                 return value.value.as_ref().map(|s| s.to_string());
@@ -38,7 +38,7 @@ pub fn get_selected_option_value(
     let state = view_submission.view.state_params.state.as_ref()?;
     let values = &state.values;
 
-    for (_block_id, actions_map) in values.iter() {
+    for actions_map in values.values() {
         for (action_id, value) in actions_map.iter() {
             if action_id.to_string() == action_id_str {
                 return value.selected_option.as_ref().map(|opt| opt.value.clone());
@@ -60,7 +60,7 @@ pub fn get_selected_option_text(
     let state = view_submission.view.state_params.state.as_ref()?;
     let values = &state.values;
 
-    for (_block_id, actions_map) in values.iter() {
+    for actions_map in values.values() {
         for (action_id, value) in actions_map.iter() {
             if action_id.to_string() == action_id_str {
                 return value
@@ -85,7 +85,7 @@ pub fn get_selected_date(
     let state = view_submission.view.state_params.state.as_ref()?;
     let values = &state.values;
 
-    for (_block_id, actions_map) in values.iter() {
+    for actions_map in values.values() {
         for (action_id, value) in actions_map.iter() {
             if action_id.to_string() == action_id_str {
                 return value.selected_date.as_ref().map(|d| d.to_string());
@@ -107,7 +107,7 @@ pub fn get_selected_time(
     let state = view_submission.view.state_params.state.as_ref()?;
     let values = &state.values;
 
-    for (_block_id, actions_map) in values.iter() {
+    for actions_map in values.values() {
         for (action_id, value) in actions_map.iter() {
             if action_id.to_string() == action_id_str {
                 return value.selected_time.as_ref().map(|t| t.to_string());
@@ -134,7 +134,7 @@ pub fn get_selected_options(
     };
     let values = &state.values;
 
-    for (_block_id, actions_map) in values.iter() {
+    for actions_map in values.values() {
         for (action_id, value) in actions_map.iter() {
             if action_id.to_string() == action_id_str {
                 return value
@@ -174,7 +174,7 @@ pub fn get_user_select(
     let state = view_submission.view.state_params.state.as_ref()?;
     let values = &state.values;
 
-    for (_block_id, actions_map) in values.iter() {
+    for actions_map in values.values() {
         for (action_id, value) in actions_map.iter() {
             if action_id.to_string() == action_id_str {
                 return value.selected_user.as_ref().map(|u| u.to_string());
