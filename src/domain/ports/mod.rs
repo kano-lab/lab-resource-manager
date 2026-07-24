@@ -30,6 +30,8 @@ pub mod reservation_proposal;
 pub mod resource_collection_access;
 /// 実サーバー利用状況の観測ポート
 pub mod resource_usage_observer;
+/// 無断使用検知の通知ポート
+pub mod unauthorized_usage_notifier;
 
 pub use error::PortError;
 pub use notifier::{NotificationError, NotificationEvent, Notifier};
@@ -38,3 +40,4 @@ pub use resource_collection_access::{
     ResourceCollectionAccessError, ResourceCollectionAccessService,
 };
 pub use resource_usage_observer::{ObservationError, ObservedUsage, ResourceUsageObserver};
+pub use unauthorized_usage_notifier::UnauthorizedUsageNotifier;
