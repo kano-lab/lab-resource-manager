@@ -93,7 +93,11 @@ fn add_slack_user_blocks(blocks: &mut Vec<SlackBlock>) {
     ));
 }
 
-/// OSユーザー名リンク用のサーバー選択・ユーザー名入力ブロックを追加
+/// OSユーザー名リンク用のサーバー選択（複数選択可）・ユーザー名入力ブロックを追加
+///
+/// 選択した全サーバーに、同じOSユーザー名でメールアドレスを紐付ける。
+/// サーバーごとにユーザー名が異なる場合は、ユーザー名が共通するサーバーだけを選んで
+/// 複数回に分けて実行する。
 fn add_os_username_blocks(blocks: &mut Vec<SlackBlock>, config: &ResourceConfig) {
     if config.servers.is_empty() {
         blocks.push(SlackBlock::Section(SlackSectionBlock::new().with_text(
@@ -102,27 +106,23 @@ fn add_os_username_blocks(blocks: &mut Vec<SlackBlock>, config: &ResourceConfig)
         return;
     }
 
-    let server_options: Vec<SlackBlockChoiceItem<SlackBlockPlainTextOnly>> = config
+    let server_options: Vec<SlackBlockChoiceItem<SlackBlockText>> = config
         .servers
         .iter()
-        .map(|server| SlackBlockChoiceItem::new(pt!(server.name.clone()), server.name.clone()))
+        .map(|server| {
+            SlackBlockChoiceItem::new(
+                SlackBlockText::Plain(SlackBlockPlainText::from(server.name.clone())),
+                server.name.clone(),
+            )
+        })
         .collect();
 
-    let mut server_select_element = SlackBlockStaticSelectElement::new(SlackActionId::new(
-        ACTION_LINK_SERVER_SELECT.to_string(),
-    ))
-    .with_placeholder(pt!("サーバーを選択"))
-    .with_options(server_options);
-
-    if let Some(first_server) = config.servers.first() {
-        let initial_server =
-            SlackBlockChoiceItem::new(pt!(first_server.name.clone()), first_server.name.clone());
-        server_select_element = server_select_element.with_initial_option(initial_server);
-    }
-
     blocks.push(SlackBlock::Input(SlackInputBlock::new(
-        pt!("サーバー"),
-        SlackInputBlockElement::StaticSelect(server_select_element),
+        pt!("サーバー（複数選択可、同じユーザー名で一括リンク）"),
+        SlackInputBlockElement::Checkboxes(SlackBlockCheckboxesElement::new(
+            SlackActionId::new(ACTION_LINK_SERVER_SELECT.to_string()),
+            server_options,
+        )),
     )));
 
     blocks.push(SlackBlock::Input(

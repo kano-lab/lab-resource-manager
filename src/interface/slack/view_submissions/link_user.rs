@@ -23,46 +23,52 @@ struct LinkTarget {
 
 /// フォームからリンク対象を抽出する
 ///
-/// `target_type`が"os"の場合はサーバー選択とOSユーザー名入力から、
-/// それ以外（デフォルト="slack"）の場合はSlackユーザー選択から抽出する。
-fn extract_link_target(
+/// `target_type`が"os"の場合は選択された全サーバーに対して同じOSユーザー名で
+/// リンク対象を1つずつ作る（複数サーバーへの一括紐付け）。
+/// それ以外（デフォルト="slack"）の場合はSlackユーザー選択から1件だけ抽出する。
+fn extract_link_targets(
     view_submission: &SlackInteractionViewSubmissionEvent,
     target_type: Option<&str>,
-) -> Result<LinkTarget, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Vec<LinkTarget>, Box<dyn std::error::Error + Send + Sync>> {
     if target_type == Some("os") {
-        let server =
-            extract_form_data::get_selected_option_text(view_submission, ACTION_LINK_SERVER_SELECT)
-                .ok_or("サーバーが選択されていません")?;
+        let servers =
+            extract_form_data::get_selected_options(view_submission, ACTION_LINK_SERVER_SELECT);
+        if servers.is_empty() {
+            return Err("サーバーが選択されていません".into());
+        }
         let os_username =
             extract_form_data::get_plain_text_input(view_submission, ACTION_LINK_OS_USERNAME_INPUT)
                 .ok_or("OSユーザー名が入力されていません")?
                 .trim()
                 .to_string();
 
-        Ok(LinkTarget {
-            external_system: ExternalSystem::Os {
-                server: server.clone(),
-            },
-            display: format!("{}@{}", os_username, server),
-            external_user_id: os_username,
-        })
+        Ok(servers
+            .into_iter()
+            .map(|server| LinkTarget {
+                external_system: ExternalSystem::Os {
+                    server: server.clone(),
+                },
+                display: format!("{}@{}", os_username, server),
+                external_user_id: os_username.clone(),
+            })
+            .collect())
     } else {
         let target_user_id =
             extract_form_data::get_user_select(view_submission, ACTION_USER_SELECT)
                 .ok_or("ユーザーが選択されていません")?;
 
-        Ok(LinkTarget {
+        Ok(vec![LinkTarget {
             external_system: ExternalSystem::Slack,
             display: format!("<@{}>", target_user_id),
             external_user_id: target_user_id,
-        })
+        }])
     }
 }
 
 /// ユーザーリンクモーダル送信を処理
 ///
-/// 他のユーザー（SlackユーザーまたはOSユーザー名）をメールアドレスに紐付け、
-/// カレンダーアクセス権を付与（管理者用）
+/// 他のユーザー（SlackユーザーまたはOSユーザー名、OSユーザー名は複数サーバーへの
+/// 一括紐付けが可能）をメールアドレスに紐付け、カレンダーアクセス権を付与（管理者用）
 pub async fn handle<R, N>(
     app: &SlackApp<R, N>,
     view_submission: &SlackInteractionViewSubmissionEvent,
@@ -75,10 +81,10 @@ where
 
     let user_id = view_submission.user.id.clone();
 
-    // リンク対象種別に応じてリンク対象を抽出
+    // リンク対象種別に応じてリンク対象（1件以上）を抽出
     let target_type =
         extract_form_data::get_selected_option_value(view_submission, ACTION_LINK_TARGET_TYPE);
-    let link_target = extract_link_target(view_submission, target_type.as_deref())?;
+    let link_targets = extract_link_targets(view_submission, target_type.as_deref())?;
 
     // メールアドレスを抽出
     let email_value =
@@ -87,20 +93,6 @@ where
 
     // メールアドレスのバリデーション
     let email_result = EmailAddress::new(email_value.trim().to_string());
-
-    // ユーザーをリンク
-    let link_result = match &email_result {
-        Ok(email) => app
-            .grant_access_usecase()
-            .execute(
-                link_target.external_system.clone(),
-                link_target.external_user_id.clone(),
-                email.clone(),
-            )
-            .await
-            .map_err(|e| e.into()),
-        Err(e) => Err(Box::new(e.clone()) as Box<dyn std::error::Error + Send + Sync>),
-    };
 
     // channel_id を取得
     let channel_id = app
@@ -111,19 +103,23 @@ where
         .cloned()
         .ok_or("セッションの有効期限が切れました。もう一度コマンドを実行してください。")?;
 
-    // エフェメラルメッセージで結果を送信
-    let message_text = match link_result {
-        Ok(_) => {
-            info!(
-                "✅ ユーザーリンク成功: {} -> {}",
-                link_target.display,
-                email_result.as_ref().unwrap().as_str()
-            );
-            format!(
-                "✅ ユーザー {} をメールアドレス {} に紐付けました",
-                link_target.display,
-                email_result.as_ref().unwrap().as_str()
-            )
+    let message_text = match &email_result {
+        Ok(email) => {
+            // 同一メールアドレスのIdentityLinkを順次更新するため、リンク対象は逐次処理する
+            // （ベストエフォート: 1件の失敗が他のサーバーへのリンクをブロックしない）
+            let mut results = Vec::with_capacity(link_targets.len());
+            for target in &link_targets {
+                let result = app
+                    .grant_access_usecase()
+                    .execute(
+                        target.external_system.clone(),
+                        target.external_user_id.clone(),
+                        email.clone(),
+                    )
+                    .await;
+                results.push((target, result));
+            }
+            build_result_message(email.as_str(), &results)
         }
         Err(e) => {
             error!("❌ ユーザーリンクに失敗: {}", e);
@@ -142,4 +138,36 @@ where
 
     // モーダルを閉じる
     Ok(None)
+}
+
+/// リンク対象ごとの実行結果からエフェメラルメッセージを組み立てる
+fn build_result_message(
+    email: &str,
+    results: &[(
+        &LinkTarget,
+        Result<(), crate::application::error::ApplicationError>,
+    )],
+) -> String {
+    let lines: Vec<String> = results
+        .iter()
+        .map(|(target, result)| match result {
+            Ok(_) => {
+                info!("✅ ユーザーリンク成功: {} -> {}", target.display, email);
+                format!("✅ {}", target.display)
+            }
+            Err(e) => {
+                error!(
+                    "❌ ユーザーリンクに失敗: {} -> {}: {}",
+                    target.display, email, e
+                );
+                format!("❌ {}: {}", target.display, e)
+            }
+        })
+        .collect();
+
+    format!(
+        "メールアドレス {} への紐付け結果:\n{}",
+        email,
+        lines.join("\n")
+    )
 }

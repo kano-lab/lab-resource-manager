@@ -298,10 +298,13 @@ This opens a modal where a radio button switches between two link targets:
 
 - **Slack User**: select a Slack user and enter their email address. Grants Google Calendar
   access, same as before.
-- **OS Username**: select the GPU server and enter the person's OS username together with
-  their email address. This is what makes the unreserved-usage-proposal and
-  unauthorized-usage-DM features described above able to identify who is actually running a
-  process — without it, an observed OS username can never be resolved to a person.
+- **OS Username**: select one or more GPU servers (checkboxes) and enter the person's OS
+  username together with their email address. The same username is linked on every selected
+  server in a single submission — useful when someone uses the same OS username everywhere.
+  If usernames differ across servers, submit once per group of servers that share a
+  username. This is what makes the unreserved-usage-proposal and unauthorized-usage-DM
+  features described above able to identify who is actually running a process — without it,
+  an observed OS username can never be resolved to a person.
 
 ## Installation
 
