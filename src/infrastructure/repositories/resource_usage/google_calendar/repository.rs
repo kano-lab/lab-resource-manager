@@ -220,7 +220,7 @@ impl GoogleCalendarUsageRepository {
         // Google Calendar上で直接編集された場合、空行の有無は保証されないため
         // 改行1回で区切られたケースにも対応する
         let notes = event.description.as_ref().and_then(|desc| {
-            let rest = desc.splitn(2, '\n').nth(1)?.trim();
+            let rest = desc.split_once('\n')?.1.trim();
             if rest.is_empty() {
                 None
             } else {
