@@ -174,34 +174,37 @@ date_format = "md"           # 日付フォーマット
 | Mock | テスト・開発用（常に空の結果を返す） |
 | `SharedFileResourceUsageObserver` | 共有ファイルシステム経由で各サーバーのGPU利用状況を読み取る |
 
-`SharedFileResourceUsageObserver`を使う場合、各GPUサーバー側で`scripts/gpu_usage_reporter.py`を
-cron登録する必要があります。
+`SharedFileResourceUsageObserver`を使う場合、各GPUサーバー側で`gpu-usage-reporter`バイナリを
+cron登録する必要があります。このバイナリはリリースアーカイブ
+（`lab-resource-manager-x86_64-unknown-linux-musl.tar.gz`等）に`lab-resource-manager`本体と
+一緒に同梱されています。
 
 **前提条件:**
 
 - 監視対象の全サーバー（例: Thalys, Freccia, Lyria）から読み書きできる共有ディレクトリ（NFS等）
-- 各サーバーにPython3と`nvidia-smi`があること（pip installは不要、標準ライブラリのみ使用）
+- 各サーバーに`nvidia-smi`・`getconf`・`getent`（いずれも標準的なLinux環境に含まれる）があること。
+  `gpu-usage-reporter`自体はmuslスタティックビルドのため、これ以外の実行時依存はない
 
 **セットアップ手順:**
 
-このスクリプトは「送り出す側」の設定です。LRM本体が動くサーバー（例: Thalys）だけでなく、
+このバイナリは「送り出す側」の設定です。LRM本体が動くサーバー（例: Thalys）だけでなく、
 **監視対象の全サーバー（Thalys・Freccia・Lyriaそれぞれ）に個別にデプロイ**し、
 各サーバー自身の`--server-name`を指定してcron登録してください。
 
-1. `scripts/gpu_usage_reporter.py`を監視対象の全サーバーに配置する
+1. `gpu-usage-reporter`を監視対象の全サーバーに配置する
 2. 各サーバーのcrontabに、そのサーバー自身の名前で登録する（1分間隔の例）:
 
 ```cron
 # Thalys側のcrontab
-* * * * * /usr/bin/python3 /path/to/gpu_usage_reporter.py \
+* * * * * /usr/local/bin/gpu-usage-reporter \
     --server-name Thalys --output-dir /mnt/shared/lrm-gpu-status
 
 # Freccia側のcrontab
-* * * * * /usr/bin/python3 /path/to/gpu_usage_reporter.py \
+* * * * * /usr/local/bin/gpu-usage-reporter \
     --server-name Freccia --output-dir /mnt/shared/lrm-gpu-status
 
 # Lyria側のcrontab
-* * * * * /usr/bin/python3 /path/to/gpu_usage_reporter.py \
+* * * * * /usr/local/bin/gpu-usage-reporter \
     --server-name Lyria --output-dir /mnt/shared/lrm-gpu-status
 ```
 

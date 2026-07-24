@@ -179,34 +179,38 @@ available:
 | Mock | Testing/development only (always returns empty results) |
 | `SharedFileResourceUsageObserver` | Reads GPU usage per server via a shared filesystem |
 
-To use `SharedFileResourceUsageObserver`, you need to register `scripts/gpu_usage_reporter.py`
-as a cron job on each GPU server.
+To use `SharedFileResourceUsageObserver`, you need to register the `gpu-usage-reporter`
+binary as a cron job on each GPU server. This binary ships alongside the main
+`lab-resource-manager` binary in the release archive (e.g.,
+`lab-resource-manager-x86_64-unknown-linux-musl.tar.gz`).
 
 **Prerequisites:**
 
 - A shared directory (e.g., NFS) readable/writable from every monitored server (e.g., Thalys, Freccia, Lyria)
-- Python3 and `nvidia-smi` available on each server (no `pip install` needed, standard library only)
+- `nvidia-smi`, `getconf`, and `getent` available on each server (all standard on typical
+  Linux setups). `gpu-usage-reporter` itself is a musl static build with no other runtime
+  dependencies.
 
 **Setup steps:**
 
-This script is the "reporting side" of the setup. Deploy it to **every monitored server
+This binary is the "reporting side" of the setup. Deploy it to **every monitored server
 individually** — not just the one running the LRM binary (e.g., Thalys) — including
 Freccia and Lyria, each with its own `--server-name`.
 
-1. Deploy `scripts/gpu_usage_reporter.py` to every monitored server.
+1. Deploy `gpu-usage-reporter` to every monitored server.
 2. Register it in each server's crontab, using that server's own name (example: every minute):
 
 ```cron
 # crontab on Thalys
-* * * * * /usr/bin/python3 /path/to/gpu_usage_reporter.py \
+* * * * * /usr/local/bin/gpu-usage-reporter \
     --server-name Thalys --output-dir /mnt/shared/lrm-gpu-status
 
 # crontab on Freccia
-* * * * * /usr/bin/python3 /path/to/gpu_usage_reporter.py \
+* * * * * /usr/local/bin/gpu-usage-reporter \
     --server-name Freccia --output-dir /mnt/shared/lrm-gpu-status
 
 # crontab on Lyria
-* * * * * /usr/bin/python3 /path/to/gpu_usage_reporter.py \
+* * * * * /usr/local/bin/gpu-usage-reporter \
     --server-name Lyria --output-dir /mnt/shared/lrm-gpu-status
 ```
 
