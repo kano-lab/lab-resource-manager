@@ -56,7 +56,7 @@ impl IdentityLinkDto {
             .external_identities()
             .iter()
             .map(|id| ExternalIdentityDto {
-                system: id.system().as_str().to_string(),
+                system: id.system().as_str(),
                 user_id: id.user_id().to_string(),
                 linked_at: id.linked_at(),
             })
