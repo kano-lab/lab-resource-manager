@@ -156,6 +156,14 @@ where
                     )
                     .await?
                 }
+                ACTION_ACCEPT_RESERVATION_PROPOSAL => {
+                    crate::interface::slack::block_actions::accept_proposal_button::handle(
+                        self,
+                        block_actions,
+                        action,
+                    )
+                    .await?
+                }
                 _ => {}
             }
         }
