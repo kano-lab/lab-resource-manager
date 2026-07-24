@@ -50,13 +50,16 @@ jobs:
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} --bin lab-resource-manager
+      - name: Build release binaries
+        run: |
+          cargo build --release --target ${{ matrix.target }} \
+            --bin lab-resource-manager --bin gpu-usage-reporter
 
       - name: Prepare artifacts
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/lab-resource-manager dist/
+          cp target/${{ matrix.target }}/release/gpu-usage-reporter dist/
           cp -r deploy/ dist/
           cd dist && tar -czvf ../lab-resource-manager-${{ matrix.target }}.tar.gz *
 
