@@ -14,4 +14,6 @@
 pub mod config;
 pub mod notifier;
 pub mod repositories;
+pub mod reservation_proposal;
 pub mod resource_collection_access;
+pub mod resource_usage_observer;

@@ -26,9 +26,15 @@ pub mod notifier;
 pub mod repositories;
 /// リソースコレクションアクセスサービスポート
 pub mod resource_collection_access;
+/// 実サーバー利用状況の観測ポート
+pub mod resource_usage_observer;
+/// 未予約利用の事後予約提案ポート
+pub mod reservation_proposal;
 
 pub use error::PortError;
 pub use notifier::{NotificationError, NotificationEvent, Notifier};
+pub use reservation_proposal::{ReservationProposal, ReservationProposalNotifier};
 pub use resource_collection_access::{
     ResourceCollectionAccessError, ResourceCollectionAccessService,
 };
+pub use resource_usage_observer::{ObservationError, ObservedUsage, ResourceUsageObserver};
