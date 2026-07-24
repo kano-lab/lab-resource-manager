@@ -1,6 +1,7 @@
 //! 実サーバー利用状況観測の実装
 //!
-//! 各GPUサーバーのcronスクリプト（`scripts/gpu_usage_reporter.py`）が共有ファイルシステムへ
+//! 各GPUサーバーでcron実行する`gpu-usage-reporter`バイナリ（`src/bin/gpu-usage-reporter.rs`）が
+//! 共有ファイルシステムへ
 //! 書き出すJSONを読み取る`SharedFileResourceUsageObserver`を提供する。
 //! SSHポーリングやPrometheus/DCGM Exporter等、他の監視手段は将来必要に応じて追加する。
 
@@ -10,4 +11,4 @@ pub mod mock;
 pub mod shared_file;
 
 pub use mock::MockResourceUsageObserver;
-pub use shared_file::SharedFileResourceUsageObserver;
+pub use shared_file::{GpuUsageProcessEntry, GpuUsageReport, SharedFileResourceUsageObserver};

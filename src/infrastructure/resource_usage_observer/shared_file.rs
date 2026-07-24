@@ -6,28 +6,40 @@ use crate::domain::ports::resource_usage_observer::{
 use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::warn;
 
-#[derive(Debug, Deserialize)]
-struct ReportFile {
-    server: String,
-    generated_at: DateTime<Utc>,
-    processes: Vec<ReportedProcess>,
+/// 共有ファイルシステム経由のGPU利用状況レポート（1サーバー分）
+///
+/// `gpu-usage-reporter`バイナリ（`src/bin/gpu-usage-reporter.rs`）がこの形式でJSONを書き出し、
+/// `SharedFileResourceUsageObserver`が読み取る。両者で同じ型を共有することで、
+/// スキーマ変更時のズレをコンパイラに検知させる。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuUsageReport {
+    /// `config/resources.toml`の`servers[].name`と一致するサーバー名
+    pub server: String,
+    /// このレポートを生成した時刻（鮮度判定に使用）
+    pub generated_at: DateTime<Utc>,
+    /// 観測されたGPU利用プロセスの一覧
+    pub processes: Vec<GpuUsageProcessEntry>,
 }
 
-#[derive(Debug, Deserialize)]
-struct ReportedProcess {
-    device_number: u32,
-    os_user: String,
-    started_at: DateTime<Utc>,
+/// 1つの(デバイス, 利用者)に集約された利用エントリ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuUsageProcessEntry {
+    /// デバイス番号（`config/resources.toml`の`devices[].id`と対応）
+    pub device_number: u32,
+    /// 利用者のOSユーザー名
+    pub os_user: String,
+    /// このデバイス・利用者の組み合わせで最も古いプロセス起動時刻
+    pub started_at: DateTime<Utc>,
 }
 
 /// 共有ファイルシステム上に各GPUサーバーがcronで書き出すJSONレポートを読み取る観測実装
 ///
-/// サーバーごとのcronスクリプト（`scripts/gpu_usage_reporter.py`）が
+/// サーバーごとにcron実行される`gpu-usage-reporter`バイナリが
 /// `{directory}/{server_nameを小文字化}.json` を定期的にアトミックに書き出す前提。
 /// レポートが`max_staleness`より古い場合は、cron停止等による古いデータとみなし無視する。
 ///
@@ -76,7 +88,7 @@ impl SharedFileResourceUsageObserver {
             }
         };
 
-        let report: ReportFile = match serde_json::from_str(&content) {
+        let report: GpuUsageReport = match serde_json::from_str(&content) {
             Ok(report) => report,
             Err(e) => {
                 warn!("観測ファイルのパース失敗 ({}): {}", path.display(), e);
@@ -96,7 +108,7 @@ impl SharedFileResourceUsageObserver {
         self.build_observed_usages(&report)
     }
 
-    fn build_observed_usages(&self, report: &ReportFile) -> Vec<ObservedUsage> {
+    fn build_observed_usages(&self, report: &GpuUsageReport) -> Vec<ObservedUsage> {
         let Some(server_config) = self.resource_config.get_server(&report.server) else {
             warn!("未設定のサーバーからの観測データを無視します: {}", report.server);
             return Vec::new();
