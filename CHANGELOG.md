@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/kano-lab/lab-resource-manager/compare/v1.3.0...v1.3.1) (2026-07-24)
+
+
+### Bug Fixes
+
+* repair GPU observation DM delivery and spam issues ([#95](https://github.com/kano-lab/lab-resource-manager/issues/95)) ([cf52617](https://github.com/kano-lab/lab-resource-manager/commit/cf52617e9a292c432cf4a1feb6e82257243089e7))
+
 ## [1.3.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.2.0...v1.3.0) (2026-07-24)
 
 
