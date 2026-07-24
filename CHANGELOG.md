@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.2.0...v1.3.0) (2026-07-24)
+
+
+### Features
+
+* link OS usernames to email via the /link-user modal ([#93](https://github.com/kano-lab/lab-resource-manager/issues/93)) ([7944add](https://github.com/kano-lab/lab-resource-manager/commit/7944add963bfa0ca62a7dfd700d6a242188642a4))
+
+
+### Bug Fixes
+
+* skip unauthorized-usage notification when identity is unresolvable ([#90](https://github.com/kano-lab/lab-resource-manager/issues/90)) ([a42cb41](https://github.com/kano-lab/lab-resource-manager/commit/a42cb4170cf46ab1e04a6b0cb21d50766ae7c171))
+
 ## [1.2.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.1.1...v1.2.0) (2026-07-24)
 
 
