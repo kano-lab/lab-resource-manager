@@ -1,0 +1,16 @@
+# Changelog
+
+## [1.2.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.1.1...v1.2.0) (2026-07-24)
+
+
+### Features
+
+* lay groundwork for real-server GPU usage observation ([#86](https://github.com/kano-lab/lab-resource-manager/issues/86)) ([4a38e62](https://github.com/kano-lab/lab-resource-manager/commit/4a38e625e756920662002e6ccf93b8b6f7cb7474))
+* report all conflicting resources, not just the first ([#82](https://github.com/kano-lab/lab-resource-manager/issues/82)) ([7f2b660](https://github.com/kano-lab/lab-resource-manager/commit/7f2b660a58f95a11e95445dbd3b4b00218647418))
+
+
+### Bug Fixes
+
+* Handle unpinned toolchain/dependency drift breaking CI ([#84](https://github.com/kano-lab/lab-resource-manager/issues/84)) ([479e6b1](https://github.com/kano-lab/lab-resource-manager/commit/479e6b1aa15511d84e674ae4ca907b038481f352))
+* Preserve notes when parsing Google Calendar event descriptions ([#81](https://github.com/kano-lab/lab-resource-manager/issues/81)) ([3cb1ebc](https://github.com/kano-lab/lab-resource-manager/commit/3cb1ebc3ab21aa6b0dedc17ee60b41b06b1d7ba5))
+* Preserve notes written before the managed-section begin marker ([#88](https://github.com/kano-lab/lab-resource-manager/issues/88)) ([bd566e5](https://github.com/kano-lab/lab-resource-manager/commit/bd566e50e5b24404c106d4473b512f1279a2ffee))
