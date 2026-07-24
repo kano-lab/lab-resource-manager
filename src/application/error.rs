@@ -4,7 +4,7 @@ use crate::domain::ports::{
     notifier::NotificationError, repositories::RepositoryError,
     resource_collection_access::ResourceCollectionAccessError,
 };
-use crate::domain::services::resource_usage::errors::ResourceConflictError;
+use crate::domain::services::resource_usage::errors::{ConflictCheckError, ResourceConflictError};
 use std::fmt;
 
 /// Application層で発生するエラーの列挙型
@@ -33,11 +33,15 @@ pub enum ApplicationError {
     },
 
     /// リソースの競合エラー
+    ///
+    /// リクエストしたリソースのうち競合した全件を構造化データとして保持する。
+    /// インターフェース層が設定（テンプレート・フォーマットスタイル）に基づいて
+    /// ユーザー向けメッセージを組み立てられるようにするため。
+    /// `Vec`で保持しているため`ApplicationError`全体のサイズは肥大化しない
+    /// （`clippy::result_large_err`）。
     ResourceConflict {
-        /// 競合しているリソースの説明
-        resource_description: String,
-        /// 競合している既存の使用予定ID
-        conflicting_usage_id: String,
+        /// 競合した全件（リクエストしたリソースごとに最大1件）
+        conflicts: Vec<ResourceConflictError>,
     },
 
     /// 認可エラー（権限不足）
@@ -64,15 +68,18 @@ impl fmt::Display for ApplicationError {
                     email, external_system
                 )
             }
-            ApplicationError::ResourceConflict {
-                resource_description,
-                conflicting_usage_id,
-            } => {
-                write!(
-                    f,
-                    "リソース {} は既に使用予定 {} で使用されています",
-                    resource_description, conflicting_usage_id
-                )
+            ApplicationError::ResourceConflict { conflicts } => {
+                let messages: Vec<String> = conflicts
+                    .iter()
+                    .map(|c| {
+                        format!(
+                            "リソース {} は既に使用予定 {} で使用されています",
+                            c.resource,
+                            c.existing_usage.id().as_str()
+                        )
+                    })
+                    .collect();
+                write!(f, "{}", messages.join("; "))
             }
             ApplicationError::Unauthorized(msg) => {
                 write!(f, "権限不足: {}", msg)
@@ -90,7 +97,9 @@ impl std::error::Error for ApplicationError {
             ApplicationError::ResourceUsage(e) => Some(e),
             ApplicationError::IdentityLink(e) => Some(e),
             ApplicationError::ExternalSystemAlreadyLinked { .. } => None,
-            ApplicationError::ResourceConflict { .. } => None,
+            ApplicationError::ResourceConflict { conflicts } => conflicts
+                .first()
+                .map(|c| c as &(dyn std::error::Error + 'static)),
             ApplicationError::Unauthorized(_) => None,
         }
     }
@@ -114,11 +123,13 @@ impl From<IdentityLinkError> for ApplicationError {
     }
 }
 
-impl From<ResourceConflictError> for ApplicationError {
-    fn from(e: ResourceConflictError) -> Self {
-        ApplicationError::ResourceConflict {
-            resource_description: e.resource_description,
-            conflicting_usage_id: e.conflicting_usage_id.as_str().to_string(),
+impl From<ConflictCheckError> for ApplicationError {
+    fn from(e: ConflictCheckError) -> Self {
+        match e {
+            ConflictCheckError::Conflict(conflicts) => {
+                ApplicationError::ResourceConflict { conflicts }
+            }
+            ConflictCheckError::Repository(repo_err) => ApplicationError::Repository(repo_err),
         }
     }
 }

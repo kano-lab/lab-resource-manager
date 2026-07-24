@@ -74,18 +74,7 @@ impl<R: ResourceUsageRepository> UpdateResourceUsageUseCase<R> {
                     usage.resources(),
                     Some(usage.id()),
                 )
-                .await
-                .map_err(|e| match e {
-                    crate::domain::services::resource_usage::errors::ConflictCheckError::Conflict(
-                        conflict_err,
-                    ) => ApplicationError::ResourceConflict {
-                        resource_description: conflict_err.resource_description.clone(),
-                        conflicting_usage_id: conflict_err.conflicting_usage_id.as_str().to_string(),
-                    },
-                    crate::domain::services::resource_usage::errors::ConflictCheckError::Repository(
-                        repo_err,
-                    ) => ApplicationError::Repository(repo_err),
-                })?;
+                .await?;
 
             usage.update_time_period(new_period);
         }

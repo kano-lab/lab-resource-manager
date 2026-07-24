@@ -51,18 +51,7 @@ impl<R: ResourceUsageRepository> CreateResourceUsageUseCase<R> {
         // 競合チェック
         self.conflict_checker
             .check_conflicts(self.repository.as_ref(), &time_period, &resources, None)
-            .await
-            .map_err(|e| match e {
-                crate::domain::services::resource_usage::errors::ConflictCheckError::Conflict(
-                    conflict_err,
-                ) => ApplicationError::ResourceConflict {
-                    resource_description: conflict_err.resource_description.clone(),
-                    conflicting_usage_id: conflict_err.conflicting_usage_id.as_str().to_string(),
-                },
-                crate::domain::services::resource_usage::errors::ConflictCheckError::Repository(
-                    repo_err,
-                ) => ApplicationError::Repository(repo_err),
-            })?;
+            .await?;
 
         // 新しいResourceUsageを作成（UUID自動生成）
         let usage = ResourceUsage::new(owner_email, time_period, resources, notes)?;

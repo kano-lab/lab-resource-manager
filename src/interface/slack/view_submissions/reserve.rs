@@ -1,10 +1,12 @@
 //! リソース予約モーダル送信ハンドラ
 
+use crate::application::error::ApplicationError;
 use crate::domain::aggregates::resource_usage::value_objects::resource::{Gpu, Resource};
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
+use crate::interface::slack::utility::conflict_message;
 use crate::interface::slack::utility::datetime_parser::parse_datetime;
 use crate::interface::slack::utility::extract_form_data;
 use crate::interface::slack::utility::user_resolver;
@@ -154,14 +156,19 @@ where
 
     // エフェメラルメッセージで結果を送信
     let message_text = match reservation_result {
-        Ok(ref usage_id) => {
+        Ok(usage_id) => {
             info!("✅ 予約を作成しました: {}", usage_id.as_str());
             format!(
                 "✅ リソースの予約が完了しました\n予約ID: {}",
                 usage_id.as_str()
             )
         }
-        Err(ref e) => {
+        Err(ApplicationError::ResourceConflict { conflicts }) => {
+            error!("❌ 予約作成に失敗: リソース競合 ({}件)", conflicts.len());
+            let conflict_detail = conflict_message::build(&conflicts, config, identity_repo).await;
+            format!("❌ 予約の作成に失敗しました\n\n{}", conflict_detail)
+        }
+        Err(e) => {
             error!("❌ 予約作成に失敗: {}", e);
             format!("❌ 予約の作成に失敗しました\n\n{}", e)
         }
