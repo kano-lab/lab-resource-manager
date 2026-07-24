@@ -159,4 +159,6 @@ jobs:
       - name: markdownlint-cli2-action
         uses: DavidAnson/markdownlint-cli2-action@v20
         with:
-          globs: "**/*.md"
+          globs: |
+            **/*.md
+            !CHANGELOG.md
