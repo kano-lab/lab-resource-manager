@@ -21,6 +21,17 @@ use google_calendar3::{
 };
 use std::sync::Arc;
 
+/// アプリ経由で作成されたイベントのdescriptionに付与される、予約者メールアドレス行の接頭辞
+const OWNER_LINE_PREFIX: &str = "予約者: ";
+
+/// アプリが管理するセクションの開始マーカー
+///
+/// ユーザーが入力しうる自然文と衝突しないよう、アプリ名を含む機械識別用の符号を用いる。
+const MANAGED_SECTION_BEGIN: &str = "[lab-resource-manager:managed-section:begin]";
+
+/// アプリが管理するセクションの終了マーカー。このマーカーより後ろが備考として扱われる。
+const MANAGED_SECTION_END: &str = "[lab-resource-manager:managed-section:end]";
+
 /// Google Calendar APIを使用したResourceUsageリポジトリ実装
 pub struct GoogleCalendarUsageRepository {
     hub: CalendarHub<HttpsConnector<HttpConnector>>,
@@ -179,10 +190,9 @@ impl GoogleCalendarUsageRepository {
                 .description
                 .as_ref()
                 .and_then(|desc| {
-                    // "予約者: user@example.com" の形式から抽出
+                    // "予約者: user@example.com" 行をアプリ管理セクション内から探して抽出
                     desc.lines()
-                        .next()
-                        .and_then(|line| line.strip_prefix("予約者: "))
+                        .find_map(|line| line.strip_prefix(OWNER_LINE_PREFIX))
                 })
                 .ok_or_else(|| {
                     RepositoryError::Unknown(
@@ -216,10 +226,24 @@ impl GoogleCalendarUsageRepository {
         let title = event.summary.as_ref().unwrap_or(&default_title);
         let items = self.parse_resources(title, resource_context)?;
 
-        // descriptionから備考を抽出（"予約者: xxx"の行を除外）
+        // アプリ管理セクション（終了マーカー）より後ろを備考として抽出する。
+        // 旧形式（"予約者: xxx"の1行目のみでマーカー無し）は先頭行のみ除外し、
+        // Googleカレンダー上で直接作成されたイベント（マーカーも予約者行も無し）は
+        // description全体をそのまま備考として扱う
         let notes = event.description.as_ref().and_then(|desc| {
-            // "予約者: xxx\n\n備考" の形式から備考部分を抽出
-            desc.split_once("\n\n").map(|(_, notes)| notes.to_string())
+            let body = if let Some((_, after_marker)) = desc.split_once(MANAGED_SECTION_END) {
+                after_marker
+            } else if desc.starts_with(OWNER_LINE_PREFIX) {
+                desc.split_once('\n').map(|(_, rest)| rest).unwrap_or("")
+            } else {
+                desc.as_str()
+            };
+            let body = body.trim();
+            if body.is_empty() {
+                None
+            } else {
+                Some(body.to_string())
+            }
         });
 
         ResourceUsage::reconstruct(id, user, time_period, items, notes)
@@ -364,9 +388,13 @@ impl GoogleCalendarUsageRepository {
             Resource::Room { name } => name.clone(),
         };
 
-        // descriptionに予約者情報と備考を含める
+        // descriptionに予約者情報と備考を含める。予約者情報はアプリが管理するセクションとして
+        // 開始・終了マーカーで囲み、ユーザーが誤って編集しないよう明示する
         let description = {
-            let mut desc = format!("予約者: {}", usage.owner_email().as_str());
+            let mut desc = format!(
+                "{MANAGED_SECTION_BEGIN}\n{OWNER_LINE_PREFIX}{}\n{MANAGED_SECTION_END}",
+                usage.owner_email().as_str()
+            );
             if let Some(notes) = usage.notes() {
                 desc.push_str(&format!("\n\n{}", notes));
             }
