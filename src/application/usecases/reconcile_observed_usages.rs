@@ -41,6 +41,7 @@ where
     unreserved_threshold: Duration,
     duration_candidates: Vec<Duration>,
     proposed_keys: tokio::sync::Mutex<HashSet<(Resource, DateTime<Utc>)>>,
+    notified_unauthorized_keys: tokio::sync::Mutex<HashSet<(Resource, DateTime<Utc>)>>,
 }
 
 impl<R, O, I, P, U> ReconcileObservedUsagesUseCase<R, O, I, P, U>
@@ -74,6 +75,7 @@ where
             unreserved_threshold,
             duration_candidates,
             proposed_keys: tokio::sync::Mutex::new(HashSet::new()),
+            notified_unauthorized_keys: tokio::sync::Mutex::new(HashSet::new()),
         }
     }
 
@@ -138,9 +140,17 @@ where
             return Ok(());
         }
 
+        // 同一の観測セッションに対する再通知を防ぐ（提案と同じくUX上のスパム防止であり、
+        // 送信成功後にのみ記録することで失敗時の再試行を保つ）
+        let key = (observed.resource().clone(), observed.active_since());
+        if self.notified_unauthorized_keys.lock().await.contains(&key) {
+            return Ok(());
+        }
+
         self.unauthorized_notifier
             .notify(reservation, &actual_email)
             .await?;
+        self.notified_unauthorized_keys.lock().await.insert(key);
         Ok(())
     }
 
@@ -559,6 +569,43 @@ mod tests {
 
         // 未予約提案は発生しない（既に予約が存在するため）
         assert!(proposal_notifier.sent_proposals().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_unauthorized_notification_deduplicated_per_observation_session() {
+        let (usecase, repo, observer, identity_repo, _proposal_notifier, notifier) =
+            make_usecase(15);
+        identity_repo.add_link("other@example.com", os_system(), "kkawaguchi");
+
+        let now = Utc::now();
+        let reservation = make_reservation(
+            "owner@example.com",
+            now - Duration::hours(1),
+            now + Duration::hours(1),
+        );
+        repo.save(&reservation).await.unwrap();
+
+        let active_since = now - Duration::minutes(30);
+        observer.set_active_usages(vec![ObservedUsage::new(
+            gpu_resource(),
+            ExternalIdentity::new(os_system(), "kkawaguchi".to_string()),
+            active_since,
+        )]);
+
+        // 同一の観測セッションが続く限り、何度ポーリングしても通知は1回だけ
+        usecase.poll_once().await.unwrap();
+        usecase.poll_once().await.unwrap();
+        usecase.poll_once().await.unwrap();
+        assert_eq!(notifier.notified().len(), 1);
+
+        // プロセスが入れ替わる（観測開始時刻が変わる）と新しいセッションとして再通知する
+        observer.set_active_usages(vec![ObservedUsage::new(
+            gpu_resource(),
+            ExternalIdentity::new(os_system(), "kkawaguchi".to_string()),
+            active_since + Duration::minutes(10),
+        )]);
+        usecase.poll_once().await.unwrap();
+        assert_eq!(notifier.notified().len(), 2);
     }
 
     #[tokio::test]

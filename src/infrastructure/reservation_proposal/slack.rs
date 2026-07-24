@@ -153,13 +153,18 @@ fn build_proposal_blocks(
             };
             let value = serde_json::to_string(&payload).unwrap_or_default();
 
+            // action_idはブロック内で一意である必要がある（重複するとSlackがinvalid_blocksで拒否する）
             serde_json::json!({
                 "type": "button",
                 "text": {
                     "type": "plain_text",
                     "text": format_duration_label(*duration)
                 },
-                "action_id": ACTION_ACCEPT_RESERVATION_PROPOSAL,
+                "action_id": format!(
+                    "{}_{}",
+                    ACTION_ACCEPT_RESERVATION_PROPOSAL,
+                    duration.num_minutes()
+                ),
                 "value": value
             })
         })
@@ -251,6 +256,33 @@ mod tests {
         let json = serde_json::to_value(&blocks).unwrap();
         let elements = json[1]["elements"].as_array().unwrap();
         assert_eq!(elements.len(), candidates.len());
+    }
+
+    #[test]
+    fn test_build_proposal_blocks_action_ids_are_unique_within_block() {
+        let candidates = vec![Duration::hours(1), Duration::hours(2), Duration::hours(3)];
+        let proposal = sample_proposal(candidates.clone());
+        let Resource::Gpu(gpu) = proposal.resource() else {
+            unreachable!()
+        };
+
+        let blocks = build_proposal_blocks(&proposal, gpu, "test message");
+        let json = serde_json::to_value(&blocks).unwrap();
+        let action_ids: Vec<String> = json[1]["elements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["action_id"].as_str().unwrap().to_string())
+            .collect();
+
+        // Slackはブロック内でaction_idが重複するとinvalid_blocksでメッセージ全体を拒否する
+        let unique: std::collections::HashSet<&String> = action_ids.iter().collect();
+        assert_eq!(unique.len(), candidates.len());
+
+        // gateway側は前方一致でディスパッチするため、全IDが規定のプレフィックスを持つこと
+        for id in &action_ids {
+            assert!(id.starts_with(ACTION_ACCEPT_RESERVATION_PROPOSAL));
+        }
     }
 
     #[test]
