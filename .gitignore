@@ -14,3 +14,7 @@ target/
 *.pdb
 
 # End of https://www.toptal.com/developers/gitignore/api/rust
+
+### Python (scripts/) ###
+__pycache__/
+*.pyc
