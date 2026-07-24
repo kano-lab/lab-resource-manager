@@ -226,17 +226,38 @@ impl GoogleCalendarUsageRepository {
         let title = event.summary.as_ref().unwrap_or(&default_title);
         let items = self.parse_resources(title, resource_context)?;
 
-        // アプリ管理セクション（終了マーカー）より後ろを備考として抽出する。
+        // アプリ管理セクション（開始〜終了マーカー）の外側を備考として抽出する。
+        // ユーザーが開始マーカーより前にメモを追記した場合も失わないよう、
+        // マーカーの前後両方を拾って結合する。
         // 旧形式（"予約者: xxx"の1行目のみでマーカー無し）は先頭行のみ除外し、
         // Googleカレンダー上で直接作成されたイベント（マーカーも予約者行も無し）は
         // description全体をそのまま備考として扱う
         let notes = event.description.as_ref().and_then(|desc| {
-            let body = if let Some((_, after_marker)) = desc.split_once(MANAGED_SECTION_END) {
-                after_marker
+            let body: String = if let Some((before_begin, after_begin)) =
+                desc.split_once(MANAGED_SECTION_BEGIN)
+            {
+                match after_begin.split_once(MANAGED_SECTION_END) {
+                    Some((_, after_end)) => {
+                        let before = before_begin.trim();
+                        let after = after_end.trim();
+                        if before.is_empty() {
+                            after.to_string()
+                        } else if after.is_empty() {
+                            before.to_string()
+                        } else {
+                            format!("{before}\n\n{after}")
+                        }
+                    }
+                    // 開始マーカーのみで終了マーカーが無い想定外の編集は、
+                    // 安全側に倒してdescription全体を備考として扱う
+                    None => desc.clone(),
+                }
             } else if desc.starts_with(OWNER_LINE_PREFIX) {
-                desc.split_once('\n').map(|(_, rest)| rest).unwrap_or("")
+                desc.split_once('\n')
+                    .map(|(_, rest)| rest.to_string())
+                    .unwrap_or_default()
             } else {
-                desc.as_str()
+                desc.clone()
             };
             let body = body.trim();
             if body.is_empty() {
