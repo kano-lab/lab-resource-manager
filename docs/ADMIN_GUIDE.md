@@ -167,6 +167,74 @@ conflict is silently dropped.
 | `md` | 1/15 |
 | `md_japanese` | 1月15日 |
 
+### 5. GPU Usage Observer Adapter Setup (Optional, Experimental)
+
+The monitoring component that cross-references actual GPU usage against reservations
+(e.g., detecting unreserved usage) is pluggable via the `ResourceUsageObserver` port, so
+it can be adapted to each lab's infrastructure. Two implementations are currently
+available:
+
+| Implementation | Purpose |
+|-----------------|---------|
+| Mock | Testing/development only (always returns empty results) |
+| `SharedFileResourceUsageObserver` | Reads GPU usage per server via a shared filesystem |
+
+To use `SharedFileResourceUsageObserver`, you need to register `scripts/gpu_usage_reporter.py`
+as a cron job on each GPU server.
+
+**Prerequisites:**
+
+- A shared directory (e.g., NFS) readable/writable from every monitored server (e.g., Thalys, Freccia, Lyria)
+- Python3 and `nvidia-smi` available on each server (no `pip install` needed, standard library only)
+
+**Setup steps:**
+
+This script is the "reporting side" of the setup. Deploy it to **every monitored server
+individually** — not just the one running the LRM binary (e.g., Thalys) — including
+Freccia and Lyria, each with its own `--server-name`.
+
+1. Deploy `scripts/gpu_usage_reporter.py` to every monitored server.
+2. Register it in each server's crontab, using that server's own name (example: every minute):
+
+```cron
+# crontab on Thalys
+* * * * * /usr/bin/python3 /path/to/gpu_usage_reporter.py \
+    --server-name Thalys --output-dir /mnt/shared/lrm-gpu-status
+
+# crontab on Freccia
+* * * * * /usr/bin/python3 /path/to/gpu_usage_reporter.py \
+    --server-name Freccia --output-dir /mnt/shared/lrm-gpu-status
+
+# crontab on Lyria
+* * * * * /usr/bin/python3 /path/to/gpu_usage_reporter.py \
+    --server-name Lyria --output-dir /mnt/shared/lrm-gpu-status
+```
+
+`--output-dir` must point to the same shared directory from every server (see
+Prerequisites). `--server-name` must match a `servers[].name` value in
+`config/resources.toml`, using **that server's own name** — pointing it at another
+server's name overwrites that other server's report with the wrong data.
+
+3. The resulting `{lowercased server name}.json` schema:
+
+```json
+{
+  "server": "Thalys",
+  "generated_at": "2026-07-24T12:00:00+00:00",
+  "processes": [
+    {"device_number": 0, "os_user": "kkawaguchi", "started_at": "2026-07-24T10:00:00+00:00"}
+  ]
+}
+```
+
+Files older than a configured staleness threshold (5 minutes by default) are ignored, so a
+stopped cron job doesn't cause stale usage data to be mistaken for still-active usage.
+
+**Current limitation**: Only the JSON output from this script has been verified working.
+The main binary's periodic read of this file to cross-reference reservations, and the
+Slack notification of detected mismatches, are still under development — `AppConfig` does
+not yet have environment variables for this observer.
+
 ## Running the System
 
 ### Service Management

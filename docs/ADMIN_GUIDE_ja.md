@@ -163,6 +163,72 @@ date_format = "md"           # 日付フォーマット
 | `md` | 1/15 |
 | `md_japanese` | 1月15日 |
 
+### 5. GPU実利用状況監視アダプタの設定（オプション・実験的機能）
+
+実際のGPU利用状況を予約と突き合わせる機能（未予約利用の検知等）の監視部分は、
+`ResourceUsageObserver`ポートの実装を差し替えることで研究室のインフラに合わせられます。
+現時点で提供している実装は以下の2つです。
+
+| 実装 | 用途 |
+|------|------|
+| Mock | テスト・開発用（常に空の結果を返す） |
+| `SharedFileResourceUsageObserver` | 共有ファイルシステム経由で各サーバーのGPU利用状況を読み取る |
+
+`SharedFileResourceUsageObserver`を使う場合、各GPUサーバー側で`scripts/gpu_usage_reporter.py`を
+cron登録する必要があります。
+
+**前提条件:**
+
+- 監視対象の全サーバー（例: Thalys, Freccia, Lyria）から読み書きできる共有ディレクトリ（NFS等）
+- 各サーバーにPython3と`nvidia-smi`があること（pip installは不要、標準ライブラリのみ使用）
+
+**セットアップ手順:**
+
+このスクリプトは「送り出す側」の設定です。LRM本体が動くサーバー（例: Thalys）だけでなく、
+**監視対象の全サーバー（Thalys・Freccia・Lyriaそれぞれ）に個別にデプロイ**し、
+各サーバー自身の`--server-name`を指定してcron登録してください。
+
+1. `scripts/gpu_usage_reporter.py`を監視対象の全サーバーに配置する
+2. 各サーバーのcrontabに、そのサーバー自身の名前で登録する（1分間隔の例）:
+
+```cron
+# Thalys側のcrontab
+* * * * * /usr/bin/python3 /path/to/gpu_usage_reporter.py \
+    --server-name Thalys --output-dir /mnt/shared/lrm-gpu-status
+
+# Freccia側のcrontab
+* * * * * /usr/bin/python3 /path/to/gpu_usage_reporter.py \
+    --server-name Freccia --output-dir /mnt/shared/lrm-gpu-status
+
+# Lyria側のcrontab
+* * * * * /usr/bin/python3 /path/to/gpu_usage_reporter.py \
+    --server-name Lyria --output-dir /mnt/shared/lrm-gpu-status
+```
+
+`--output-dir`はどのサーバーからも同じ共有ディレクトリを指す必要があります（前提条件参照）。
+`--server-name`には`config/resources.toml`の`servers[].name`と一致する値を、
+**そのサーバー自身の名前で**指定してください（他サーバーの名前を指定すると誤ったサーバーの
+レポートとして上書きされます）。
+
+3. 出力される`{server名を小文字化}.json`のスキーマ:
+
+```json
+{
+  "server": "Thalys",
+  "generated_at": "2026-07-24T12:00:00+00:00",
+  "processes": [
+    {"device_number": 0, "os_user": "kkawaguchi", "started_at": "2026-07-24T10:00:00+00:00"}
+  ]
+}
+```
+
+`generated_at`から一定時間（既定5分想定）経過したファイルは古いデータとみなされ無視されます。
+cronが停止した場合に古い利用状況を「今も使用中」と誤判定しないための仕組みです。
+
+**現時点での制限**: このスクリプトによるJSON出力までが動作確認済みです。
+LRM本体がこのファイルを定期的に読み取って予約と突き合わせる処理、および検知結果をSlackへ
+通知する部分は開発中のため、`AppConfig`にはまだこの監視機能向けの環境変数はありません。
+
 ## システムの起動
 
 ### サービス管理
