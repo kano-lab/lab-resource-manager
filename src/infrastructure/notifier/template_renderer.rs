@@ -3,7 +3,7 @@
 //! 通知メッセージのテンプレートとプレースホルダー置換を処理します。
 
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-use crate::domain::aggregates::resource_usage::value_objects::Resource;
+use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod};
 use crate::infrastructure::config::{FormatConfig, TemplateConfig};
 use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
 
@@ -32,6 +32,9 @@ pub mod defaults {
     /// 予約削除時のデフォルトテンプレート
     pub const DELETED: &str =
         "🗑️ 予約削除\n👤 {user}\n\n📅 期間\n{time}\n\n{resource_label}\n{resource}{notes}";
+    /// 予約競合時のデフォルトテンプレート
+    pub const CONFLICT: &str =
+        "⚠️ 予約が重複しています\n👤 予約者\n{user}\n\n📅 競合する期間\n{time}\n\n{resource_label}\n{resource}{notes}";
 }
 
 /// テンプレートレンダラー
@@ -62,7 +65,13 @@ impl<'a> TemplateRenderer<'a> {
             .created
             .as_deref()
             .unwrap_or(defaults::CREATED);
-        self.render(template, usage, user_display)
+        self.render(
+            template,
+            usage.resources(),
+            usage.time_period(),
+            usage.notes().map(String::as_str),
+            user_display,
+        )
     }
 
     /// 予約更新メッセージをレンダリング
@@ -72,7 +81,13 @@ impl<'a> TemplateRenderer<'a> {
             .updated
             .as_deref()
             .unwrap_or(defaults::UPDATED);
-        self.render(template, usage, user_display)
+        self.render(
+            template,
+            usage.resources(),
+            usage.time_period(),
+            usage.notes().map(String::as_str),
+            user_display,
+        )
     }
 
     /// 予約削除メッセージをレンダリング
@@ -82,31 +97,66 @@ impl<'a> TemplateRenderer<'a> {
             .deleted
             .as_deref()
             .unwrap_or(defaults::DELETED);
-        self.render(template, usage, user_display)
+        self.render(
+            template,
+            usage.resources(),
+            usage.time_period(),
+            usage.notes().map(String::as_str),
+            user_display,
+        )
+    }
+
+    /// 予約競合メッセージをレンダリング
+    ///
+    /// `existing_usage`は今回の予約要求と競合した既存の使用予定。
+    /// `conflicting_resource`は競合したリソース単体（要求リソースのうち衝突した1件）。
+    pub fn render_conflict(
+        &self,
+        conflicting_resource: &Resource,
+        existing_usage: &ResourceUsage,
+        user_display: &str,
+    ) -> String {
+        let template = self
+            .templates
+            .conflict
+            .as_deref()
+            .unwrap_or(defaults::CONFLICT);
+        self.render(
+            template,
+            std::slice::from_ref(conflicting_resource),
+            existing_usage.time_period(),
+            existing_usage.notes().map(String::as_str),
+            user_display,
+        )
     }
 
     /// テンプレートをレンダリング（シングルパス方式）
     ///
     /// チェーン式の`replace`だと置換後の値にプレースホルダーが含まれる場合に
     /// 誤置換が発生する可能性があるため、シングルパスで処理する。
-    fn render(&self, template: &str, usage: &ResourceUsage, user_display: &str) -> String {
-        let resources_formatted =
-            format_resources_styled(usage.resources(), self.format.resource_style);
+    fn render(
+        &self,
+        template: &str,
+        resources: &[Resource],
+        time_period: &TimePeriod,
+        notes: Option<&str>,
+        user_display: &str,
+    ) -> String {
+        let resources_formatted = format_resources_styled(resources, self.format.resource_style);
 
         let time_formatted = format_time_styled(
-            usage.time_period(),
+            time_period,
             self.timezone,
             self.format.time_style,
             self.format.date_format,
         );
 
-        let notes_formatted = usage
-            .notes()
+        let notes_formatted = notes
             .filter(|n| !n.is_empty())
             .map(|n| format!("\n\n📝 備考\n{}", n))
             .unwrap_or_default();
 
-        let resource_label = Self::get_resource_label(usage.resources());
+        let resource_label = Self::get_resource_label(resources);
 
         // シングルパスでテンプレートを走査し、プレースホルダーのみ置換する
         // プレースホルダーはすべてASCIIなので .len() で文字数を取得可能
@@ -218,6 +268,7 @@ mod tests {
             created: Some("{user}が{resource}を{time}使います".to_string()),
             updated: None,
             deleted: None,
+            conflict: None,
         };
         let format = FormatConfig {
             resource_style: ResourceStyle::Compact,
@@ -293,6 +344,48 @@ mod tests {
             TemplateRenderer::get_resource_label(&resources),
             "📦 予約リソース"
         );
+    }
+
+    #[test]
+    fn test_render_conflict_with_default_template() {
+        let templates = TemplateConfig::default();
+        let format = FormatConfig::default();
+
+        let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
+        let existing_usage = create_test_usage();
+        let conflicting_resource =
+            Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
+
+        let result =
+            renderer.render_conflict(&conflicting_resource, &existing_usage, "<@U67890>");
+
+        assert!(result.contains("⚠️ 予約が重複しています"));
+        assert!(result.contains("<@U67890>"));
+        assert!(result.contains("Thalys"));
+        // 競合リソースは1件のみなので、既存予約の2台目(GPU:1)は含まれない
+        assert!(!result.contains("GPU#1"));
+    }
+
+    #[test]
+    fn test_render_conflict_with_custom_template() {
+        let templates = TemplateConfig {
+            created: None,
+            updated: None,
+            deleted: None,
+            conflict: Some("{user}が既に{resource}を{time}で予約済みです".to_string()),
+        };
+        let format = FormatConfig::default();
+
+        let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
+        let existing_usage = create_test_usage();
+        let conflicting_resource =
+            Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string()));
+
+        let result = renderer.render_conflict(&conflicting_resource, &existing_usage, "田中太郎");
+
+        assert!(result.contains("田中太郎が既に"));
+        assert!(result.contains("GPU#1"));
+        assert!(result.contains("予約済みです"));
     }
 
     #[test]

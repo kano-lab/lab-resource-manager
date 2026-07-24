@@ -1,5 +1,7 @@
 use crate::domain::aggregates::identity_link::errors::IdentityLinkError;
+use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::aggregates::resource_usage::errors::ResourceUsageError;
+use crate::domain::aggregates::resource_usage::value_objects::Resource;
 use crate::domain::ports::{
     notifier::NotificationError, repositories::RepositoryError,
     resource_collection_access::ResourceCollectionAccessError,
@@ -33,11 +35,15 @@ pub enum ApplicationError {
     },
 
     /// リソースの競合エラー
+    ///
+    /// 競合したリソースと既存の使用予定を構造化データとして保持する。
+    /// インターフェース層が設定（テンプレート・フォーマットスタイル）に基づいて
+    /// ユーザー向けメッセージを組み立てられるようにするため。
     ResourceConflict {
-        /// 競合しているリソースの説明
-        resource_description: String,
-        /// 競合している既存の使用予定ID
-        conflicting_usage_id: String,
+        /// 競合しているリソース
+        resource: Resource,
+        /// 競合している既存の使用予定
+        existing_usage: ResourceUsage,
     },
 
     /// 認可エラー（権限不足）
@@ -65,13 +71,14 @@ impl fmt::Display for ApplicationError {
                 )
             }
             ApplicationError::ResourceConflict {
-                resource_description,
-                conflicting_usage_id,
+                resource,
+                existing_usage,
             } => {
                 write!(
                     f,
                     "リソース {} は既に使用予定 {} で使用されています",
-                    resource_description, conflicting_usage_id
+                    resource,
+                    existing_usage.id().as_str()
                 )
             }
             ApplicationError::Unauthorized(msg) => {
@@ -117,8 +124,8 @@ impl From<IdentityLinkError> for ApplicationError {
 impl From<ResourceConflictError> for ApplicationError {
     fn from(e: ResourceConflictError) -> Self {
         ApplicationError::ResourceConflict {
-            resource_description: e.resource_description,
-            conflicting_usage_id: e.conflicting_usage_id.as_str().to_string(),
+            resource: e.resource,
+            existing_usage: e.existing_usage,
         }
     }
 }

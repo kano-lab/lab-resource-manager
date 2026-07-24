@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 /// メッセージテンプレート設定
 ///
-/// 各イベントタイプ（作成・更新・削除）のメッセージテンプレートを定義。
+/// 各イベントタイプ（作成・更新・削除・競合）のメッセージテンプレートを定義。
 /// プレースホルダー: `{user}`, `{resource}`, `{time}`, `{notes}`, `{resource_label}`
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq, Hash, Default)]
 pub struct TemplateConfig {
@@ -21,6 +21,10 @@ pub struct TemplateConfig {
     /// 予約削除時のテンプレート
     #[serde(default)]
     pub deleted: Option<String>,
+
+    /// 予約競合時のテンプレート（`{user}`/`{time}`/`{resource}`等は競合した既存予約の情報）
+    #[serde(default)]
+    pub conflict: Option<String>,
 }
 
 /// リソース表示スタイル
@@ -116,6 +120,7 @@ mod tests {
         assert!(config.created.is_none());
         assert!(config.updated.is_none());
         assert!(config.deleted.is_none());
+        assert!(config.conflict.is_none());
     }
 
     #[test]

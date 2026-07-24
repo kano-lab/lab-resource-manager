@@ -79,8 +79,8 @@ impl<R: ResourceUsageRepository> UpdateResourceUsageUseCase<R> {
                     crate::domain::services::resource_usage::errors::ConflictCheckError::Conflict(
                         conflict_err,
                     ) => ApplicationError::ResourceConflict {
-                        resource_description: conflict_err.resource_description.clone(),
-                        conflicting_usage_id: conflict_err.conflicting_usage_id.as_str().to_string(),
+                        resource: conflict_err.resource,
+                        existing_usage: conflict_err.existing_usage,
                     },
                     crate::domain::services::resource_usage::errors::ConflictCheckError::Repository(
                         repo_err,

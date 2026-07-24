@@ -1,24 +1,29 @@
 //! リソース使用ドメインサービスのエラー
 
-use crate::domain::aggregates::resource_usage::value_objects::UsageId;
+use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
+use crate::domain::aggregates::resource_usage::value_objects::Resource;
 use crate::domain::errors::DomainError;
 use crate::domain::ports::repositories::RepositoryError;
 use std::fmt;
 
 /// リソース競合エラー
+///
+/// 競合したリソースと既存の使用予定そのものを保持する。
+/// メッセージ文言はインターフェース層が設定に基づいて組み立てられるよう、
+/// ここでは構造化データのまま渡す。
 #[derive(Debug)]
 pub struct ResourceConflictError {
-    /// 競合しているリソースの説明
-    pub resource_description: String,
-    /// 競合している既存の使用予定ID
-    pub conflicting_usage_id: UsageId,
+    /// 競合しているリソース
+    pub resource: Resource,
+    /// 競合している既存の使用予定
+    pub existing_usage: ResourceUsage,
 }
 
 impl ResourceConflictError {
-    pub fn new(resource_description: impl Into<String>, conflicting_usage_id: UsageId) -> Self {
+    pub fn new(resource: Resource, existing_usage: ResourceUsage) -> Self {
         Self {
-            resource_description: resource_description.into(),
-            conflicting_usage_id,
+            resource,
+            existing_usage,
         }
     }
 }
@@ -28,8 +33,8 @@ impl fmt::Display for ResourceConflictError {
         write!(
             f,
             "リソース競合: {} (競合する予約ID: {})",
-            self.resource_description,
-            self.conflicting_usage_id.as_str()
+            self.resource,
+            self.existing_usage.id().as_str()
         )
     }
 }

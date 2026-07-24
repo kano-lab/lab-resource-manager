@@ -51,8 +51,8 @@ impl ResourceConflictChecker {
                 for existing_resource in existing_usage.resources() {
                     if new_resource.conflicts_with(existing_resource) {
                         return Err(ConflictCheckError::Conflict(ResourceConflictError::new(
-                            new_resource.to_string(),
-                            existing_usage.id().clone(),
+                            new_resource.clone(),
+                            existing_usage.clone(),
                         )));
                     }
                 }

@@ -1,11 +1,13 @@
 //! リソース予約更新モーダル送信ハンドラ
 
+use crate::application::error::ApplicationError;
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::resource_usage::value_objects::{TimePeriod, UsageId};
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
+use crate::interface::slack::utility::conflict_message;
 use crate::interface::slack::utility::{datetime_parser::parse_datetime, extract_form_data};
 use slack_morphism::prelude::*;
 
@@ -76,6 +78,19 @@ where
     // エフェメラルメッセージで結果を送信
     let message_text = match update_result {
         Ok(_) => "✅ 予約を更新しました".to_string(),
+        Err(ApplicationError::ResourceConflict {
+            resource,
+            existing_usage,
+        }) => {
+            let conflict_detail = conflict_message::build(
+                &resource,
+                &existing_usage,
+                app.resource_config(),
+                app.identity_repo(),
+            )
+            .await;
+            format!("❌ 予約の更新に失敗しました\n\n{}", conflict_detail)
+        }
         Err(e) => {
             // エラーの種類に応じてユーザーフレンドリーなメッセージを返す
             let error_msg = e.to_string();
@@ -84,8 +99,6 @@ where
                     .to_string()
             } else if error_msg.contains("権限") || error_msg.contains("Unauthorized") {
                 "❌ この予約を更新する権限がありません。".to_string()
-            } else if error_msg.contains("重複") || error_msg.contains("Conflict") {
-                "❌ 指定された時間帯は既に予約されています。".to_string()
             } else {
                 format!("❌ 予約の更新に失敗しました: {}", error_msg)
             }

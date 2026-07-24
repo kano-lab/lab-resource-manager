@@ -1,8 +1,9 @@
 //! ユーザーID解決
 //!
-//! SlackユーザーIDからメールアドレスへの解決を行います
+//! SlackユーザーIDとメールアドレスの相互解決を行います
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
+use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::IdentityLinkRepository;
 use slack_morphism::prelude::*;
 use std::sync::Arc;
@@ -50,4 +51,25 @@ pub async fn is_user_linked(
         .ok()
         .flatten()
         .is_some()
+}
+
+/// メールアドレスをSlack表示用文字列に解決
+///
+/// 紐付けが見つかりSlackのIDが登録されていればメンション形式（`<@U12345>`）、
+/// それ以外はメールアドレスそのものを返す。
+///
+/// # 引数
+/// * `email` - 解決対象のメールアドレス
+/// * `identity_repo` - ID紐付けリポジトリ
+pub async fn resolve_display_name(
+    email: &EmailAddress,
+    identity_repo: &Arc<dyn IdentityLinkRepository>,
+) -> String {
+    let identity_link = identity_repo.find_by_email(email).await.ok().flatten();
+
+    identity_link
+        .as_ref()
+        .and_then(|link| link.get_identity_for_system(&ExternalSystem::Slack))
+        .map(|slack_identity| format!("<@{}>", slack_identity.user_id()))
+        .unwrap_or_else(|| email.as_str().to_string())
 }
