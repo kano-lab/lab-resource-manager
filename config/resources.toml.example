@@ -21,6 +21,9 @@ channel_id = "C01234567..."
 # created = "{user}が{resource}を{time}使います"
 # updated = "{user}が予約を変更: {resource} {time}"
 # deleted = "{user}が予約をキャンセル: {resource}"
+# conflict = "{user}が既に{resource}を{time}で予約済みです"
+#   - conflict: {user}/{time}/{resource}は予約を試みた本人ではなく、
+#     競合した既存予約の所有者・期間・リソースを指す
 
 # フォーマット設定（オプション）
 # [servers.notifications.format]

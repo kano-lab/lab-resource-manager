@@ -109,6 +109,7 @@ timezone = "Asia/Tokyo"
 created = "{user} is using {resource} at {time}"
 updated = "{user} changed reservation: {resource} {time}"
 deleted = "{user} cancelled reservation: {resource}"
+conflict = "{user} already reserved {resource} at {time}"
 
 # Format settings (optional)
 [servers.notifications.format]
@@ -116,6 +117,15 @@ resource_style = "compact"   # Resource display style
 time_style = "smart"         # Time display style
 date_format = "md"           # Date format
 ```
+
+`conflict` is used when a reservation request is rejected due to a conflict.
+Unlike `created`/`updated`/`deleted`, its placeholders refer to the
+**existing** reservation that caused the conflict, not the request that was
+rejected: `{user}` is the existing reservation's owner, `{time}` is its
+period, and `{resource}` is the specific resource that conflicted. It is
+shown to the user who attempted the reservation, using the format/template
+settings of the conflicting resource's notification config (not a
+resource-wide broadcast).
 
 **Placeholders:**
 
