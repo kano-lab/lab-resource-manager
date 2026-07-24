@@ -32,6 +32,14 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // tracingの初期化（RUST_LOGで制御、未設定時はinfo）
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
     // rustls暗号化プロバイダの初期化
     rustls::crypto::ring::default_provider()
         .install_default()
