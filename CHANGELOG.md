@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/kano-lab/lab-resource-manager/compare/v1.4.0...v1.4.1) (2026-07-25)
+
+
+### Bug Fixes
+
+* clarify unauthorized-usage DM wording ([#97](https://github.com/kano-lab/lab-resource-manager/issues/97)) ([fbc357a](https://github.com/kano-lab/lab-resource-manager/commit/fbc357a6639c92d671c6fa6507ab9e0fdc316bf6))
+
 ## [1.4.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.3.1...v1.4.0) (2026-07-25)
 
 
