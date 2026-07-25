@@ -256,6 +256,128 @@ Slackアカウントも紐付いたメールアドレスにリンクされてい
 `gpu-usage-reporter`の動作確認は、実運用環境ではまだ行われていません。Slack DMの送信には
 Slackアプリに`im:write`・`chat:write`スコープが必要です。
 
+### 6. MCPサーバーの設定（オプション）
+
+Claude Codeなどのエージェントから、LRM本体プロセス内に組み込まれたMCP（Model Context
+Protocol）サーバー経由で予約の閲覧・作成・更新・キャンセルができます。新しいバイナリや
+systemdサービスは不要で、既存の`lab-resource-manager`プロセス内にHTTP/SSEリスナーが
+追加のタスクとして起動します。Googleサービスアカウントキーは引き続きLRM本体のホスト
+1箇所にしか存在しません。
+
+**前提**: 研究室のサーバー群とメンバーの端末が同一LAN内で相互に通信できること。インターネット
+への公開は範囲外です。
+
+**環境変数:**
+
+| 環境変数 | デフォルト値 | 用途 |
+|---------|-------------|------|
+| `MCP_LISTEN_ADDR` | (未設定=機能無効) | MCPサーバーのHTTP/SSEリッスンアドレス（例: `0.0.0.0:8787`） |
+| `MCP_TOKENS_FILE` | `/var/lib/lab-resource-manager/mcp_tokens.json` | MCPアクセストークンの永続化ファイル |
+| `MCP_ALLOWED_HOSTS` | (必須。`MCP_LISTEN_ADDR`設定時に未設定だと起動失敗) | リクエストで許可する`Host`ヘッダの値（カンマ区切り、例: `<LRM本体のホスト>:8787,192.168.1.10:8787`） |
+| `MCP_TLS_CERT_FILE` | (未設定=TLS無効) | MCPサーバーのTLS証明書ファイルパス（PEM形式）。`MCP_TLS_KEY_FILE`とセットで指定 |
+| `MCP_TLS_KEY_FILE` | (未設定=TLS無効) | MCPサーバーのTLS秘密鍵ファイルパス（PEM形式）。`MCP_TLS_CERT_FILE`とセットで指定 |
+
+`MCP_ALLOWED_HOSTS`は、LRM本体が実際に到達可能なホスト名/IPとポートの組み合わせを、
+メンバーがクライアント設定で使う値と一致させて指定してください。`MCP_LISTEN_ADDR`を設定して
+MCP機能を有効化する場合、`MCP_ALLOWED_HOSTS`の指定は必須です（未設定だと起動時にエラーで
+終了します。設定し忘れたまま検証なしで動いてしまうことを防ぐためのfail-closedな挙動です）。
+
+`MCP_TLS_CERT_FILE`/`MCP_TLS_KEY_FILE`は片方だけ設定すると起動時エラーになります。TLSは
+推奨ですが必須ではありません。両方とも未設定ならHTTPで起動し、Bearerトークンが平文で
+送信される旨の警告ログを出します。
+
+**TLSの設定（推奨）:**
+
+Bearerトークンを平文でLAN上に流さないため、TLS化を強く推奨します。自己署名の内部CAを
+1回だけ作成し、そこから発行したサーバー証明書をLRM本体に設定します:
+
+```bash
+# 1. 内部CAを作成（1回限り）
+openssl req -x509 -newkey rsa:4096 -keyout ca.key -out ca.crt -days 3650 -nodes \
+  -subj "/CN=lab-resource-manager internal CA"
+
+# 2. LRM本体用のサーバー証明書をそのCAで署名して発行
+#    （SANに実際のホスト名/IPを含めること）
+openssl req -newkey rsa:2048 -keyout mcp.key -out mcp.csr -nodes -subj "/CN=<LRM本体のホスト>"
+openssl x509 -req -in mcp.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -out mcp.crt -days 825 \
+  -extfile <(echo "subjectAltName=DNS:<LRM本体のホスト>,IP:<LRM本体のIP>")
+```
+
+```bash
+MCP_TLS_CERT_FILE=/etc/lab-resource-manager/mcp.crt
+MCP_TLS_KEY_FILE=/etc/lab-resource-manager/mcp.key
+```
+
+**クライアント側の信頼設定**: 証明書の信頼はMCPクライアントのアプリ単位の設定ではなく、
+**OSの証明書ストア単位**で設定できるため、`ca.crt`を各メンバーの端末に配って回る必要は
+ありません。メンバーが共有マシン（例: 各自がSSHでログインして使う共有GPUサーバー）上で
+Claude Codeなどのエージェントセッションを動かす運用であれば、そのマシンのシステム証明書
+ストアに`ca.crt`を1回登録するだけで、そこで動く全プロセス（MCPクライアントがどんな内部
+HTTPライブラリを使っていても）が自動的に証明書を信頼するようになります:
+
+```bash
+# エージェントセッションが動く共有マシンそれぞれで実行（Debian/Ubuntu系の例）
+sudo cp ca.crt /usr/local/share/ca-certificates/lab-resource-manager.crt
+sudo update-ca-certificates
+```
+
+CA証明書を信頼させること自体は受動的な設定で、誰にも新しいアクセス権を与えません（実際の
+認可は引き続きBearerトークンが担います）。将来、メンバーが個人のノートPC等からも接続したく
+なった場合は、その端末にも同じ`ca.crt`を追加してください。
+
+**認証: `/mcp-token`コマンド**
+
+メンバーはSlackで以下を実行し、自分専用のアクセストークンを取得します:
+
+```text
+/mcp-token
+```
+
+呼び出した本人のメールアドレス（`/link-user`または`/register-calendar`で紐付け済みである
+必要があります）宛に、本人にのみ見えるエフェメラルメッセージでトークンが表示されます。
+再実行すると新しいトークンが発行され、古いトークンは自動的に失効します（1人1トークン）。
+
+**メンバー側の設定例（`.mcp.json`）:**
+
+```json
+{
+  "mcpServers": {
+    "lab-resource-manager": {
+      "url": "https://<LRM本体のホスト>:8787/mcp",
+      "headers": {
+        "Authorization": "Bearer <発行されたトークン>"
+      }
+    }
+  }
+}
+```
+
+（TLS未設定の場合は`https://`の代わりに`http://`を使ってください。）
+
+**提供ツール:**
+
+| ツール名 | 内容 |
+|---------|------|
+| `list_all_reservations` | 今後（進行中含む）の全予約を一覧表示 |
+| `list_my_reservations` | 自分が所有する予約を一覧表示 |
+| `get_reservation` | IDを指定して予約の詳細を取得 |
+| `create_reservation` | 新しい予約を作成（GPUサーバーまたは部屋） |
+| `update_reservation` | 自分が所有する予約の時間・備考を更新 |
+| `cancel_reservation` | 自分が所有する予約をキャンセル |
+
+書き込み系ツール（作成・更新・キャンセル）は、呼び出し元のBearerトークンに紐づく
+メールアドレスを所有者として扱います。他人が所有する予約の更新・キャンセルは、
+`/reserve`と同じ既存の認可ルール（所有者本人のみ）により拒否されます。
+
+TLSの動作自体（自己署名証明書でのハンドシェイク成立、CA未信頼時の拒否、認証ミドルウェアが
+TLS層とは独立してBearerトークンを要求すること）は開発環境で確認済みです。
+
+**現時点での制限**: LAN内の別端末からのHTTP/SSE接続確認、`/mcp-token`の実Slack動作確認、
+およびClaude Code等の実際のMCPクライアントが共有マシンに登録したCA証明書を実際に
+信頼して接続できることの確認は、開発環境のDockerサンドボックスでは実行できないため
+未検証です。
+
 ## システムの起動
 
 ### サービス管理

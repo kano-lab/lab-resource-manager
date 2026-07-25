@@ -3,12 +3,16 @@
 //! このバイナリは、ユーザーがGmailアカウントを登録し、
 //! 共有リソースカレンダーへのアクセス権を取得できるSlack Botを実行します。
 
+use axum_server::tls_rustls::RustlsConfig;
 use chrono::Duration as ChronoDuration;
 use lab_resource_manager::{
     application::usecases::{
         create_resource_usage::CreateResourceUsageUseCase,
         delete_resource_usage::DeleteResourceUsageUseCase,
+        get_resource_usage_by_id::GetResourceUsageByIdUseCase,
         grant_user_resource_access::GrantUserResourceAccessUseCase,
+        list_all_future_resource_usages::ListAllFutureResourceUsagesUseCase,
+        list_user_resource_usages::ListUserResourceUsagesUseCase,
         notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase,
         reconcile_observed_usages::ReconcileObservedUsagesUseCase,
         update_resource_usage::UpdateResourceUsageUseCase,
@@ -17,7 +21,7 @@ use lab_resource_manager::{
         config::{load_config, load_from_env},
         notifier::NotificationRouter,
         repositories::{
-            identity_link::JsonFileIdentityLinkRepository,
+            identity_link::JsonFileIdentityLinkRepository, mcp_token::JsonFileMcpTokenRepository,
             resource_usage::google_calendar::GoogleCalendarUsageRepository,
         },
         reservation_proposal::SlackReservationProposalNotifier,
@@ -25,6 +29,7 @@ use lab_resource_manager::{
         resource_usage_observer::SharedFileResourceUsageObserver,
         unauthorized_usage_notifier::SlackUnauthorizedUsageNotifier,
     },
+    interface::mcp::{self, server::LrmMcpServer},
     interface::slack::SlackApp,
 };
 use slack_morphism::prelude::*;
@@ -51,6 +56,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_config = load_from_env()?;
     let resource_config = Arc::new(load_config(&app_config.resource_config_path)?);
 
+    // 後段でapp_configがSlackAppに所有権移動するため、MCP関連の値は先に控えておく
+    let mcp_listen_addr = app_config.mcp_listen_addr;
+    let mcp_allowed_hosts = app_config.mcp_allowed_hosts.clone();
+
+    // TLS証明書は起動時に読み込む(fail-fast: 壊れた証明書に気づかずHTTPへ
+    // 静かにフォールバックする方が危険なため)。両方Someか両方Noneかは
+    // loader.rsで検証済み
+    let mcp_tls_config = match (&app_config.mcp_tls_cert_file, &app_config.mcp_tls_key_file) {
+        (Some(cert), Some(key)) => Some(
+            RustlsConfig::from_pem_file(cert, key)
+                .await
+                .map_err(|e| format!("MCPサーバーのTLS証明書の読み込みに失敗: {}", e))?,
+        ),
+        _ => None,
+    };
+
     let service_account_key = app_config
         .google_service_account_key_path
         .to_str()
@@ -63,6 +84,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // リポジトリ
     let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new(
         app_config.identity_links_file.clone(),
+    ));
+
+    let mcp_token_repo = Arc::new(JsonFileMcpTokenRepository::new(
+        app_config.mcp_tokens_file.clone(),
     ));
 
     let calendar_access_service =
@@ -94,6 +119,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let create_usecase = Arc::new(CreateResourceUsageUseCase::new(resource_usage_repo.clone()));
     let update_usecase = Arc::new(UpdateResourceUsageUseCase::new(resource_usage_repo.clone()));
     let delete_usecase = Arc::new(DeleteResourceUsageUseCase::new(resource_usage_repo.clone()));
+    let list_all_usecase = Arc::new(ListAllFutureResourceUsagesUseCase::new(
+        resource_usage_repo.clone(),
+    ));
+    let list_mine_usecase = Arc::new(ListUserResourceUsagesUseCase::new(
+        resource_usage_repo.clone(),
+    ));
+    let get_by_id_usecase = Arc::new(GetResourceUsageByIdUseCase::new(
+        resource_usage_repo.clone(),
+    ));
 
     let notifier = NotificationRouter::new(resource_config.as_ref().clone(), identity_repo.clone());
     let notify_usecase = Arc::new(
@@ -153,12 +187,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
     // ===========================================
+    // MCPサーバー（オプション機能、MCP_LISTEN_ADDR未設定なら無効）
+    // ===========================================
+    let mcp_handle = if let Some(mcp_listen_addr) = mcp_listen_addr {
+        let mcp_server = LrmMcpServer::new(
+            create_usecase.clone(),
+            update_usecase.clone(),
+            delete_usecase.clone(),
+            list_all_usecase.clone(),
+            list_mine_usecase.clone(),
+            get_by_id_usecase.clone(),
+            resource_config.clone(),
+        );
+        let mcp_token_repo_for_serve = mcp_token_repo.clone();
+
+        println!("🔌 MCPサーバー機能を有効化しました: {}", mcp_listen_addr);
+        Some(tokio::spawn(async move {
+            if let Err(e) = mcp::serve(
+                mcp_listen_addr,
+                mcp_allowed_hosts,
+                mcp_tls_config,
+                mcp_token_repo_for_serve,
+                mcp_server,
+            )
+            .await
+            {
+                eprintln!("❌ MCPサーバーエラー: {}", e);
+            }
+        }))
+    } else {
+        println!("ℹ️  MCP_LISTEN_ADDR未設定のため、MCPサーバー機能は無効です");
+        None
+    };
+
+    // ===========================================
     // アプリケーションの組み立てと実行
     // ===========================================
     let app = Arc::new(SlackApp::new(
         app_config,
         resource_config,
         identity_repo,
+        mcp_token_repo.clone(),
         grant_access_usecase,
         create_usecase,
         update_usecase,
@@ -173,6 +242,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| -> Box<dyn std::error::Error> { e })?;
 
     if let Some(handle) = reconcile_handle {
+        handle.abort();
+    }
+
+    if let Some(handle) = mcp_handle {
         handle.abort();
     }
 

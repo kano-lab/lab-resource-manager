@@ -265,6 +265,132 @@ and running `gpu-usage-reporter` against a real GPU server have not been verifie
 environment yet. The Slack app needs the `im:write` and `chat:write` scopes for the DM to
 work.
 
+### 6. MCP Server Setup (Optional)
+
+Agents such as Claude Code can view, create, update, and cancel reservations through an
+embedded MCP (Model Context Protocol) server that runs inside the main
+`lab-resource-manager` process. No new binary or systemd service is needed — the HTTP/SSE
+listener is started as an additional task within the existing process. The Google service
+account key continues to exist only on the single host running LRM.
+
+**Prerequisite**: the lab's servers and members' machines must be able to reach each other
+over the same LAN. Exposing it to the internet is out of scope.
+
+**Environment variables:**
+
+| Environment variable | Default | Purpose |
+|-----------------------|---------|---------|
+| `MCP_LISTEN_ADDR` | (unset = feature disabled) | HTTP/SSE listen address for the MCP server (e.g. `0.0.0.0:8787`) |
+| `MCP_TOKENS_FILE` | `/var/lib/lab-resource-manager/mcp_tokens.json` | Persistence file for MCP access tokens |
+| `MCP_ALLOWED_HOSTS` | (required; startup fails if unset while `MCP_LISTEN_ADDR` is set) | Comma-separated list of `Host` header values to accept (e.g. `<LRM host>:8787,192.168.1.10:8787`) |
+| `MCP_TLS_CERT_FILE` | (unset = TLS disabled) | Path to the MCP server's TLS certificate (PEM). Must be set together with `MCP_TLS_KEY_FILE` |
+| `MCP_TLS_KEY_FILE` | (unset = TLS disabled) | Path to the MCP server's TLS private key (PEM). Must be set together with `MCP_TLS_CERT_FILE` |
+
+Set `MCP_ALLOWED_HOSTS` to the actual reachable host name/IP and port combination that
+members will use in their client configuration. If `MCP_LISTEN_ADDR` is set (MCP enabled),
+`MCP_ALLOWED_HOSTS` is required — leaving it unset causes startup to fail with an error
+(fail-closed, so a missed setting can't silently ship unprotected).
+
+Setting only one of `MCP_TLS_CERT_FILE`/`MCP_TLS_KEY_FILE` is a startup error. TLS is
+recommended but not required — leaving both unset falls back to plain HTTP with a warning
+that the Bearer token will be sent unencrypted.
+
+**Setting up TLS (recommended):**
+
+To avoid sending Bearer tokens in plaintext over the LAN, TLS is strongly recommended.
+Create a self-signed internal CA once, then issue a server certificate from it for the LRM
+host:
+
+```bash
+# 1. Create an internal CA (one-time)
+openssl req -x509 -newkey rsa:4096 -keyout ca.key -out ca.crt -days 3650 -nodes \
+  -subj "/CN=lab-resource-manager internal CA"
+
+# 2. Issue a server certificate for the LRM host, signed by that CA
+#    (include the actual host name/IP in the SAN)
+openssl req -newkey rsa:2048 -keyout mcp.key -out mcp.csr -nodes -subj "/CN=<LRM host>"
+openssl x509 -req -in mcp.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -out mcp.crt -days 825 \
+  -extfile <(echo "subjectAltName=DNS:<LRM host>,IP:<LRM host IP>")
+```
+
+```bash
+MCP_TLS_CERT_FILE=/etc/lab-resource-manager/mcp.crt
+MCP_TLS_KEY_FILE=/etc/lab-resource-manager/mcp.key
+```
+
+**Client-side trust**: certificate trust is a matter of the OS-level trust store, not
+per-application configuration, so `ca.crt` doesn't need to be handed out to every member's
+laptop individually. If your team already runs agent sessions (e.g. Claude Code) from a
+shared machine — such as a shared GPU server members SSH into — registering `ca.crt` in
+that machine's system trust store once is enough: every process running there
+(regardless of which HTTP library the MCP client uses internally) then automatically
+trusts it:
+
+```bash
+# Run on each shared machine where your team's agent sessions run (Debian/Ubuntu example)
+sudo cp ca.crt /usr/local/share/ca-certificates/lab-resource-manager.crt
+sudo update-ca-certificates
+```
+
+Trusting a CA is a passive client-side setting and grants no one any new access (actual
+authorization is still enforced by the Bearer token). If members later want to connect
+from their own laptops too, add the same `ca.crt` there as well.
+
+**Authentication: the `/mcp-token` command**
+
+Members run the following in Slack to obtain their own personal access token:
+
+```text
+/mcp-token
+```
+
+The token is shown in an ephemeral message visible only to the requester, sent to the
+email address linked to their Slack account (via `/link-user` or `/register-calendar`).
+Re-running the command issues a new token and revokes the previous one (one token per
+person).
+
+**Example member-side configuration (`.mcp.json`):**
+
+```json
+{
+  "mcpServers": {
+    "lab-resource-manager": {
+      "url": "https://<LRM host>:8787/mcp",
+      "headers": {
+        "Authorization": "Bearer <issued token>"
+      }
+    }
+  }
+}
+```
+
+(Use `http://` instead of `https://` if TLS is not configured.)
+
+**Available tools:**
+
+| Tool | Description |
+|------|--------------|
+| `list_all_reservations` | List all future (including ongoing) reservations |
+| `list_my_reservations` | List reservations owned by the caller |
+| `get_reservation` | Get a reservation's details by ID |
+| `create_reservation` | Create a new reservation (GPU server or room) |
+| `update_reservation` | Update the time or notes of a reservation you own |
+| `cancel_reservation` | Cancel a reservation you own |
+
+Write tools (create/update/cancel) treat the email address linked to the caller's Bearer
+token as the owner. Updating or cancelling someone else's reservation is rejected by the
+same existing authorization rule used by `/reserve` (owner only).
+
+TLS itself (handshake succeeding with a self-signed certificate, rejection when the CA
+isn't trusted, and the auth middleware still requiring a Bearer token independently of the
+TLS layer) has been verified in the development environment.
+
+**Current limitation**: connecting over HTTP/SSE from another machine on the LAN,
+exercising `/mcp-token` against a real Slack workspace, and confirming that a real MCP
+client (e.g. Claude Code) actually trusts a CA registered on a shared machine, have not
+been verified — the development Docker sandbox cannot exercise any of these.
+
 ## Running the System
 
 ### Service Management

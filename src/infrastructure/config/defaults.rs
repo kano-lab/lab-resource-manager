@@ -26,3 +26,6 @@ pub const UNRESERVED_USAGE_THRESHOLD_SECS: u64 = 600;
 
 /// 事後予約提案で提示する利用時間候補のデフォルト値（時間、カンマ区切り）
 pub const RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS: &str = "1,2,3,5,8";
+
+/// MCPアクセストークンファイルのデフォルトパス
+pub const MCP_TOKENS_FILE: &str = "/var/lib/lab-resource-manager/mcp_tokens.json";

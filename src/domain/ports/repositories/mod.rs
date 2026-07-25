@@ -35,9 +35,12 @@
 pub mod errors;
 /// IdentityLinkリポジトリポート
 pub mod identity_link;
+/// McpTokenリポジトリポート
+pub mod mcp_token;
 /// ResourceUsageリポジトリポート
 pub mod resource_usage;
 
 pub use errors::RepositoryError;
 pub use identity_link::IdentityLinkRepository;
+pub use mcp_token::McpTokenRepository;
 pub use resource_usage::ResourceUsageRepository;

@@ -8,7 +8,9 @@ use crate::application::usecases::grant_user_resource_access::GrantUserResourceA
 use crate::application::usecases::notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase;
 use crate::application::usecases::update_resource_usage::UpdateResourceUsageUseCase;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::{IdentityLinkRepository, ResourceUsageRepository};
+use crate::domain::ports::repositories::{
+    IdentityLinkRepository, McpTokenRepository, ResourceUsageRepository,
+};
 use crate::infrastructure::config::{AppConfig, ResourceConfig};
 use slack_morphism::prelude::*;
 use std::collections::HashMap;
@@ -38,6 +40,7 @@ where
 
     // リポジトリ
     identity_repo: Arc<dyn IdentityLinkRepository>,
+    mcp_token_repo: Arc<dyn McpTokenRepository>,
 
     // Slackインフラストラクチャ
     slack_client: Arc<SlackHyperClient>,
@@ -63,6 +66,7 @@ where
         app_config: AppConfig,
         resource_config: Arc<ResourceConfig>,
         identity_repo: Arc<dyn IdentityLinkRepository>,
+        mcp_token_repo: Arc<dyn McpTokenRepository>,
         grant_access_usecase: Arc<GrantUserResourceAccessUseCase>,
         create_resource_usage_usecase: Arc<CreateResourceUsageUseCase<R>>,
         update_resource_usage_usecase: Arc<UpdateResourceUsageUseCase<R>>,
@@ -75,6 +79,7 @@ where
             app_config,
             resource_config,
             identity_repo,
+            mcp_token_repo,
             grant_access_usecase,
             create_resource_usage_usecase,
             update_resource_usage_usecase,
@@ -317,6 +322,10 @@ where
 
     pub fn identity_repo(&self) -> &Arc<dyn IdentityLinkRepository> {
         &self.identity_repo
+    }
+
+    pub fn mcp_token_repo(&self) -> &Arc<dyn McpTokenRepository> {
+        &self.mcp_token_repo
     }
 
     pub fn grant_access_usecase(&self) -> &Arc<GrantUserResourceAccessUseCase> {

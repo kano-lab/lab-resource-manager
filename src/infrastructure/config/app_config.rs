@@ -4,6 +4,7 @@
 //! デフォルト値や読み込み方法は別モジュールで定義される。
 
 use chrono::Duration;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 /// アプリケーション全体の設定
@@ -31,4 +32,17 @@ pub struct AppConfig {
     pub unreserved_usage_threshold_secs: u64,
     /// 事後予約提案で提示する利用時間の候補
     pub reservation_proposal_duration_candidates: Vec<Duration>,
+    /// MCPサーバーのHTTP/SSEリッスンアドレス（未設定ならMCP機能を無効化）
+    pub mcp_listen_addr: Option<SocketAddr>,
+    /// MCPアクセストークンファイルのパス
+    pub mcp_tokens_file: PathBuf,
+    /// MCPサーバーへのリクエストで許可するHostヘッダの値
+    ///
+    /// MCP機能が有効（`mcp_listen_addr`が`Some`）な場合は必ず1つ以上を含む
+    /// （ローダーがfail-closedで検証する）。MCP機能が無効なら空。
+    pub mcp_allowed_hosts: Vec<String>,
+    /// MCPサーバーのTLS証明書ファイルのパス（PEM形式、未設定ならTLS無効）
+    pub mcp_tls_cert_file: Option<PathBuf>,
+    /// MCPサーバーのTLS秘密鍵ファイルのパス（PEM形式、未設定ならTLS無効）
+    pub mcp_tls_key_file: Option<PathBuf>,
 }
