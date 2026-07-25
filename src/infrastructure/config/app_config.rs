@@ -36,7 +36,10 @@ pub struct AppConfig {
     pub mcp_listen_addr: Option<SocketAddr>,
     /// MCPアクセストークンファイルのパス
     pub mcp_tokens_file: PathBuf,
-    /// MCPサーバーへのリクエストで許可するHostヘッダの値（空なら検証を無効化）
+    /// MCPサーバーへのリクエストで許可するHostヘッダの値
+    ///
+    /// MCP機能が有効（`mcp_listen_addr`が`Some`）な場合は必ず1つ以上を含む
+    /// （ローダーがfail-closedで検証する）。MCP機能が無効なら空。
     pub mcp_allowed_hosts: Vec<String>,
     /// MCPサーバーのTLS証明書ファイルのパス（PEM形式、未設定ならTLS無効）
     pub mcp_tls_cert_file: Option<PathBuf>,

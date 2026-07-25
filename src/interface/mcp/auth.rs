@@ -7,6 +7,7 @@ use axum::http::{StatusCode, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use std::sync::Arc;
+use tracing::error;
 
 /// Bearerトークンから解決された呼び出し元のメールアドレス
 ///
@@ -33,7 +34,10 @@ pub async fn bearer_auth(
     let caller = mcp_token_repo
         .resolve(token)
         .await
-        .map_err(|_| StatusCode::UNAUTHORIZED)?
+        .map_err(|e| {
+            error!("MCPトークンの解決に失敗しました（リポジトリエラー）: {}", e);
+            StatusCode::UNAUTHORIZED
+        })?
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     req.extensions_mut().insert(ResolvedCaller(caller));
