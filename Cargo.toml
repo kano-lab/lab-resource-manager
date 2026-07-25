@@ -42,3 +42,6 @@ rmcp = { version = "2.2.0", features = [
 schemars = { version = "1.2.1", features = ["chrono04"] }
 axum = "0.8.9"
 http = "1.4.2"
+axum-server = { version = "0.8.0", default-features = false, features = [
+  "tls-rustls-no-provider",
+] }

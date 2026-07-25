@@ -3,6 +3,7 @@
 //! このバイナリは、ユーザーがGmailアカウントを登録し、
 //! 共有リソースカレンダーへのアクセス権を取得できるSlack Botを実行します。
 
+use axum_server::tls_rustls::RustlsConfig;
 use chrono::Duration as ChronoDuration;
 use lab_resource_manager::{
     application::usecases::{
@@ -58,6 +59,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 後段でapp_configがSlackAppに所有権移動するため、MCP関連の値は先に控えておく
     let mcp_listen_addr = app_config.mcp_listen_addr;
     let mcp_allowed_hosts = app_config.mcp_allowed_hosts.clone();
+
+    // TLS証明書は起動時に読み込む(fail-fast: 壊れた証明書に気づかずHTTPへ
+    // 静かにフォールバックする方が危険なため)。両方Someか両方Noneかは
+    // loader.rsで検証済み
+    let mcp_tls_config = match (&app_config.mcp_tls_cert_file, &app_config.mcp_tls_key_file) {
+        (Some(cert), Some(key)) => Some(
+            RustlsConfig::from_pem_file(cert, key)
+                .await
+                .map_err(|e| format!("MCPサーバーのTLS証明書の読み込みに失敗: {}", e))?,
+        ),
+        _ => None,
+    };
 
     let service_account_key = app_config
         .google_service_account_key_path
@@ -193,6 +206,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Err(e) = mcp::serve(
                 mcp_listen_addr,
                 mcp_allowed_hosts,
+                mcp_tls_config,
                 mcp_token_repo_for_serve,
                 mcp_server,
             )

@@ -111,15 +111,16 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(defaults::MCP_TOKENS_FILE));
 
-    let mcp_allowed_hosts = env::var("MCP_ALLOWED_HOSTS")
-        .ok()
-        .map(|s| {
-            s.split(',')
-                .map(|host| host.trim().to_string())
-                .filter(|host| !host.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
+    // MCP機能が有効(MCP_LISTEN_ADDR設定済み)なら、Hostヘッダ許可リストの明示設定を必須にする
+    // (fail-closed。未設定のまま警告ログのみで起動を許すと、設定し忘れに気づけない)
+    let mcp_allowed_hosts = validate_mcp_allowed_hosts(
+        mcp_listen_addr,
+        env::var("MCP_ALLOWED_HOSTS").ok().as_deref(),
+    )?;
+
+    let mcp_tls_cert_file = env::var("MCP_TLS_CERT_FILE").ok().map(PathBuf::from);
+    let mcp_tls_key_file = env::var("MCP_TLS_KEY_FILE").ok().map(PathBuf::from);
+    validate_mcp_tls_paths(&mcp_tls_cert_file, &mcp_tls_key_file)?;
 
     Ok(AppConfig {
         google_service_account_key_path,
@@ -136,6 +137,8 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
         mcp_listen_addr,
         mcp_tokens_file,
         mcp_allowed_hosts,
+        mcp_tls_cert_file,
+        mcp_tls_key_file,
     })
 }
 
@@ -162,6 +165,53 @@ fn parse_duration_candidates_hours(raw: &str) -> Result<Vec<Duration>, ConfigLoa
         }),
         result => result,
     }
+}
+
+/// MCP機能有効時のHostヘッダ許可リストを検証する(fail-closed)
+///
+/// `mcp_listen_addr`が`Some`(MCP機能有効)のときは`raw`(カンマ区切り)から
+/// 少なくとも1つのホストが得られることを要求する。`None`のときは検証をスキップし
+/// 空リストを返す。
+fn validate_mcp_allowed_hosts(
+    mcp_listen_addr: Option<SocketAddr>,
+    raw: Option<&str>,
+) -> Result<Vec<String>, ConfigLoadError> {
+    if mcp_listen_addr.is_none() {
+        return Ok(Vec::new());
+    }
+
+    let hosts: Vec<String> = raw
+        .map(|s| {
+            s.split(',')
+                .map(|host| host.trim().to_string())
+                .filter(|host| !host.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if hosts.is_empty() {
+        return Err(ConfigLoadError::InvalidEnvVar {
+            name: "MCP_ALLOWED_HOSTS",
+            reason: "MCP_LISTEN_ADDR設定時は少なくとも1つのホストを指定する必要があります"
+                .to_string(),
+        });
+    }
+
+    Ok(hosts)
+}
+
+/// MCP TLS証明書/秘密鍵が両方設定されているか、両方とも未設定であることを検証する
+fn validate_mcp_tls_paths(
+    cert: &Option<PathBuf>,
+    key: &Option<PathBuf>,
+) -> Result<(), ConfigLoadError> {
+    if cert.is_some() != key.is_some() {
+        return Err(ConfigLoadError::InvalidEnvVar {
+            name: "MCP_TLS_CERT_FILE / MCP_TLS_KEY_FILE",
+            reason: "TLSを有効化するには両方を設定する必要があります".to_string(),
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -213,5 +263,59 @@ mod tests {
             defaults::RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS,
         );
         assert!(result.is_ok());
+    }
+
+    fn dummy_addr() -> SocketAddr {
+        "0.0.0.0:8787".parse().unwrap()
+    }
+
+    #[test]
+    fn test_validate_mcp_allowed_hosts_skips_when_mcp_disabled() {
+        let result = validate_mcp_allowed_hosts(None, None).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_validate_mcp_allowed_hosts_rejects_unset_when_mcp_enabled() {
+        let result = validate_mcp_allowed_hosts(Some(dummy_addr()), None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_mcp_allowed_hosts_rejects_empty_string_when_mcp_enabled() {
+        let result = validate_mcp_allowed_hosts(Some(dummy_addr()), Some("  , ,"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_mcp_allowed_hosts_accepts_configured_hosts() {
+        let result =
+            validate_mcp_allowed_hosts(Some(dummy_addr()), Some("thalys:8787, 192.168.1.10:8787"))
+                .unwrap();
+        assert_eq!(result, vec!["thalys:8787", "192.168.1.10:8787"]);
+    }
+
+    #[test]
+    fn test_validate_mcp_tls_paths_accepts_both_unset() {
+        assert!(validate_mcp_tls_paths(&None, &None).is_ok());
+    }
+
+    #[test]
+    fn test_validate_mcp_tls_paths_accepts_both_set() {
+        let cert = Some(PathBuf::from("cert.pem"));
+        let key = Some(PathBuf::from("key.pem"));
+        assert!(validate_mcp_tls_paths(&cert, &key).is_ok());
+    }
+
+    #[test]
+    fn test_validate_mcp_tls_paths_rejects_cert_without_key() {
+        let cert = Some(PathBuf::from("cert.pem"));
+        assert!(validate_mcp_tls_paths(&cert, &None).is_err());
+    }
+
+    #[test]
+    fn test_validate_mcp_tls_paths_rejects_key_without_cert() {
+        let key = Some(PathBuf::from("key.pem"));
+        assert!(validate_mcp_tls_paths(&None, &key).is_err());
     }
 }

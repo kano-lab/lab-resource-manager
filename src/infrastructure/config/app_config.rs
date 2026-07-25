@@ -38,4 +38,8 @@ pub struct AppConfig {
     pub mcp_tokens_file: PathBuf,
     /// MCPサーバーへのリクエストで許可するHostヘッダの値（空なら検証を無効化）
     pub mcp_allowed_hosts: Vec<String>,
+    /// MCPサーバーのTLS証明書ファイルのパス（PEM形式、未設定ならTLS無効）
+    pub mcp_tls_cert_file: Option<PathBuf>,
+    /// MCPサーバーのTLS秘密鍵ファイルのパス（PEM形式、未設定ならTLS無効）
+    pub mcp_tls_key_file: Option<PathBuf>,
 }

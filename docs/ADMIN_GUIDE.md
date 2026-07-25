@@ -274,8 +274,7 @@ listener is started as an additional task within the existing process. The Googl
 account key continues to exist only on the single host running LRM.
 
 **Prerequisite**: the lab's servers and members' machines must be able to reach each other
-over the same LAN. This feature assumes a LAN-internal deployment; TLS termination and
-exposing it to the internet are out of scope.
+over the same LAN. Exposing it to the internet is out of scope.
 
 **Environment variables:**
 
@@ -283,11 +282,59 @@ exposing it to the internet are out of scope.
 |-----------------------|---------|---------|
 | `MCP_LISTEN_ADDR` | (unset = feature disabled) | HTTP/SSE listen address for the MCP server (e.g. `0.0.0.0:8787`) |
 | `MCP_TOKENS_FILE` | `/var/lib/lab-resource-manager/mcp_tokens.json` | Persistence file for MCP access tokens |
-| `MCP_ALLOWED_HOSTS` | (unset = disables Host header validation) | Comma-separated list of `Host` header values to accept (e.g. `thalys:8787,192.168.1.10:8787`) |
+| `MCP_ALLOWED_HOSTS` | (required; startup fails if unset while `MCP_LISTEN_ADDR` is set) | Comma-separated list of `Host` header values to accept (e.g. `thalys:8787,192.168.1.10:8787`) |
+| `MCP_TLS_CERT_FILE` | (unset = TLS disabled) | Path to the MCP server's TLS certificate (PEM). Must be set together with `MCP_TLS_KEY_FILE` |
+| `MCP_TLS_KEY_FILE` | (unset = TLS disabled) | Path to the MCP server's TLS private key (PEM). Must be set together with `MCP_TLS_CERT_FILE` |
 
 Set `MCP_ALLOWED_HOSTS` to the actual reachable host name/IP and port combination that
-members will use in their client configuration. Leaving it unset disables Host header
-validation, so setting it is recommended.
+members will use in their client configuration. If `MCP_LISTEN_ADDR` is set (MCP enabled),
+`MCP_ALLOWED_HOSTS` is required — leaving it unset causes startup to fail with an error
+(fail-closed, so a missed setting can't silently ship unprotected).
+
+Setting only one of `MCP_TLS_CERT_FILE`/`MCP_TLS_KEY_FILE` is a startup error. TLS is
+recommended but not required — leaving both unset falls back to plain HTTP with a warning
+that the Bearer token will be sent unencrypted.
+
+**Setting up TLS (recommended):**
+
+To avoid sending Bearer tokens in plaintext over the LAN, TLS is strongly recommended.
+Create a self-signed internal CA once, then issue a server certificate from it for the LRM
+host:
+
+```bash
+# 1. Create an internal CA (one-time)
+openssl req -x509 -newkey rsa:4096 -keyout ca.key -out ca.crt -days 3650 -nodes \
+  -subj "/CN=lab-resource-manager internal CA"
+
+# 2. Issue a server certificate for the LRM host, signed by that CA
+#    (include the actual host name/IP in the SAN)
+openssl req -newkey rsa:2048 -keyout mcp.key -out mcp.csr -nodes -subj "/CN=thalys"
+openssl x509 -req -in mcp.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -out mcp.crt -days 825 \
+  -extfile <(echo "subjectAltName=DNS:thalys,IP:192.168.1.10")
+```
+
+```bash
+MCP_TLS_CERT_FILE=/etc/lab-resource-manager/mcp.crt
+MCP_TLS_KEY_FILE=/etc/lab-resource-manager/mcp.key
+```
+
+**Client-side trust**: there's no need to hand `ca.crt` out to every member's laptop.
+Certificate trust is a matter of the OS-level trust store, not per-application
+configuration. Since lab members already run Claude Code from sessions on Freccia and
+Lyria, the admin only needs to register `ca.crt` in those two machines' system trust
+stores once — every process running there (regardless of which HTTP library Claude Code's
+MCP transport uses internally) then automatically trusts it:
+
+```bash
+# Run on both Freccia and Lyria (Debian/Ubuntu example)
+sudo cp ca.crt /usr/local/share/ca-certificates/lab-resource-manager.crt
+sudo update-ca-certificates
+```
+
+Trusting a CA is a passive client-side setting and grants no one any new access (actual
+authorization is still enforced by the Bearer token). If members later want to connect
+from their own laptops too, add the same `ca.crt` there as well.
 
 **Authentication: the `/mcp-token` command**
 
@@ -308,7 +355,7 @@ person).
 {
   "mcpServers": {
     "lab-resource-manager": {
-      "url": "http://<LRM host>:8787/mcp",
+      "url": "https://<LRM host>:8787/mcp",
       "headers": {
         "Authorization": "Bearer <issued token>"
       }
@@ -316,6 +363,8 @@ person).
   }
 }
 ```
+
+(Use `http://` instead of `https://` if TLS is not configured.)
 
 **Available tools:**
 
@@ -332,9 +381,14 @@ Write tools (create/update/cancel) treat the email address linked to the caller'
 token as the owner. Updating or cancelling someone else's reservation is rejected by the
 same existing authorization rule used by `/reserve` (owner only).
 
-**Current limitation**: connecting over HTTP/SSE from another machine on the LAN, and
-exercising `/mcp-token` against a real Slack workspace, have not been verified — the
-development Docker sandbox cannot exercise either.
+TLS itself (handshake succeeding with a self-signed certificate, rejection when the CA
+isn't trusted, and the auth middleware still requiring a Bearer token independently of the
+TLS layer) has been verified in the development environment.
+
+**Current limitation**: connecting over HTTP/SSE from another machine on the LAN,
+exercising `/mcp-token` against a real Slack workspace, and confirming that a real MCP
+client (e.g. Claude Code) actually trusts the CA registered on Freccia/Lyria, have not been
+verified — the development Docker sandbox cannot exercise any of these.
 
 ## Running the System
 

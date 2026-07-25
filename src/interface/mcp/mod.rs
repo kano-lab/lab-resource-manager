@@ -14,6 +14,7 @@ pub mod server;
 use crate::domain::ports::repositories::{McpTokenRepository, ResourceUsageRepository};
 use auth::bearer_auth;
 use axum::middleware;
+use axum_server::tls_rustls::RustlsConfig;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::tower::{
     StreamableHttpServerConfig, StreamableHttpService,
@@ -25,11 +26,13 @@ use tracing::{info, warn};
 
 /// MCPサーバーをHTTP/SSEで起動する
 ///
-/// `allowed_hosts`が空の場合はHostヘッダ検証を無効化する（警告ログを出力）。
-/// `axum::serve`がエラーで終了した場合にエラーを返す。
+/// `allowed_hosts`は呼び出し側(設定ローダー)でMCP機能有効時は非空であることが
+/// 保証されている前提。`tls_config`が`Some`ならHTTPS、`None`ならHTTPで待ち受ける
+/// (TLSは推奨だが必須ではない)。サーバーがエラーで終了した場合にエラーを返す。
 pub async fn serve<R>(
     listen_addr: SocketAddr,
     allowed_hosts: Vec<String>,
+    tls_config: Option<RustlsConfig>,
     mcp_token_repo: Arc<dyn McpTokenRepository>,
     server: LrmMcpServer<R>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
@@ -37,13 +40,7 @@ where
     R: ResourceUsageRepository + Send + Sync + 'static,
 {
     let session_manager = Arc::new(LocalSessionManager::default());
-
-    let config = if allowed_hosts.is_empty() {
-        warn!("⚠️ MCP_ALLOWED_HOSTS未設定のため、MCPサーバーのHostヘッダ検証を無効化します");
-        StreamableHttpServerConfig::default().disable_allowed_hosts()
-    } else {
-        StreamableHttpServerConfig::default().with_allowed_hosts(allowed_hosts)
-    };
+    let config = StreamableHttpServerConfig::default().with_allowed_hosts(allowed_hosts);
 
     let service = StreamableHttpService::new(move || Ok(server.clone()), session_manager, config);
 
@@ -51,10 +48,20 @@ where
         .nest_service("/mcp", service)
         .layer(middleware::from_fn_with_state(mcp_token_repo, bearer_auth));
 
-    let listener = tokio::net::TcpListener::bind(listen_addr).await?;
-    info!("🔌 MCPサーバーをリッスンしています: {}", listen_addr);
-
-    axum::serve(listener, router).await?;
+    if let Some(tls_config) = tls_config {
+        info!("🔐 MCPサーバーをHTTPSでリッスンしています: {}", listen_addr);
+        axum_server::bind_rustls(listen_addr, tls_config)
+            .serve(router.into_make_service())
+            .await?;
+    } else {
+        warn!(
+            "⚠️ MCPサーバーをHTTPで起動しています(TLS未設定)。Bearerトークンが平文で送信されます。\
+            MCP_TLS_CERT_FILE/MCP_TLS_KEY_FILEの設定を推奨します"
+        );
+        let listener = tokio::net::TcpListener::bind(listen_addr).await?;
+        info!("🔌 MCPサーバーをリッスンしています: {}", listen_addr);
+        axum::serve(listener, router).await?;
+    }
 
     Ok(())
 }
