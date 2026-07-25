@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.3.1...v1.4.0) (2026-07-25)
+
+
+### Features
+
+* expose reservations to MCP agents via an embedded HTTP/SSE server ([#98](https://github.com/kano-lab/lab-resource-manager/issues/98)) ([b8f2aa8](https://github.com/kano-lab/lab-resource-manager/commit/b8f2aa8afa6badddd630a6b98b903b0f8b4d7490))
+
 ## [1.3.1](https://github.com/kano-lab/lab-resource-manager/compare/v1.3.0...v1.3.1) (2026-07-24)
 
 
