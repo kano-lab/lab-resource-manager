@@ -273,7 +273,7 @@ systemdサービスは不要で、既存の`lab-resource-manager`プロセス内
 |---------|-------------|------|
 | `MCP_LISTEN_ADDR` | (未設定=機能無効) | MCPサーバーのHTTP/SSEリッスンアドレス（例: `0.0.0.0:8787`） |
 | `MCP_TOKENS_FILE` | `/var/lib/lab-resource-manager/mcp_tokens.json` | MCPアクセストークンの永続化ファイル |
-| `MCP_ALLOWED_HOSTS` | (必須。`MCP_LISTEN_ADDR`設定時に未設定だと起動失敗) | リクエストで許可する`Host`ヘッダの値（カンマ区切り、例: `thalys:8787,192.168.1.10:8787`） |
+| `MCP_ALLOWED_HOSTS` | (必須。`MCP_LISTEN_ADDR`設定時に未設定だと起動失敗) | リクエストで許可する`Host`ヘッダの値（カンマ区切り、例: `<LRM本体のホスト>:8787,192.168.1.10:8787`） |
 | `MCP_TLS_CERT_FILE` | (未設定=TLS無効) | MCPサーバーのTLS証明書ファイルパス（PEM形式）。`MCP_TLS_KEY_FILE`とセットで指定 |
 | `MCP_TLS_KEY_FILE` | (未設定=TLS無効) | MCPサーバーのTLS秘密鍵ファイルパス（PEM形式）。`MCP_TLS_CERT_FILE`とセットで指定 |
 
@@ -298,10 +298,10 @@ openssl req -x509 -newkey rsa:4096 -keyout ca.key -out ca.crt -days 3650 -nodes 
 
 # 2. LRM本体用のサーバー証明書をそのCAで署名して発行
 #    （SANに実際のホスト名/IPを含めること）
-openssl req -newkey rsa:2048 -keyout mcp.key -out mcp.csr -nodes -subj "/CN=thalys"
+openssl req -newkey rsa:2048 -keyout mcp.key -out mcp.csr -nodes -subj "/CN=<LRM本体のホスト>"
 openssl x509 -req -in mcp.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
   -out mcp.crt -days 825 \
-  -extfile <(echo "subjectAltName=DNS:thalys,IP:192.168.1.10")
+  -extfile <(echo "subjectAltName=DNS:<LRM本体のホスト>,IP:<LRM本体のIP>")
 ```
 
 ```bash
@@ -309,15 +309,15 @@ MCP_TLS_CERT_FILE=/etc/lab-resource-manager/mcp.crt
 MCP_TLS_KEY_FILE=/etc/lab-resource-manager/mcp.key
 ```
 
-**クライアント側の信頼設定**: `ca.crt`を各メンバーの端末に配って回る必要はありません。
-証明書の信頼はMCPクライアントのアプリ単位の設定ではなく、**OSの証明書ストア単位**で
-設定できます。研究室メンバーは全員Claude CodeをFreccia・Lyria上のセッション内で動かしている
-運用実態があるため、管理者がこの2台のシステム証明書ストアに`ca.crt`を1回登録するだけで、
-両ホスト上で動く全プロセス（Claude Codeがどんな内部HTTPライブラリを使っていても）が
-自動的に証明書を信頼するようになります:
+**クライアント側の信頼設定**: 証明書の信頼はMCPクライアントのアプリ単位の設定ではなく、
+**OSの証明書ストア単位**で設定できるため、`ca.crt`を各メンバーの端末に配って回る必要は
+ありません。メンバーが共有マシン（例: 各自がSSHでログインして使う共有GPUサーバー）上で
+Claude Codeなどのエージェントセッションを動かす運用であれば、そのマシンのシステム証明書
+ストアに`ca.crt`を1回登録するだけで、そこで動く全プロセス（MCPクライアントがどんな内部
+HTTPライブラリを使っていても）が自動的に証明書を信頼するようになります:
 
 ```bash
-# Freccia・Lyriaそれぞれで実行（Debian/Ubuntu系の例）
+# エージェントセッションが動く共有マシンそれぞれで実行（Debian/Ubuntu系の例）
 sudo cp ca.crt /usr/local/share/ca-certificates/lab-resource-manager.crt
 sudo update-ca-certificates
 ```
@@ -374,7 +374,7 @@ TLSの動作自体（自己署名証明書でのハンドシェイク成立、CA
 TLS層とは独立してBearerトークンを要求すること）は開発環境で確認済みです。
 
 **現時点での制限**: LAN内の別端末からのHTTP/SSE接続確認、`/mcp-token`の実Slack動作確認、
-およびClaude Code等の実際のMCPクライアントがFreccia・Lyriaに登録したCA証明書を実際に
+およびClaude Code等の実際のMCPクライアントが共有マシンに登録したCA証明書を実際に
 信頼して接続できることの確認は、開発環境のDockerサンドボックスでは実行できないため
 未検証です。
 

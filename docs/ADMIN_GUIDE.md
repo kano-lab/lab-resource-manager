@@ -282,7 +282,7 @@ over the same LAN. Exposing it to the internet is out of scope.
 |-----------------------|---------|---------|
 | `MCP_LISTEN_ADDR` | (unset = feature disabled) | HTTP/SSE listen address for the MCP server (e.g. `0.0.0.0:8787`) |
 | `MCP_TOKENS_FILE` | `/var/lib/lab-resource-manager/mcp_tokens.json` | Persistence file for MCP access tokens |
-| `MCP_ALLOWED_HOSTS` | (required; startup fails if unset while `MCP_LISTEN_ADDR` is set) | Comma-separated list of `Host` header values to accept (e.g. `thalys:8787,192.168.1.10:8787`) |
+| `MCP_ALLOWED_HOSTS` | (required; startup fails if unset while `MCP_LISTEN_ADDR` is set) | Comma-separated list of `Host` header values to accept (e.g. `<LRM host>:8787,192.168.1.10:8787`) |
 | `MCP_TLS_CERT_FILE` | (unset = TLS disabled) | Path to the MCP server's TLS certificate (PEM). Must be set together with `MCP_TLS_KEY_FILE` |
 | `MCP_TLS_KEY_FILE` | (unset = TLS disabled) | Path to the MCP server's TLS private key (PEM). Must be set together with `MCP_TLS_CERT_FILE` |
 
@@ -308,10 +308,10 @@ openssl req -x509 -newkey rsa:4096 -keyout ca.key -out ca.crt -days 3650 -nodes 
 
 # 2. Issue a server certificate for the LRM host, signed by that CA
 #    (include the actual host name/IP in the SAN)
-openssl req -newkey rsa:2048 -keyout mcp.key -out mcp.csr -nodes -subj "/CN=thalys"
+openssl req -newkey rsa:2048 -keyout mcp.key -out mcp.csr -nodes -subj "/CN=<LRM host>"
 openssl x509 -req -in mcp.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
   -out mcp.crt -days 825 \
-  -extfile <(echo "subjectAltName=DNS:thalys,IP:192.168.1.10")
+  -extfile <(echo "subjectAltName=DNS:<LRM host>,IP:<LRM host IP>")
 ```
 
 ```bash
@@ -319,15 +319,16 @@ MCP_TLS_CERT_FILE=/etc/lab-resource-manager/mcp.crt
 MCP_TLS_KEY_FILE=/etc/lab-resource-manager/mcp.key
 ```
 
-**Client-side trust**: there's no need to hand `ca.crt` out to every member's laptop.
-Certificate trust is a matter of the OS-level trust store, not per-application
-configuration. Since lab members already run Claude Code from sessions on Freccia and
-Lyria, the admin only needs to register `ca.crt` in those two machines' system trust
-stores once — every process running there (regardless of which HTTP library Claude Code's
-MCP transport uses internally) then automatically trusts it:
+**Client-side trust**: certificate trust is a matter of the OS-level trust store, not
+per-application configuration, so `ca.crt` doesn't need to be handed out to every member's
+laptop individually. If your team already runs agent sessions (e.g. Claude Code) from a
+shared machine — such as a shared GPU server members SSH into — registering `ca.crt` in
+that machine's system trust store once is enough: every process running there
+(regardless of which HTTP library the MCP client uses internally) then automatically
+trusts it:
 
 ```bash
-# Run on both Freccia and Lyria (Debian/Ubuntu example)
+# Run on each shared machine where your team's agent sessions run (Debian/Ubuntu example)
 sudo cp ca.crt /usr/local/share/ca-certificates/lab-resource-manager.crt
 sudo update-ca-certificates
 ```
@@ -387,8 +388,8 @@ TLS layer) has been verified in the development environment.
 
 **Current limitation**: connecting over HTTP/SSE from another machine on the LAN,
 exercising `/mcp-token` against a real Slack workspace, and confirming that a real MCP
-client (e.g. Claude Code) actually trusts the CA registered on Freccia/Lyria, have not been
-verified — the development Docker sandbox cannot exercise any of these.
+client (e.g. Claude Code) actually trusts a CA registered on a shared machine, have not
+been verified — the development Docker sandbox cannot exercise any of these.
 
 ## Running the System
 
