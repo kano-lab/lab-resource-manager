@@ -112,10 +112,10 @@ fn build_unauthorized_message(reserved_usage: &ResourceUsage) -> String {
     );
 
     format!(
-        "⚠️ 予約なしでリソースを使用しています\n\n📅 予約期間\n{}\n\n💻 予約リソース\n{}\n\n予約者: {}\n\n予約せずに利用している場合は、事前に予約を行ってください。",
+        "🚫 他の人が予約中のリソースを使用しています\n\nあなたが使用中のリソースには、現在以下の予約が入っています。\n\n👤 予約者\n{}\n\n📅 予約期間\n{}\n\n💻 予約リソース\n{}\n\n心当たりがある場合は、処理を停止するか予約者と調整してください。",
+        reserved_usage.owner_email().as_str(),
         time,
-        resources,
-        reserved_usage.owner_email().as_str()
+        resources
     )
 }
 
@@ -149,6 +149,6 @@ mod tests {
 
         assert!(message.contains("owner@example.com"));
         assert!(message.contains("Thalys"));
-        assert!(message.contains("予約なしでリソースを使用"));
+        assert!(message.contains("他の人が予約中のリソースを使用"));
     }
 }
