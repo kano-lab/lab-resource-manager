@@ -7,6 +7,7 @@ use super::app_config::AppConfig;
 use super::defaults;
 use chrono::Duration;
 use std::env;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -95,6 +96,31 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
                 .expect("デフォルト値は常にパース可能"),
             );
 
+    let mcp_listen_addr = env::var("MCP_LISTEN_ADDR")
+        .ok()
+        .map(|s| {
+            s.parse::<SocketAddr>()
+                .map_err(|_| ConfigLoadError::InvalidEnvVar {
+                    name: "MCP_LISTEN_ADDR",
+                    reason: "\"host:port\"形式である必要があります".to_string(),
+                })
+        })
+        .transpose()?;
+
+    let mcp_tokens_file = env::var("MCP_TOKENS_FILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(defaults::MCP_TOKENS_FILE));
+
+    let mcp_allowed_hosts = env::var("MCP_ALLOWED_HOSTS")
+        .ok()
+        .map(|s| {
+            s.split(',')
+                .map(|host| host.trim().to_string())
+                .filter(|host| !host.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
     Ok(AppConfig {
         google_service_account_key_path,
         slack_bot_token,
@@ -107,6 +133,9 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
         gpu_usage_max_staleness_secs,
         unreserved_usage_threshold_secs,
         reservation_proposal_duration_candidates,
+        mcp_listen_addr,
+        mcp_tokens_file,
+        mcp_allowed_hosts,
     })
 }
 

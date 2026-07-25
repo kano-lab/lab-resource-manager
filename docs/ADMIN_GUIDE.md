@@ -265,6 +265,77 @@ and running `gpu-usage-reporter` against a real GPU server have not been verifie
 environment yet. The Slack app needs the `im:write` and `chat:write` scopes for the DM to
 work.
 
+### 6. MCP Server Setup (Optional)
+
+Agents such as Claude Code can view, create, update, and cancel reservations through an
+embedded MCP (Model Context Protocol) server that runs inside the main
+`lab-resource-manager` process. No new binary or systemd service is needed — the HTTP/SSE
+listener is started as an additional task within the existing process. The Google service
+account key continues to exist only on the single host running LRM.
+
+**Prerequisite**: the lab's servers and members' machines must be able to reach each other
+over the same LAN. This feature assumes a LAN-internal deployment; TLS termination and
+exposing it to the internet are out of scope.
+
+**Environment variables:**
+
+| Environment variable | Default | Purpose |
+|-----------------------|---------|---------|
+| `MCP_LISTEN_ADDR` | (unset = feature disabled) | HTTP/SSE listen address for the MCP server (e.g. `0.0.0.0:8787`) |
+| `MCP_TOKENS_FILE` | `/var/lib/lab-resource-manager/mcp_tokens.json` | Persistence file for MCP access tokens |
+| `MCP_ALLOWED_HOSTS` | (unset = disables Host header validation) | Comma-separated list of `Host` header values to accept (e.g. `thalys:8787,192.168.1.10:8787`) |
+
+Set `MCP_ALLOWED_HOSTS` to the actual reachable host name/IP and port combination that
+members will use in their client configuration. Leaving it unset disables Host header
+validation, so setting it is recommended.
+
+**Authentication: the `/mcp-token` command**
+
+Members run the following in Slack to obtain their own personal access token:
+
+```text
+/mcp-token
+```
+
+The token is shown in an ephemeral message visible only to the requester, sent to the
+email address linked to their Slack account (via `/link-user` or `/register-calendar`).
+Re-running the command issues a new token and revokes the previous one (one token per
+person).
+
+**Example member-side configuration (`.mcp.json`):**
+
+```json
+{
+  "mcpServers": {
+    "lab-resource-manager": {
+      "url": "http://<LRM host>:8787/mcp",
+      "headers": {
+        "Authorization": "Bearer <issued token>"
+      }
+    }
+  }
+}
+```
+
+**Available tools:**
+
+| Tool | Description |
+|------|--------------|
+| `list_all_reservations` | List all future (including ongoing) reservations |
+| `list_my_reservations` | List reservations owned by the caller |
+| `get_reservation` | Get a reservation's details by ID |
+| `create_reservation` | Create a new reservation (GPU server or room) |
+| `update_reservation` | Update the time or notes of a reservation you own |
+| `cancel_reservation` | Cancel a reservation you own |
+
+Write tools (create/update/cancel) treat the email address linked to the caller's Bearer
+token as the owner. Updating or cancelling someone else's reservation is rejected by the
+same existing authorization rule used by `/reserve` (owner only).
+
+**Current limitation**: connecting over HTTP/SSE from another machine on the LAN, and
+exercising `/mcp-token` against a real Slack workspace, have not been verified — the
+development Docker sandbox cannot exercise either.
+
 ## Running the System
 
 ### Service Management

@@ -16,9 +16,11 @@
 //! ## モジュール
 //!
 //! - `link_user`: `/link-user` - ユーザーとメールアドレスの紐付け（管理者用、モーダルベース）
+//! - `mcp_token`: `/mcp-token` - MCPアクセストークンの発行
 //! - `register_calendar`: `/register-calendar` - メールアドレス登録（モーダルベース）
 //! - `reserve`: `/reserve` - リソース予約（モーダルベース）
 
 pub mod link_user;
+pub mod mcp_token;
 pub mod register_calendar;
 pub mod reserve;

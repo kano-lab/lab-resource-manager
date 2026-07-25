@@ -44,6 +44,9 @@ where
             "/link-user" => {
                 crate::interface::slack::slash_commands::link_user::handle(self, event).await
             }
+            "/mcp-token" => {
+                crate::interface::slack::slash_commands::mcp_token::handle(self, event).await
+            }
             _ => Ok(SlackCommandEventResponse::new(
                 SlackMessageContent::new().with_text(format!("不明なコマンド: {}", command)),
             )),
