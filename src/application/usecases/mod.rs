@@ -42,6 +42,9 @@
 //! Application層は薄く保ち、ドメインロジックをDomain層に配置する。
 
 /// リソース使用予定を作成するユースケース
+/// 事後予約提案の受諾
+pub mod accept_reservation_proposal;
+
 pub mod create_resource_usage;
 /// リソース使用予定を削除するユースケース
 pub mod delete_resource_usage;
@@ -57,9 +60,12 @@ pub mod list_user_resource_usages;
 pub mod notify_future_resource_usage_changes;
 /// 実サーバーの利用状況と予約を突き合わせるユースケース
 pub mod reconcile_observed_usages;
+#[cfg(test)]
+mod reconcile_observed_usages_tests;
 /// リソース使用予定を更新するユースケース
 pub mod update_resource_usage;
 
+pub use accept_reservation_proposal::AcceptReservationProposalUseCase;
 pub use create_resource_usage::CreateResourceUsageUseCase;
 pub use delete_resource_usage::DeleteResourceUsageUseCase;
 pub use get_resource_usage_by_id::GetResourceUsageByIdUseCase;

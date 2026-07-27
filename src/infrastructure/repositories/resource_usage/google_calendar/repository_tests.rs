@@ -358,3 +358,22 @@ async fn find_future_keeps_ongoing_reservation() {
         "開始時刻が過去でも進行中の予約は含めるべき"
     );
 }
+
+#[tokio::test]
+async fn parse_failures_are_reported_once_per_event() {
+    let (repository, _gateway, _mapping_path) = repository_with(vec![]);
+
+    // 同じイベントの解釈失敗を毎回警告すると、ポーリングのたびにログが積み上がる
+    assert!(
+        repository.should_report_parse_failure("event-a"),
+        "初回は報告する"
+    );
+    assert!(
+        !repository.should_report_parse_failure("event-a"),
+        "2回目以降は報告しない"
+    );
+    assert!(
+        repository.should_report_parse_failure("event-b"),
+        "別のイベントは報告する"
+    );
+}

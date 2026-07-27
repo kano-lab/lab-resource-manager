@@ -31,7 +31,12 @@ impl ReservationProposalNotifier for MockReservationProposalNotifier {
         println!(
             "📤 [MockReservationProposalNotifier] {} へ {} の予約を提案 (候補: {}件)",
             proposal.owner_email().as_str(),
-            proposal.resource(),
+            proposal
+                .resources()
+                .iter()
+                .map(|resource| resource.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
             proposal.duration_candidates().len()
         );
         self.proposals.lock().unwrap().push(proposal);
