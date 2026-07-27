@@ -7,11 +7,14 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::services::ResourceConflictChecker;
 use chrono::{DateTime, Duration, Utc};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 /// 実利用検知にもとづく事後予約の備考
 pub const POST_HOC_RESERVATION_NOTES: &str = "GPU実利用検知による事後予約";
+
+/// ひとつの機会を表すキー（予約者・利用開始時刻・正規化したリソース名）
+type SessionKey = (String, DateTime<Utc>, Vec<String>);
 
 /// 事後予約の提案を受諾するユースケース
 ///
@@ -21,6 +24,11 @@ pub const POST_HOC_RESERVATION_NOTES: &str = "GPU実利用検知による事後�
 pub struct AcceptReservationProposalUseCase<R: ResourceUsageRepository> {
     repository: Arc<R>,
     conflict_checker: ResourceConflictChecker,
+    /// この機会について確定した予約のID
+    ///
+    /// 受諾ボタンは押し直せるため、同じ機会への受諾が連続して届く。ロックを兼ねており、
+    /// ひとつの機会に対する処理は同時に1つしか進まない。
+    settled_sessions: tokio::sync::Mutex<HashMap<SessionKey, UsageId>>,
 }
 
 impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
@@ -29,6 +37,7 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
         Self {
             repository,
             conflict_checker: ResourceConflictChecker::new(),
+            settled_sessions: tokio::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -57,10 +66,25 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
         duration: Duration,
     ) -> Result<UsageId, ApplicationError> {
         let time_period = TimePeriod::new(active_since, active_since + duration)?;
+        let session_key = Self::session_key(&owner_email, &resources, active_since);
 
-        let existing = self
-            .find_same_session_reservation(&owner_email, &resources, active_since, &time_period)
-            .await?;
+        // 同じ機会への受諾を直列化する。連打で書き込みが検索へ反映される前に次の受諾が
+        // 走ると、同じ機会の予約が二重に作られてしまう。
+        let mut settled_sessions = self.settled_sessions.lock().await;
+
+        let existing = match settled_sessions.get(&session_key) {
+            // このプロセスで既に確定させた予約は、検索の反映を待たずIDで引く
+            Some(settled_id) => self.repository.find_by_id(settled_id).await?,
+            None => {
+                self.find_same_session_reservation(
+                    &owner_email,
+                    &resources,
+                    active_since,
+                    &time_period,
+                )
+                .await?
+            }
+        };
 
         // 既存予約の期間を更新する場合、自分自身は競合対象から外す
         self.conflict_checker
@@ -89,8 +113,26 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
         };
 
         self.repository.save(&usage).await?;
+        settled_sessions.insert(session_key, usage.id().clone());
 
         Ok(usage.id().clone())
+    }
+
+    /// ひとつの機会を表すキーを作る
+    ///
+    /// リソースの並びは呼び出し側に依存するため、表示名で並べ替えて正規化する。
+    fn session_key(
+        owner_email: &EmailAddress,
+        resources: &[Resource],
+        active_since: DateTime<Utc>,
+    ) -> SessionKey {
+        let mut normalized: Vec<String> = resources
+            .iter()
+            .map(|resource| resource.to_string())
+            .collect();
+        normalized.sort();
+
+        (owner_email.as_str().to_string(), active_since, normalized)
     }
 
     /// 同じ観測セッションに対して既に作られた予約を探す
@@ -121,7 +163,10 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
 mod tests {
     use super::*;
     use crate::domain::aggregates::resource_usage::value_objects::Gpu;
+    use crate::domain::ports::repositories::RepositoryError;
     use crate::infrastructure::repositories::resource_usage::mock::MockUsageRepository;
+    use async_trait::async_trait;
+    use std::sync::Mutex as StdMutex;
 
     fn gpu(device_number: u32) -> Resource {
         Resource::Gpu(Gpu::new(
@@ -355,5 +400,166 @@ mod tests {
             .unwrap();
 
         assert_eq!(all_reservations(&repository).await.len(), 2);
+    }
+    /// 保存がすぐには検索結果に現れないリポジトリ
+    ///
+    /// Google Calendarへ書き込んだ直後の検索に、その予約がまだ現れないことがある。
+    /// ボタン連打で実際に重複予約が生まれたのはこの性質が原因なので、テストでも再現する。
+    struct EventuallyConsistentRepository {
+        /// 検索から見える予約
+        visible: StdMutex<Vec<ResourceUsage>>,
+        /// 保存されたがまだ検索から見えない予約
+        pending: StdMutex<Vec<ResourceUsage>>,
+    }
+
+    impl EventuallyConsistentRepository {
+        fn new() -> Self {
+            Self {
+                visible: StdMutex::new(Vec::new()),
+                pending: StdMutex::new(Vec::new()),
+            }
+        }
+
+        fn all(&self) -> Vec<ResourceUsage> {
+            let mut all = self.visible.lock().unwrap().clone();
+            all.extend(self.pending.lock().unwrap().iter().cloned());
+            all
+        }
+    }
+
+    #[async_trait]
+    impl ResourceUsageRepository for EventuallyConsistentRepository {
+        async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
+            // IDを指定した取得は書き込み直後でも一貫して読める
+            Ok(self.all().into_iter().find(|usage| usage.id() == id))
+        }
+
+        async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
+            Ok(self.visible.lock().unwrap().clone())
+        }
+
+        async fn find_overlapping(
+            &self,
+            time_period: &TimePeriod,
+        ) -> Result<Vec<ResourceUsage>, RepositoryError> {
+            Ok(self
+                .visible
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|usage| usage.time_period().overlaps_with(time_period))
+                .cloned()
+                .collect())
+        }
+
+        async fn find_by_owner(
+            &self,
+            owner_email: &EmailAddress,
+        ) -> Result<Vec<ResourceUsage>, RepositoryError> {
+            Ok(self
+                .visible
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|usage| usage.owner_email() == owner_email)
+                .cloned()
+                .collect())
+        }
+
+        async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError> {
+            let mut pending = self.pending.lock().unwrap();
+            if let Some(existing) = pending.iter_mut().find(|p| p.id() == usage.id()) {
+                *existing = usage.clone();
+            } else {
+                pending.push(usage.clone());
+            }
+            Ok(())
+        }
+
+        async fn delete(&self, _id: &UsageId) -> Result<(), RepositoryError> {
+            unimplemented!("このテストでは使用しない")
+        }
+    }
+
+    #[tokio::test]
+    async fn pressing_the_same_button_twice_in_a_row_creates_only_one_reservation() {
+        let repository = Arc::new(EventuallyConsistentRepository::new());
+        let usecase = Arc::new(AcceptReservationProposalUseCase::new(repository.clone()));
+        let active_since = Utc::now() - Duration::minutes(5);
+
+        // 1回目の書き込みが検索に反映される前に2回目が走る（ボタン連打）
+        let first = {
+            let usecase = usecase.clone();
+            tokio::spawn(async move {
+                usecase
+                    .execute(
+                        email("owner@example.com"),
+                        vec![gpu(5)],
+                        active_since,
+                        Duration::hours(1),
+                    )
+                    .await
+            })
+        };
+        let second = {
+            let usecase = usecase.clone();
+            tokio::spawn(async move {
+                usecase
+                    .execute(
+                        email("owner@example.com"),
+                        vec![gpu(5)],
+                        active_since,
+                        Duration::hours(1),
+                    )
+                    .await
+            })
+        };
+
+        let first = first.await.unwrap();
+        let second = second.await.unwrap();
+
+        assert!(first.is_ok(), "1回目は成功するべき: {first:?}");
+        assert!(
+            second.is_ok(),
+            "2回目も競合エラーにせず受け付けるべき: {second:?}"
+        );
+        assert_eq!(repository.all().len(), 1, "連打しても予約は1件であるべき");
+    }
+
+    #[tokio::test]
+    async fn pressing_a_longer_duration_after_the_first_press_updates_the_same_reservation() {
+        let repository = Arc::new(EventuallyConsistentRepository::new());
+        let usecase = AcceptReservationProposalUseCase::new(repository.clone());
+        let active_since = Utc::now() - Duration::minutes(5);
+
+        let first = usecase
+            .execute(
+                email("owner@example.com"),
+                vec![gpu(5)],
+                active_since,
+                Duration::hours(1),
+            )
+            .await
+            .unwrap();
+
+        // 反映される前に別の長さを選び直す
+        let second = usecase
+            .execute(
+                email("owner@example.com"),
+                vec![gpu(5)],
+                active_since,
+                Duration::hours(12),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(first, second, "同じ予約を指すべき");
+        let all = repository.all();
+        assert_eq!(all.len(), 1, "予約は増えない");
+        assert_eq!(
+            all[0].time_period().end(),
+            active_since + Duration::hours(12),
+            "選び直した長さに更新されるべき"
+        );
     }
 }

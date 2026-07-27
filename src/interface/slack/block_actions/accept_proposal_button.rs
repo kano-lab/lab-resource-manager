@@ -30,7 +30,8 @@ where
         return Ok(());
     };
 
-    let feedback = match create_reservation_from_payload(app, value).await {
+    let outcome = create_reservation_from_payload(app, value).await;
+    let feedback = match &outcome {
         Ok(_) => "✅ 予約を作成しました".to_string(),
         Err(e) => {
             error!("❌ 事後予約の作成に失敗: {}", e);
@@ -39,6 +40,23 @@ where
     };
 
     let session = app.slack_client().open_session(app.bot_token());
+
+    // 受諾できたら提案メッセージのボタンを消す。押しても無駄だと分かるようにし、
+    // 連打そのものを減らす（重複防止はユースケース側で担保している）
+    if let (true, Some((message_channel, message_ts))) =
+        (outcome.is_ok(), proposal_message_ref(block_actions))
+    {
+        let settled = SlackApiChatUpdateRequest::new(
+            message_channel,
+            SlackMessageContent::new().with_text(feedback.clone()),
+            message_ts,
+        );
+        if let Err(e) = session.chat_update(&settled).await {
+            // ボタンが残るだけで予約自体は成立しているため、失敗しても処理は続ける
+            error!("⚠️ 提案メッセージの更新に失敗: {}", e);
+        }
+    }
+
     let post_req = SlackApiChatPostMessageRequest::new(
         channel_id,
         SlackMessageContent::new().with_text(feedback),
@@ -48,6 +66,21 @@ where
     }
 
     Ok(())
+}
+
+/// 提案メッセージ（ボタンが乗っているメッセージ）の位置
+fn proposal_message_ref(
+    block_actions: &SlackInteractionBlockActionsEvent,
+) -> Option<(SlackChannelId, SlackTs)> {
+    let SlackInteractionActionContainer::Message(msg) = &block_actions.container else {
+        return None;
+    };
+    let channel_id = msg
+        .channel_id
+        .clone()
+        .or_else(|| block_actions.channel.as_ref().map(|c| c.id.clone()))?;
+
+    Some((channel_id, msg.message_ts.clone()))
 }
 
 fn dm_channel_id(block_actions: &SlackInteractionBlockActionsEvent) -> Option<SlackChannelId> {
