@@ -9,6 +9,17 @@ use crate::domain::{
 use async_trait::async_trait;
 
 /// ResourceUsage集約のリポジトリポート
+///
+/// # 予約として扱う範囲
+/// 永続化層のレコードのうち、`ResourceUsage`として解釈できるものだけが予約である。
+/// 解釈できないレコードは予約ではなく、このモデルの外にある。検索結果に現れないのは
+/// 取りこぼしではなく、予約ではないものを返さないという意味である。
+///
+/// 永続化層が人の手による編集を受け付ける場合、予約の形式に沿わないレコードは
+/// 避けられない。それを予約として復元しようとはしない。
+///
+/// 予約されないまま使われるリソースは、実利用の観測（`ResourceUsageObserver`）が
+/// 扱う領域である。
 #[async_trait]
 pub trait ResourceUsageRepository {
     /// IDでResourceUsageを検索

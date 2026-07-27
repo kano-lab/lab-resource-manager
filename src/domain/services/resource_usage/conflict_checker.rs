@@ -5,6 +5,14 @@ use crate::domain::services::resource_usage::errors::{ConflictCheckError, Resour
 /// リソース競合チェックサービス
 ///
 /// 指定された時間帯とリソースが既存の予約と競合しないかをチェックする
+///
+/// # 判定の範囲
+/// 判定の対象は予約である。永続化層にあって予約として解釈されないレコードは
+/// 予約ではないため、競合の対象にならない（`ResourceUsageRepository`を参照）。
+///
+/// したがって競合なしとは「予約と重ならない」ことであり、そのリソースが実際に
+/// 使われていないことは意味しない。予約されないまま使われるリソースは
+/// 実利用の観測側で扱う。
 #[derive(Debug, Clone, Default)]
 pub struct ResourceConflictChecker;
 
