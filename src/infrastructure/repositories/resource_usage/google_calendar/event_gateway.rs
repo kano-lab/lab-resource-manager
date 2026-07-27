@@ -8,6 +8,9 @@ use google_calendar3::{
     hyper_util::client::legacy::connect::HttpConnector,
 };
 
+/// 1ページあたりの最大取得件数（Google Calendar APIの上限値）
+const MAX_RESULTS_PER_PAGE: i32 = 2500;
+
 /// Google Calendarのイベント操作
 ///
 /// リポジトリは「どの期間を問い合わせるか」「取得したイベントをどう解釈するか」を担い、
@@ -67,18 +70,42 @@ impl CalendarEventGateway for GoogleCalendarEventGateway {
         time_min: DateTime<Utc>,
         time_max: Option<DateTime<Utc>>,
     ) -> Result<Vec<Event>, RepositoryError> {
-        let mut call = self.hub.events().list(calendar_id).time_min(time_min);
+        let mut all_events = Vec::new();
+        let mut page_token: Option<String> = None;
 
-        if let Some(time_max) = time_max {
-            call = call.time_max(time_max);
+        // 1ページに収まらない場合、続きのページを取得しないとイベントを取りこぼす
+        loop {
+            let mut call = self
+                .hub
+                .events()
+                .list(calendar_id)
+                .time_min(time_min)
+                // 繰り返しイベントを個々の予定へ展開する。展開しないと繰り返しの
+                // 2回目以降が取得できず、予約として扱えない
+                .single_events(true)
+                .max_results(MAX_RESULTS_PER_PAGE);
+
+            if let Some(time_max) = time_max {
+                call = call.time_max(time_max);
+            }
+
+            if let Some(token) = &page_token {
+                call = call.page_token(token);
+            }
+
+            let (_response, events) = call.doit().await.map_err(|e| {
+                RepositoryError::ConnectionError(format!("Calendar API error: {}", e))
+            })?;
+
+            all_events.extend(events.items.unwrap_or_default());
+
+            match events.next_page_token {
+                Some(token) => page_token = Some(token),
+                None => break,
+            }
         }
 
-        let result = call
-            .doit()
-            .await
-            .map_err(|e| RepositoryError::ConnectionError(format!("Calendar API error: {}", e)))?;
-
-        Ok(result.1.items.unwrap_or_default())
+        Ok(all_events)
     }
 
     async fn get_event(

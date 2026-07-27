@@ -9,7 +9,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{RepositoryError, ResourceUsageRepository};
 use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Utc};
 use google_calendar3::{
     CalendarHub,
     api::Event,
@@ -29,6 +29,17 @@ const MANAGED_SECTION_BEGIN: &str = "[lab-resource-manager:managed-section:begin
 
 /// アプリが管理するセクションの終了マーカー。このマーカーより後ろが備考として扱われる。
 const MANAGED_SECTION_END: &str = "[lab-resource-manager:managed-section:end]";
+
+/// キャンセル済みイベントのstatus値
+const EVENT_STATUS_CANCELLED: &str = "cancelled";
+
+/// イベントが有効な（キャンセルされていない）予約かどうか
+///
+/// 繰り返しイベントを個々の予定に展開して取得すると、削除された回が
+/// `status: cancelled`として返ることがある。これは予約として扱わない。
+fn is_active_event(event: &Event) -> bool {
+    event.status.as_deref() != Some(EVENT_STATUS_CANCELLED)
+}
 
 /// Google Calendar APIを使用したResourceUsageリポジトリ実装
 pub struct GoogleCalendarUsageRepository {
@@ -77,66 +88,91 @@ impl GoogleCalendarUsageRepository {
         })
     }
 
-    /// すべてのカレンダーから未来のイベントを取得
+    /// ゲートウェイを差し替えてリポジトリを構築する（テスト用）
+    #[cfg(test)]
+    pub(super) fn with_gateway(
+        gateway: Arc<dyn CalendarEventGateway>,
+        config: ResourceConfig,
+        service_account_email: String,
+        id_mappings_path: std::path::PathBuf,
+    ) -> Result<Self, RepositoryError> {
+        Ok(Self {
+            gateway,
+            config,
+            service_account_email,
+            id_mapper: Arc::new(IdMapper::new(id_mappings_path)?),
+        })
+    }
+
+    /// 管理対象のカレンダー一覧
+    /// 戻り値: (calendar_id, resource_name)
+    fn calendars(&self) -> Vec<(String, String)> {
+        self.config
+            .servers
+            .iter()
+            .map(|server| (server.calendar_id.clone(), server.name.clone()))
+            .chain(
+                self.config
+                    .rooms
+                    .iter()
+                    .map(|room| (room.calendar_id.clone(), room.name.clone())),
+            )
+            .collect()
+    }
+
+    /// すべてのカレンダーから、指定期間に重なるイベントを取得
+    ///
+    /// `time_min`は「イベントの終了時刻がこれより後」、`time_max`は「イベントの開始時刻が
+    /// これより前」を意味する。どの期間を対象とするかは呼び出し側が決める。
+    ///
     /// 戻り値: (Event, calendar_id, resource_name)
-    async fn fetch_future_events(&self) -> Result<Vec<(Event, String, String)>, RepositoryError> {
+    async fn fetch_events(
+        &self,
+        time_min: DateTime<Utc>,
+        time_max: Option<DateTime<Utc>>,
+    ) -> Result<Vec<(Event, String, String)>, RepositoryError> {
         let mut all_events = Vec::new();
 
-        // 各サーバーカレンダーから取得
-        for server in &self.config.servers {
-            let events = self.fetch_events_from_calendar(&server.calendar_id).await?;
-            all_events.extend(
-                events
-                    .into_iter()
-                    .map(|e| (e, server.calendar_id.clone(), server.name.clone())),
-            );
-        }
+        for (calendar_id, resource_name) in self.calendars() {
+            let events = self
+                .gateway
+                .list_events(&calendar_id, time_min, time_max)
+                .await?;
 
-        // 部屋カレンダーから取得
-        for room in &self.config.rooms {
-            let events = self.fetch_events_from_calendar(&room.calendar_id).await?;
             all_events.extend(
                 events
                     .into_iter()
-                    .map(|e| (e, room.calendar_id.clone(), room.name.clone())),
+                    .filter(is_active_event)
+                    .map(|event| (event, calendar_id.clone(), resource_name.clone())),
             );
         }
 
         Ok(all_events)
     }
 
-    /// 特定のカレンダーから未来のイベント（進行中および今後予定されているもの）を取得
-    async fn fetch_events_from_calendar(
-        &self,
-        calendar_id: &str,
-    ) -> Result<Vec<Event>, RepositoryError> {
-        // 過去24時間分も取得して、終了時刻でフィルタリングする
-        // time_minを開始時刻で制限すると、現在進行中のイベント（開始時刻が過去）が除外されてしまう
-        let time_min = Utc::now() - Duration::hours(24);
-
-        let events = self
-            .gateway
-            .list_events(calendar_id, time_min, None)
-            .await?;
-
-        let now = Utc::now();
-
-        // 終了時刻が現在時刻より後のイベントのみを返す
-        // これにより、進行中または未来のイベントのみが対象となり、
-        // 完了したイベントが誤って削除通知されるのを防ぐ
-        let filtered_events: Vec<Event> = events
+    /// 取得したイベント群をResourceUsageへ変換する
+    ///
+    /// 予約として解釈できないイベント（カレンダー上で直接作られた自由記述のイベントなど）は
+    /// 警告を残して飛ばす。1件の解釈失敗で予約機能全体を止めないための判断。
+    fn parse_events(&self, events: Vec<(Event, String, String)>) -> Vec<ResourceUsage> {
+        events
             .into_iter()
-            .filter(|event| {
-                event
-                    .end
-                    .as_ref()
-                    .and_then(|e| e.date_time.as_ref())
-                    .map(|end_time| *end_time > now)
-                    .unwrap_or(false)
+            .filter_map(|(event, calendar_id, resource_context)| {
+                let event_id = event.id.clone().unwrap_or_default();
+                match self.parse_event(event, &calendar_id, &resource_context) {
+                    Ok(usage) => Some(usage),
+                    Err(e) => {
+                        tracing::warn!(
+                            "イベントを予約として解釈できませんでした: calendar_id={}, event_id={}, error={}",
+                            calendar_id,
+                            event_id,
+                            e
+                        );
+                        None
+                    }
+                }
             })
-            .collect();
-
-        Ok(filtered_events)
+            .collect()
     }
 
     /// イベントをResourceUsageに変換
@@ -461,25 +497,10 @@ impl GoogleCalendarUsageRepository {
         &self,
         event_id: &str,
     ) -> Result<Option<ResourceUsage>, RepositoryError> {
-        // すべてのカレンダーIDを取得
-        let mut calendar_ids: Vec<String> = self
-            .config
-            .servers
-            .iter()
-            .map(|server| server.calendar_id.clone())
-            .collect();
-
-        // 部屋のカレンダーも追加
-        for room in &self.config.rooms {
-            calendar_ids.push(room.calendar_id.clone());
-        }
-
         // 各カレンダーでイベントの検索を試みる
-        for calendar_id in calendar_ids {
+        for (calendar_id, resource_context) in self.calendars() {
             match self.gateway.get_event(&calendar_id, event_id).await? {
                 Some(event) => {
-                    // リソースコンテキストを取得
-                    let resource_context = self.get_resource_context(&calendar_id)?;
                     // イベントをパース（この時点で新しいマッピングが作成される）
                     let usage = self.parse_event(event, &calendar_id, &resource_context)?;
                     return Ok(Some(usage));
@@ -499,21 +520,8 @@ impl GoogleCalendarUsageRepository {
     ///
     /// 全カレンダーから該当するイベントを検索して削除します。
     async fn delete_by_event_id(&self, event_id: &str) -> Result<(), RepositoryError> {
-        // すべてのカレンダーIDを取得
-        let mut calendar_ids: Vec<String> = self
-            .config
-            .servers
-            .iter()
-            .map(|server| server.calendar_id.clone())
-            .collect();
-
-        // 部屋のカレンダーも追加
-        for room in &self.config.rooms {
-            calendar_ids.push(room.calendar_id.clone());
-        }
-
         // 各カレンダーでイベントの削除を試みる
-        for calendar_id in calendar_ids {
+        for (calendar_id, _resource_name) in self.calendars() {
             match self.gateway.delete_event(&calendar_id, event_id).await {
                 Ok(_) => {
                     tracing::info!(
@@ -613,37 +621,28 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     }
 
     async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        let events = self.fetch_future_events().await?;
+        // 終了時刻が現在より後のイベントに限る。開始時刻では絞らないため、
+        // 進行中のイベント（開始時刻が過去）も含まれる。
+        let events = self.fetch_events(Utc::now(), None).await?;
 
-        let mut usages = Vec::new();
-        for (event, calendar_id, context) in events {
-            match self.parse_event(event, &calendar_id, &context) {
-                Ok(usage) => usages.push(usage),
-                Err(e) => {
-                    eprintln!("⚠️  イベントパースエラー: {}", e); // TODO@KinjiKawaguchi: エラーハンドリングの改善
-                }
-            }
-        }
-
-        Ok(usages)
+        Ok(self.parse_events(events))
     }
 
     /// 指定期間と重複するResourceUsageを検索
     ///
-    /// # パフォーマンスに関する注意
-    /// 現在の実装では、すべての未来のイベントを取得してからメモリ上でフィルタリングしています。
-    /// Google Calendar APIには時間範囲での検索機能がありますが、複数カレンダーにまたがる
-    /// 検索を効率的に行うための十分なクエリ機能がないため、この実装を採用しています。
-    ///
-    /// 将来的な改善案:
-    /// - 各カレンダーに対して時間範囲クエリを並列実行
-    /// - 結果のキャッシング（短時間の重複チェックに有効）
+    /// 対象期間そのものをカレンダーに問い合わせる。`find_future`は使わない。
+    /// 事後予約のように過去の期間を予約する場合、相手の予約が既に終了していても
+    /// 競合は競合であり、終了済みを除外すると重複予約を許してしまう。
     async fn find_overlapping(
         &self,
         time_period: &TimePeriod,
     ) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        let all_usages = self.find_future().await?;
-        Ok(all_usages
+        let events = self
+            .fetch_events(time_period.start(), Some(time_period.end()))
+            .await?;
+
+        Ok(self
+            .parse_events(events)
             .into_iter()
             .filter(|usage| usage.time_period().overlaps_with(time_period))
             .collect())
@@ -651,14 +650,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
 
     /// 特定のユーザーが所有するResourceUsageを検索
     ///
-    /// # パフォーマンスに関する注意
-    /// 現在の実装では、すべての未来のイベントを取得してからメモリ上でフィルタリングしています。
-    /// Google Calendar APIには所有者による検索機能がありますが、複数カレンダーにまたがる
-    /// 検索と、descriptionフィールドからの所有者抽出が必要なため、この実装を採用しています。
-    ///
-    /// 将来的な改善案:
-    /// - ユーザーごとのイベントキャッシング
-    /// - 定期的なバックグラウンド同期によるローカルインデックス構築
+    /// 進行中および今後の予約のみを対象とする（終了済みの予約は返さない）。
     async fn find_by_owner(
         &self,
         owner_email: &EmailAddress,
