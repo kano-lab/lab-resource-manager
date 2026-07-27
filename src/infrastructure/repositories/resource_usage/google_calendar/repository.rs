@@ -1,3 +1,4 @@
+use super::event_gateway::{CalendarEventGateway, GoogleCalendarEventGateway};
 use super::id_mapper::{ExternalId, IdMapper};
 use crate::domain::aggregates::resource_usage::{
     entity::ResourceUsage,
@@ -12,11 +13,8 @@ use chrono::{Duration, Utc};
 use google_calendar3::{
     CalendarHub,
     api::Event,
-    hyper_rustls::{HttpsConnector, HttpsConnectorBuilder},
-    hyper_util::{
-        client::legacy::{Client, connect::HttpConnector},
-        rt::TokioExecutor,
-    },
+    hyper_rustls::HttpsConnectorBuilder,
+    hyper_util::{client::legacy::Client, rt::TokioExecutor},
     yup_oauth2,
 };
 use std::sync::Arc;
@@ -34,7 +32,7 @@ const MANAGED_SECTION_END: &str = "[lab-resource-manager:managed-section:end]";
 
 /// Google Calendar APIを使用したResourceUsageリポジトリ実装
 pub struct GoogleCalendarUsageRepository {
-    hub: CalendarHub<HttpsConnector<HttpConnector>>,
+    gateway: Arc<dyn CalendarEventGateway>,
     config: ResourceConfig,
     service_account_email: String,
     id_mapper: Arc<IdMapper>,
@@ -72,7 +70,7 @@ impl GoogleCalendarUsageRepository {
         let id_mapper = IdMapper::new(id_mappings_path)?;
 
         Ok(Self {
-            hub,
+            gateway: Arc::new(GoogleCalendarEventGateway::new(hub)),
             config,
             service_account_email,
             id_mapper: Arc::new(id_mapper),
@@ -116,17 +114,12 @@ impl GoogleCalendarUsageRepository {
         // time_minを開始時刻で制限すると、現在進行中のイベント（開始時刻が過去）が除外されてしまう
         let time_min = Utc::now() - Duration::hours(24);
 
-        let result = self
-            .hub
-            .events()
-            .list(calendar_id)
-            .time_min(time_min)
-            .doit()
-            .await
-            .map_err(|e| RepositoryError::ConnectionError(format!("Calendar API error: {}", e)))?;
+        let events = self
+            .gateway
+            .list_events(calendar_id, time_min, None)
+            .await?;
 
         let now = Utc::now();
-        let events = result.1.items.unwrap_or_default();
 
         // 終了時刻が現在時刻より後のイベントのみを返す
         // これにより、進行中または未来のイベントのみが対象となり、
@@ -439,32 +432,6 @@ impl GoogleCalendarUsageRepository {
         })
     }
 
-    /// 特定のカレンダーから特定のIDのイベントを取得
-    async fn fetch_event_from_calendar(
-        &self,
-        calendar_id: &str,
-        event_id: &str,
-    ) -> Result<Option<Event>, RepositoryError> {
-        match self.hub.events().get(calendar_id, event_id).doit().await {
-            Ok((_response, event)) => Ok(Some(event)),
-            Err(e) => {
-                // HTTPステータスコード404の場合はNoneを返す
-                // google_calendar3のエラーは構造化されていないため、
-                // エラーメッセージから404を検出する
-                // TODO(#41): 文字列マッチングは脆弱。構造化されたエラー型またはHTTPステータスコードを直接チェック
-                let error_msg = e.to_string();
-                if error_msg.contains("404") || error_msg.contains("Not Found") {
-                    Ok(None)
-                } else {
-                    Err(RepositoryError::ConnectionError(format!(
-                        "Calendar API error: {}",
-                        e
-                    )))
-                }
-            }
-        }
-    }
-
     /// カレンダーIDからリソースコンテキスト（サーバー名または部屋名）を取得
     fn get_resource_context(&self, calendar_id: &str) -> Result<String, RepositoryError> {
         // サーバーカレンダーから検索
@@ -509,10 +476,7 @@ impl GoogleCalendarUsageRepository {
 
         // 各カレンダーでイベントの検索を試みる
         for calendar_id in calendar_ids {
-            match self
-                .fetch_event_from_calendar(&calendar_id, event_id)
-                .await?
-            {
+            match self.gateway.get_event(&calendar_id, event_id).await? {
                 Some(event) => {
                     // リソースコンテキストを取得
                     let resource_context = self.get_resource_context(&calendar_id)?;
@@ -550,13 +514,7 @@ impl GoogleCalendarUsageRepository {
 
         // 各カレンダーでイベントの削除を試みる
         for calendar_id in calendar_ids {
-            match self
-                .hub
-                .events()
-                .delete(&calendar_id, event_id)
-                .doit()
-                .await
-            {
+            match self.gateway.delete_event(&calendar_id, event_id).await {
                 Ok(_) => {
                     tracing::info!(
                         "✅ イベント削除成功: event_id={}, calendar_id={}",
@@ -618,7 +576,8 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
 
         // 特定のカレンダーから直接イベントを取得
         let event = match self
-            .fetch_event_from_calendar(&external_id.calendar_id, &external_id.event_id)
+            .gateway
+            .get_event(&external_id.calendar_id, &external_id.event_id)
             .await?
         {
             Some(event) => event,
@@ -724,21 +683,14 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
                 let mut event = self.create_event_from_usage(usage)?;
                 event.id = Some(external_id.event_id.clone());
 
-                self.hub
-                    .events()
-                    .update(event, &external_id.calendar_id, &external_id.event_id)
-                    .doit()
-                    .await
-                    .map_err(|e| {
-                        RepositoryError::ConnectionError(format!("イベント更新に失敗: {}", e))
-                    })?;
+                self.gateway
+                    .update_event(&external_id.calendar_id, &external_id.event_id, event)
+                    .await?;
             } else {
                 // カレンダーが変更された → 古いカレンダーから削除し、新しいカレンダーに作成
                 // 古いイベントを削除
-                self.hub
-                    .events()
-                    .delete(&external_id.calendar_id, &external_id.event_id)
-                    .doit()
+                self.gateway
+                    .delete_event(&external_id.calendar_id, &external_id.event_id)
                     .await
                     .map_err(|e| {
                         RepositoryError::ConnectionError(format!("古いイベントの削除に失敗: {}", e))
@@ -746,11 +698,9 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
 
                 // 新しいカレンダーにイベントを作成
                 let event = self.create_event_from_usage(usage)?;
-                let (_response, created_event) = self
-                    .hub
-                    .events()
-                    .insert(event, &new_calendar_id)
-                    .doit()
+                let created_event = self
+                    .gateway
+                    .insert_event(&new_calendar_id, event)
                     .await
                     .map_err(|e| {
                         RepositoryError::ConnectionError(format!(
@@ -775,15 +725,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         } else {
             // 新規 → 作成
             let event = self.create_event_from_usage(usage)?;
-            let (_response, created_event) = self
-                .hub
-                .events()
-                .insert(event, &new_calendar_id)
-                .doit()
-                .await
-                .map_err(|e| {
-                    RepositoryError::ConnectionError(format!("イベント作成に失敗: {}", e))
-                })?;
+            let created_event = self.gateway.insert_event(&new_calendar_id, event).await?;
 
             // Event IDを取得してマッピングを保存
             let event_id = created_event.id.ok_or_else(|| {
@@ -831,12 +773,9 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         };
 
         // イベントを削除
-        self.hub
-            .events()
-            .delete(&external_id.calendar_id, &external_id.event_id)
-            .doit()
-            .await
-            .map_err(|e| RepositoryError::ConnectionError(format!("イベント削除に失敗: {}", e)))?;
+        self.gateway
+            .delete_event(&external_id.calendar_id, &external_id.event_id)
+            .await?;
 
         // マッピングを削除
         self.id_mapper.delete_mapping(&actual_domain_id)?;
