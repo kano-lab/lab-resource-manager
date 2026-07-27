@@ -47,17 +47,19 @@
 //! // Load configuration
 //! let config = load_config("config/resources.toml")?;
 //!
+//! // Create identity link repository for Slack user mapping
+//! let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new("data/identity_links.json".into()));
+//!
 //! // Create repository and notifier
 //! let repository = Arc::new(
 //!     GoogleCalendarUsageRepository::new(
 //!         "secrets/service-account.json",
 //!         config.clone(),
 //!         "data/google_calendar_mappings.json".into(),
+//!         identity_repo.clone(),
 //!     )
 //!     .await?,
 //! );
-//! // Create identity link repository for Slack user mapping
-//! let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new("data/identity_links.json".into()));
 //! // NotificationRouter automatically supports all configured notification types
 //! // (Slack, Mock, etc.) based on config/resources.toml
 //! let notifier = NotificationRouter::new(config, identity_repo);

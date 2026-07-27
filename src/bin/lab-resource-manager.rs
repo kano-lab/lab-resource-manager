@@ -99,6 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             service_account_key,
             resource_config.as_ref().clone(),
             app_config.calendar_mappings_file.clone(),
+            identity_repo.clone(),
         )
         .await?,
     );

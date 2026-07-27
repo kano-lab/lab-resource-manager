@@ -1,12 +1,15 @@
 use super::event_gateway::{CalendarEventGateway, GoogleCalendarEventGateway};
 use super::id_mapper::{ExternalId, IdMapper};
+use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::resource_usage::{
     entity::ResourceUsage,
     factory::ResourceFactory,
     value_objects::{Resource, TimePeriod, UsageId},
 };
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::{RepositoryError, ResourceUsageRepository};
+use crate::domain::ports::repositories::{
+    IdentityLinkRepository, RepositoryError, ResourceUsageRepository,
+};
 use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -31,6 +34,12 @@ const MANAGED_SECTION_BEGIN: &str = "[lab-resource-manager:managed-section:begin
 /// アプリが管理するセクションの終了マーカー。このマーカーより後ろが備考として扱われる。
 const MANAGED_SECTION_END: &str = "[lab-resource-manager:managed-section:end]";
 
+/// 予約者のOSユーザー名行の接頭辞
+const OS_USER_LINE_PREFIX: &str = "OS: ";
+
+/// 予約IDの行の接頭辞
+const RESERVATION_ID_LINE_PREFIX: &str = "予約ID: ";
+
 /// キャンセル済みイベントのstatus値
 const EVENT_STATUS_CANCELLED: &str = "cancelled";
 
@@ -48,6 +57,8 @@ pub struct GoogleCalendarUsageRepository {
     config: ResourceConfig,
     service_account_email: String,
     id_mapper: Arc<IdMapper>,
+    /// 予約者の付加情報（OSユーザー名など）を引くためのリポジトリ
+    identity_repo: Arc<dyn IdentityLinkRepository>,
     /// 解釈失敗を既に警告したイベントID
     ///
     /// 同じイベントは取得のたびに失敗するため、警告を出し続けるとログが埋まる。
@@ -65,6 +76,7 @@ impl GoogleCalendarUsageRepository {
         service_account_key: &str,
         config: ResourceConfig,
         id_mappings_path: std::path::PathBuf,
+        identity_repo: Arc<dyn IdentityLinkRepository>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let secret = yup_oauth2::read_service_account_key(service_account_key).await?;
         let service_account_email = secret.client_email.clone();
@@ -90,6 +102,7 @@ impl GoogleCalendarUsageRepository {
             config,
             service_account_email,
             id_mapper: Arc::new(id_mapper),
+            identity_repo,
             reported_parse_failures: Mutex::new(HashSet::new()),
         })
     }
@@ -101,14 +114,78 @@ impl GoogleCalendarUsageRepository {
         config: ResourceConfig,
         service_account_email: String,
         id_mappings_path: std::path::PathBuf,
+        identity_repo: Arc<dyn IdentityLinkRepository>,
     ) -> Result<Self, RepositoryError> {
         Ok(Self {
             gateway,
             config,
             service_account_email,
             id_mapper: Arc::new(IdMapper::new(id_mappings_path)?),
+            identity_repo,
             reported_parse_failures: Mutex::new(HashSet::new()),
         })
+    }
+
+    /// イベントのdescriptionを組み立てる
+    ///
+    /// アプリが管理する行はマーカーで囲む。カレンダーを開いた人が状況を把握できるよう、
+    /// 予約者のメールアドレスに加えて、分かる範囲の情報（OSユーザー名・予約ID）を並べる。
+    /// 備考はマーカーの外に置き、利用者が自由に編集できる領域として残す。
+    pub(super) async fn build_description(&self, usage: &ResourceUsage) -> String {
+        let mut lines = vec![
+            MANAGED_SECTION_BEGIN.to_string(),
+            format!("{OWNER_LINE_PREFIX}{}", usage.owner_email().as_str()),
+        ];
+
+        if let Some(os_user) = self.resolve_os_user_name(usage).await {
+            lines.push(format!("{OS_USER_LINE_PREFIX}{os_user}"));
+        }
+
+        lines.push(format!(
+            "{RESERVATION_ID_LINE_PREFIX}{}",
+            usage.id().as_str()
+        ));
+        lines.push(MANAGED_SECTION_END.to_string());
+
+        let mut description = lines.join("\n");
+
+        if let Some(notes) = usage.notes() {
+            description.push_str(&format!("\n\n{notes}"));
+        }
+
+        description
+    }
+
+    /// 予約対象サーバーにおける予約者のOSユーザー名を引く
+    ///
+    /// OSユーザー名の名前空間はサーバーごとに異なりうるため、予約したサーバーの紐付けを見る。
+    /// 部屋の予約や紐付けが無い場合はNoneを返す。表示のための情報であり、
+    /// 引けないことを理由に予約の保存を失敗させない。
+    async fn resolve_os_user_name(&self, usage: &ResourceUsage) -> Option<String> {
+        let server = usage
+            .resources()
+            .iter()
+            .find_map(|resource| match resource {
+                Resource::Gpu(gpu) => Some(gpu.server().to_string()),
+                Resource::Room { .. } => None,
+            })?;
+
+        let identity_link = self
+            .identity_repo
+            .find_by_email(usage.owner_email())
+            .await
+            .inspect_err(|e| {
+                tracing::warn!(
+                    "予約者の紐付け取得に失敗しました（OS名は省略します）: {}",
+                    e
+                )
+            })
+            .ok()
+            .flatten()?;
+
+        identity_link
+            .get_identity_for_system(&ExternalSystem::Os { server })
+            .map(|identity| identity.user_id().to_string())
     }
 
     /// 管理対象のカレンダー一覧
@@ -277,48 +354,57 @@ impl GoogleCalendarUsageRepository {
         let title = event.summary.as_ref().unwrap_or(&default_title);
         let items = self.parse_resources(title, resource_context)?;
 
-        // アプリ管理セクション（開始〜終了マーカー）の外側を備考として抽出する。
-        // ユーザーが開始マーカーより前にメモを追記した場合も失わないよう、
-        // マーカーの前後両方を拾って結合する。
-        // 旧形式（"予約者: xxx"の1行目のみでマーカー無し）は先頭行のみ除外し、
-        // Googleカレンダー上で直接作成されたイベント（マーカーも予約者行も無し）は
-        // description全体をそのまま備考として扱う
-        let notes = event.description.as_ref().and_then(|desc| {
-            let body: String =
-                if let Some((before_begin, after_begin)) = desc.split_once(MANAGED_SECTION_BEGIN) {
-                    match after_begin.split_once(MANAGED_SECTION_END) {
-                        Some((_, after_end)) => {
-                            let before = before_begin.trim();
-                            let after = after_end.trim();
-                            if before.is_empty() {
-                                after.to_string()
-                            } else if after.is_empty() {
-                                before.to_string()
-                            } else {
-                                format!("{before}\n\n{after}")
-                            }
-                        }
-                        // 開始マーカーのみで終了マーカーが無い想定外の編集は、
-                        // 安全側に倒してdescription全体を備考として扱う
-                        None => desc.clone(),
-                    }
-                } else if desc.starts_with(OWNER_LINE_PREFIX) {
-                    desc.split_once('\n')
-                        .map(|(_, rest)| rest.to_string())
-                        .unwrap_or_default()
-                } else {
-                    desc.clone()
-                };
-            let body = body.trim();
-            if body.is_empty() {
-                None
-            } else {
-                Some(body.to_string())
-            }
-        });
+        let notes = event
+            .description
+            .as_ref()
+            .and_then(|desc| Self::extract_notes(desc));
 
         ResourceUsage::reconstruct(id, user, time_period, items, notes)
             .map_err(RepositoryError::from)
+    }
+
+    /// descriptionから備考（アプリ管理セクションの外側）を取り出す
+    ///
+    /// ユーザーが開始マーカーより前にメモを追記した場合も失わないよう、
+    /// マーカーの前後両方を拾って結合する。
+    /// 旧形式（"予約者: xxx"の1行目のみでマーカー無し）は先頭行のみ除外し、
+    /// Googleカレンダー上で直接作成されたイベント（マーカーも予約者行も無し）は
+    /// description全体をそのまま備考として扱う。
+    pub(super) fn extract_notes(description: &str) -> Option<String> {
+        let body: String = if let Some((before_begin, after_begin)) =
+            description.split_once(MANAGED_SECTION_BEGIN)
+        {
+            match after_begin.split_once(MANAGED_SECTION_END) {
+                Some((_, after_end)) => {
+                    let before = before_begin.trim();
+                    let after = after_end.trim();
+                    if before.is_empty() {
+                        after.to_string()
+                    } else if after.is_empty() {
+                        before.to_string()
+                    } else {
+                        format!("{before}\n\n{after}")
+                    }
+                }
+                // 開始マーカーのみで終了マーカーが無い想定外の編集は、
+                // 安全側に倒してdescription全体を備考として扱う
+                None => description.to_string(),
+            }
+        } else if description.starts_with(OWNER_LINE_PREFIX) {
+            description
+                .split_once('\n')
+                .map(|(_, rest)| rest.to_string())
+                .unwrap_or_default()
+        } else {
+            description.to_string()
+        };
+
+        let body = body.trim();
+        if body.is_empty() {
+            None
+        } else {
+            Some(body.to_string())
+        }
     }
 
     /// メールアドレスからEmailAddressを作成
@@ -450,7 +536,10 @@ impl GoogleCalendarUsageRepository {
     /// # 前提条件
     /// このメソッドは、get_calendar_id_for_usageで検証済みのResourceUsageを受け取ることを前提としています。
     /// すなわち、すべてのリソースが同一のカレンダーに属していることが保証されています。
-    fn create_event_from_usage(&self, usage: &ResourceUsage) -> Result<Event, RepositoryError> {
+    async fn create_event_from_usage(
+        &self,
+        usage: &ResourceUsage,
+    ) -> Result<Event, RepositoryError> {
         // 注: get_calendar_id_for_usageで検証済みのため、resources()[0]は安全に使用できる
         let summary = match &usage.resources()[0] {
             Resource::Gpu(_) => self.format_gpu_spec(usage.resources()).ok_or_else(|| {
@@ -459,18 +548,7 @@ impl GoogleCalendarUsageRepository {
             Resource::Room { name } => name.clone(),
         };
 
-        // descriptionに予約者情報と備考を含める。予約者情報はアプリが管理するセクションとして
-        // 開始・終了マーカーで囲み、ユーザーが誤って編集しないよう明示する
-        let description = {
-            let mut desc = format!(
-                "{MANAGED_SECTION_BEGIN}\n{OWNER_LINE_PREFIX}{}\n{MANAGED_SECTION_END}",
-                usage.owner_email().as_str()
-            );
-            if let Some(notes) = usage.notes() {
-                desc.push_str(&format!("\n\n{}", notes));
-            }
-            desc
-        };
+        let description = self.build_description(usage).await;
 
         Ok(Event {
             summary: Some(summary),
@@ -694,7 +772,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             if external_id.calendar_id == new_calendar_id {
                 // 同じカレンダー → 更新
                 // IMPORTANT: update API用に id フィールドを含む Event を作成
-                let mut event = self.create_event_from_usage(usage)?;
+                let mut event = self.create_event_from_usage(usage).await?;
                 event.id = Some(external_id.event_id.clone());
 
                 self.gateway
@@ -711,7 +789,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
                     })?;
 
                 // 新しいカレンダーにイベントを作成
-                let event = self.create_event_from_usage(usage)?;
+                let event = self.create_event_from_usage(usage).await?;
                 let created_event = self
                     .gateway
                     .insert_event(&new_calendar_id, event)
@@ -738,7 +816,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             }
         } else {
             // 新規 → 作成
-            let event = self.create_event_from_usage(usage)?;
+            let event = self.create_event_from_usage(usage).await?;
             let created_event = self.gateway.insert_event(&new_calendar_id, event).await?;
 
             // Event IDを取得してマッピングを保存
