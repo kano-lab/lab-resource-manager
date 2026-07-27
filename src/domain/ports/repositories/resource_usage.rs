@@ -9,6 +9,17 @@ use crate::domain::{
 use async_trait::async_trait;
 
 /// ResourceUsage集約のリポジトリポート
+///
+/// # 予約として扱う範囲
+/// 永続化層のレコードのうち、`ResourceUsage`として解釈できるものだけが予約である。
+/// 解釈できないレコードは予約ではなく、このモデルの外にある。検索結果に現れないのは
+/// 取りこぼしではなく、予約ではないものを返さないという意味である。
+///
+/// 永続化層が人の手による編集を受け付ける場合、予約の形式に沿わないレコードは
+/// 避けられない。それを予約として復元しようとはしない。
+///
+/// 予約されないまま使われるリソースは、実利用の観測（`ResourceUsageObserver`）が
+/// 扱う領域である。
 #[async_trait]
 pub trait ResourceUsageRepository {
     /// IDでResourceUsageを検索
@@ -26,6 +37,10 @@ pub trait ResourceUsageRepository {
     async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError>;
 
     /// 指定期間と重複するResourceUsageを検索
+    ///
+    /// 終了済みのリソース使用も含めて返します。過去の期間に対する予約（実利用検知に
+    /// もとづく事後予約など）でも競合を検出できる必要があるため、実装は
+    /// 「現在時刻より後に終わるもの」で絞り込んではいけません。
     async fn find_overlapping(
         &self,
         time_period: &TimePeriod,
