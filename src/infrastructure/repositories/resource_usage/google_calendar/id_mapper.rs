@@ -45,31 +45,6 @@ impl IdMapper {
         })
     }
 
-    /// マッピングを保存
-    pub(super) fn save_mapping(
-        &self,
-        domain_id: &str,
-        external_id: ExternalId,
-    ) -> Result<(), RepositoryError> {
-        let mut mappings = self.mappings.lock().unwrap();
-        let mut reverse_mappings = self.reverse_mappings.lock().unwrap();
-
-        // 既存のマッピングがある場合は逆引きマップから削除
-        if let Some(old_external_id) = mappings.get(domain_id) {
-            reverse_mappings.remove(&old_external_id.event_id);
-        }
-
-        // 新しいマッピングを追加
-        reverse_mappings.insert(external_id.event_id.clone(), domain_id.to_string());
-        mappings.insert(domain_id.to_string(), external_id);
-
-        drop(mappings);
-        drop(reverse_mappings);
-
-        self.save_to_file()?;
-        Ok(())
-    }
-
     /// Domain ID から外部ID を取得
     pub(super) fn get_external_id(
         &self,
