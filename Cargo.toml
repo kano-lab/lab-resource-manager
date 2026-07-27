@@ -1,6 +1,6 @@
 [package]
 name = "lab-resource-manager"
-version = "1.4.1"
+version = "1.5.0"
 edition = "2024"
 authors = ["Kinji Kawaguchi"]
 license = "MIT OR Apache-2.0"

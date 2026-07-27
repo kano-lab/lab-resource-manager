@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.5.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.4.1...v1.5.0) (2026-07-27)
+
+
+### Features
+
+* group post-hoc reservation proposals and make acceptance idempotent ([#104](https://github.com/kano-lab/lab-resource-manager/issues/104)) ([791710c](https://github.com/kano-lab/lab-resource-manager/commit/791710c147b062738cb5bb505c48bbcea3d95f15))
+* show the reserver's OS user name and reservation id on the calendar ([#105](https://github.com/kano-lab/lab-resource-manager/issues/105)) ([3174136](https://github.com/kano-lab/lab-resource-manager/commit/3174136f129f41d707972f6b5dcc614e60e8372a))
+
+
+### Bug Fixes
+
+* detect conflicts against reservations that have already ended ([#106](https://github.com/kano-lab/lab-resource-manager/issues/106)) ([401cea7](https://github.com/kano-lab/lab-resource-manager/commit/401cea7e7c084b9f7a7b874276e34ea45515d2ce))
+
 ## [1.4.1](https://github.com/kano-lab/lab-resource-manager/compare/v1.4.0...v1.4.1) (2026-07-25)
 
 
