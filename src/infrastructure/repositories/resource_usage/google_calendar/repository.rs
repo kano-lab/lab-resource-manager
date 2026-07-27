@@ -17,7 +17,8 @@ use google_calendar3::{
     hyper_util::{client::legacy::Client, rt::TokioExecutor},
     yup_oauth2,
 };
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 /// アプリ経由で作成されたイベントのdescriptionに付与される、予約者メールアドレス行の接頭辞
 const OWNER_LINE_PREFIX: &str = "予約者: ";
@@ -47,6 +48,10 @@ pub struct GoogleCalendarUsageRepository {
     config: ResourceConfig,
     service_account_email: String,
     id_mapper: Arc<IdMapper>,
+    /// 解釈失敗を既に警告したイベントID
+    ///
+    /// 同じイベントは取得のたびに失敗するため、警告を出し続けるとログが埋まる。
+    reported_parse_failures: Mutex<HashSet<String>>,
 }
 
 impl GoogleCalendarUsageRepository {
@@ -85,6 +90,7 @@ impl GoogleCalendarUsageRepository {
             config,
             service_account_email,
             id_mapper: Arc::new(id_mapper),
+            reported_parse_failures: Mutex::new(HashSet::new()),
         })
     }
 
@@ -101,6 +107,7 @@ impl GoogleCalendarUsageRepository {
             config,
             service_account_email,
             id_mapper: Arc::new(IdMapper::new(id_mappings_path)?),
+            reported_parse_failures: Mutex::new(HashSet::new()),
         })
     }
 
@@ -150,6 +157,14 @@ impl GoogleCalendarUsageRepository {
         Ok(all_events)
     }
 
+    /// 解釈失敗を警告として報告すべきか（イベントごとに初回のみ）
+    pub(super) fn should_report_parse_failure(&self, event_id: &str) -> bool {
+        self.reported_parse_failures
+            .lock()
+            .expect("解釈失敗の記録ロックを取得できませんでした")
+            .insert(event_id.to_string())
+    }
+
     /// 取得したイベント群をResourceUsageへ変換する
     ///
     /// 予約として解釈できないイベント（カレンダー上で直接作られた自由記述のイベントなど）は
@@ -162,12 +177,19 @@ impl GoogleCalendarUsageRepository {
                 match self.parse_event(event, &calendar_id, &resource_context) {
                     Ok(usage) => Some(usage),
                     Err(e) => {
-                        tracing::warn!(
-                            "イベントを予約として解釈できませんでした: calendar_id={}, event_id={}, error={}",
-                            calendar_id,
-                            event_id,
-                            e
-                        );
+                        if self.should_report_parse_failure(&event_id) {
+                            tracing::warn!(
+                                "イベントを予約として解釈できませんでした: calendar_id={}, event_id={}, error={}",
+                                calendar_id,
+                                event_id,
+                                e
+                            );
+                        } else {
+                            tracing::debug!(
+                                "イベントを予約として解釈できませんでした(既報): event_id={}",
+                                event_id
+                            );
+                        }
                         None
                     }
                 }

@@ -9,9 +9,11 @@ use chrono::{DateTime, Duration, Utc};
 ///
 /// 予約チャンネルへのブロードキャスト通知（`Notifier`）とは異なり、
 /// 特定の利用者本人への直接的なやり取り（Slack DM等）を前提とするため別ポートとする。
+/// ひとりの利用者が同じ機会に使い始めたリソースは、まとめて1件の提案として提示する。
+/// リソースごとに提案を分けると、利用者は枚数分のボタンを押すことになる。
 #[derive(Debug, Clone)]
 pub struct ReservationProposal {
-    resource: Resource,
+    resources: Vec<Resource>,
     owner_email: EmailAddress,
     external_identity: ExternalIdentity,
     active_since: DateTime<Utc>,
@@ -21,14 +23,14 @@ pub struct ReservationProposal {
 impl ReservationProposal {
     /// 新しい提案を作成
     pub fn new(
-        resource: Resource,
+        resources: Vec<Resource>,
         owner_email: EmailAddress,
         external_identity: ExternalIdentity,
         active_since: DateTime<Utc>,
         duration_candidates: Vec<Duration>,
     ) -> Self {
         Self {
-            resource,
+            resources,
             owner_email,
             external_identity,
             active_since,
@@ -37,8 +39,8 @@ impl ReservationProposal {
     }
 
     /// 対象リソースを取得
-    pub fn resource(&self) -> &Resource {
-        &self.resource
+    pub fn resources(&self) -> &[Resource] {
+        &self.resources
     }
 
     /// 提案先のメールアドレスを取得

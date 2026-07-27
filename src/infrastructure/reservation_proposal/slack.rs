@@ -1,7 +1,7 @@
 //! Slack DM経由の事後予約提案実装
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
-use crate::domain::aggregates::resource_usage::value_objects::Resource;
+use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::repositories::IdentityLinkRepository;
 use crate::domain::ports::reservation_proposal::{
@@ -20,14 +20,14 @@ use crate::interface::slack::constants::ACTION_ACCEPT_RESERVATION_PROPOSAL;
 ///
 /// `Resource`/`TimePeriod`はドメイン層でserde非依存を保っているため、
 /// Slackボタンの`value`にエンコードするための専用DTOとして定義する。
+/// Slackボタンの`value`は文字数上限があるため、モデル名のような復元可能な情報は持たせない。
+/// モデル名は受諾時にリソース設定から引き直す。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProposalAcceptPayload {
     /// サーバー名
     pub server: String,
-    /// GPUデバイス番号
-    pub device_number: u32,
-    /// GPUモデル名
-    pub model: String,
+    /// GPUデバイス番号（同じ機会に使い始めた分をまとめて持つ）
+    pub device_numbers: Vec<u32>,
     /// 提案先のメールアドレス
     pub owner_email: String,
     /// 利用開始時刻（予約の開始時刻としてそのまま使う）
@@ -92,11 +92,7 @@ impl SlackReservationProposalNotifier {
 #[async_trait]
 impl ReservationProposalNotifier for SlackReservationProposalNotifier {
     async fn propose(&self, proposal: ReservationProposal) -> Result<(), NotificationError> {
-        let Resource::Gpu(gpu) = proposal.resource() else {
-            return Err(NotificationError::SendFailure(
-                "GPU以外のリソースの事後予約提案はサポートしていません".to_string(),
-            ));
-        };
+        let gpus = collect_gpus(&proposal)?;
 
         let slack_user_id = self.resolve_slack_user_id(&proposal).await?;
 
@@ -113,9 +109,9 @@ impl ReservationProposalNotifier for SlackReservationProposalNotifier {
 
         let text = format!(
             "{} が予約なしで使用中です。事後予約を作成しますか？",
-            proposal.resource()
+            format_resource_list(&proposal)
         );
-        let blocks = build_proposal_blocks(&proposal, gpu, &text);
+        let blocks = build_proposal_blocks(&proposal, &gpus, &text);
 
         let post_req = SlackApiChatPostMessageRequest::new(
             open_resp.channel.id,
@@ -133,20 +129,60 @@ impl ReservationProposalNotifier for SlackReservationProposalNotifier {
     }
 }
 
+/// 提案対象のGPUを取り出す
+///
+/// 事後予約はGPUの実利用検知から生まれるため、対象は必ずGPUであり、
+/// 同一サーバーに属している（同じサーバーの観測結果をまとめたもの）。
+fn collect_gpus(proposal: &ReservationProposal) -> Result<Vec<Gpu>, NotificationError> {
+    let mut gpus = Vec::with_capacity(proposal.resources().len());
+
+    for resource in proposal.resources() {
+        let Resource::Gpu(gpu) = resource else {
+            return Err(NotificationError::SendFailure(
+                "GPU以外のリソースの事後予約提案はサポートしていません".to_string(),
+            ));
+        };
+        gpus.push(gpu.clone());
+    }
+
+    if gpus.is_empty() {
+        return Err(NotificationError::SendFailure(
+            "提案対象のリソースがありません".to_string(),
+        ));
+    }
+
+    Ok(gpus)
+}
+
+/// 提案対象のリソースを読みやすく並べる
+fn format_resource_list(proposal: &ReservationProposal) -> String {
+    proposal
+        .resources()
+        .iter()
+        .map(|resource| resource.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// 事後予約提案のBlock Kitメッセージを構築する（純粋関数、ユニットテスト対象）
 fn build_proposal_blocks(
     proposal: &ReservationProposal,
-    gpu: &crate::domain::aggregates::resource_usage::value_objects::Gpu,
+    gpus: &[Gpu],
     text: &str,
 ) -> Vec<SlackBlock> {
+    let server = gpus
+        .first()
+        .map(|gpu| gpu.server().to_string())
+        .unwrap_or_default();
+    let device_numbers: Vec<u32> = gpus.iter().map(|gpu| gpu.device_number()).collect();
+
     let buttons: Vec<serde_json::Value> = proposal
         .duration_candidates()
         .iter()
         .map(|duration| {
             let payload = ProposalAcceptPayload {
-                server: gpu.server().to_string(),
-                device_number: gpu.device_number(),
-                model: gpu.model().to_string(),
+                server: server.clone(),
+                device_numbers: device_numbers.clone(),
                 owner_email: proposal.owner_email().as_str().to_string(),
                 active_since: proposal.active_since(),
                 duration_minutes: duration.num_minutes(),
@@ -212,8 +248,24 @@ mod tests {
     use chrono::Utc;
 
     fn sample_proposal(duration_candidates: Vec<Duration>) -> ReservationProposal {
+        sample_proposal_with_devices(vec![0], duration_candidates)
+    }
+
+    fn sample_proposal_with_devices(
+        device_numbers: Vec<u32>,
+        duration_candidates: Vec<Duration>,
+    ) -> ReservationProposal {
         ReservationProposal::new(
-            Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string())),
+            device_numbers
+                .into_iter()
+                .map(|device_number| {
+                    Resource::Gpu(Gpu::new(
+                        "Thalys".to_string(),
+                        device_number,
+                        "A100".to_string(),
+                    ))
+                })
+                .collect(),
             EmailAddress::new("user@example.com".to_string()).unwrap(),
             ExternalIdentity::new(
                 ExternalSystem::Os {
@@ -246,11 +298,9 @@ mod tests {
     fn test_build_proposal_blocks_button_count_matches_candidates() {
         let candidates = vec![Duration::hours(1), Duration::hours(2), Duration::hours(3)];
         let proposal = sample_proposal(candidates.clone());
-        let Resource::Gpu(gpu) = proposal.resource() else {
-            unreachable!()
-        };
+        let gpus = collect_gpus(&proposal).unwrap();
 
-        let blocks = build_proposal_blocks(&proposal, gpu, "test message");
+        let blocks = build_proposal_blocks(&proposal, &gpus, "test message");
         assert_eq!(blocks.len(), 2);
 
         let json = serde_json::to_value(&blocks).unwrap();
@@ -262,11 +312,9 @@ mod tests {
     fn test_build_proposal_blocks_action_ids_are_unique_within_block() {
         let candidates = vec![Duration::hours(1), Duration::hours(2), Duration::hours(3)];
         let proposal = sample_proposal(candidates.clone());
-        let Resource::Gpu(gpu) = proposal.resource() else {
-            unreachable!()
-        };
+        let gpus = collect_gpus(&proposal).unwrap();
 
-        let blocks = build_proposal_blocks(&proposal, gpu, "test message");
+        let blocks = build_proposal_blocks(&proposal, &gpus, "test message");
         let json = serde_json::to_value(&blocks).unwrap();
         let action_ids: Vec<String> = json[1]["elements"]
             .as_array()
@@ -289,8 +337,7 @@ mod tests {
     fn test_proposal_accept_payload_round_trip() {
         let payload = ProposalAcceptPayload {
             server: "Thalys".to_string(),
-            device_number: 0,
-            model: "A100".to_string(),
+            device_numbers: vec![0, 1, 4],
             owner_email: "user@example.com".to_string(),
             active_since: Utc::now(),
             duration_minutes: 120,

@@ -38,8 +38,14 @@ impl ResourceUsageRepository for MockUsageRepository {
     }
 
     async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
+        // ポートの契約どおり、終了済みのリソース使用は返さない
+        let now = chrono::Utc::now();
         let storage = self.storage.lock().unwrap();
-        Ok(storage.values().cloned().collect())
+        Ok(storage
+            .values()
+            .filter(|usage| usage.time_period().end() > now)
+            .cloned()
+            .collect())
     }
 
     async fn find_overlapping(

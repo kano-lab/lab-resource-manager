@@ -7,6 +7,7 @@ use axum_server::tls_rustls::RustlsConfig;
 use chrono::Duration as ChronoDuration;
 use lab_resource_manager::{
     application::usecases::{
+        accept_reservation_proposal::AcceptReservationProposalUseCase,
         create_resource_usage::CreateResourceUsageUseCase,
         delete_resource_usage::DeleteResourceUsageUseCase,
         get_resource_usage_by_id::GetResourceUsageByIdUseCase,
@@ -117,6 +118,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     let create_usecase = Arc::new(CreateResourceUsageUseCase::new(resource_usage_repo.clone()));
+    let accept_proposal_usecase = Arc::new(AcceptReservationProposalUseCase::new(
+        resource_usage_repo.clone(),
+    ));
     let update_usecase = Arc::new(UpdateResourceUsageUseCase::new(resource_usage_repo.clone()));
     let delete_usecase = Arc::new(DeleteResourceUsageUseCase::new(resource_usage_repo.clone()));
     let list_all_usecase = Arc::new(ListAllFutureResourceUsagesUseCase::new(
@@ -230,6 +234,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         mcp_token_repo.clone(),
         grant_access_usecase,
         create_usecase,
+        accept_proposal_usecase,
         update_usecase,
         delete_usecase,
         notify_usecase,

@@ -2,6 +2,7 @@
 //!
 //! 依存関係を管理し、Slackインタラクションのメインエントリポイントを提供
 
+use crate::application::usecases::accept_reservation_proposal::AcceptReservationProposalUseCase;
 use crate::application::usecases::create_resource_usage::CreateResourceUsageUseCase;
 use crate::application::usecases::delete_resource_usage::DeleteResourceUsageUseCase;
 use crate::application::usecases::grant_user_resource_access::GrantUserResourceAccessUseCase;
@@ -34,6 +35,7 @@ where
     // UseCases
     grant_access_usecase: Arc<GrantUserResourceAccessUseCase>,
     create_resource_usage_usecase: Arc<CreateResourceUsageUseCase<R>>,
+    accept_reservation_proposal_usecase: Arc<AcceptReservationProposalUseCase<R>>,
     update_resource_usage_usecase: Arc<UpdateResourceUsageUseCase<R>>,
     delete_usage_usecase: Arc<DeleteResourceUsageUseCase<R>>,
     notify_usecase: Arc<NotifyFutureResourceUsageChangesUseCase<R, N>>,
@@ -69,6 +71,7 @@ where
         mcp_token_repo: Arc<dyn McpTokenRepository>,
         grant_access_usecase: Arc<GrantUserResourceAccessUseCase>,
         create_resource_usage_usecase: Arc<CreateResourceUsageUseCase<R>>,
+        accept_reservation_proposal_usecase: Arc<AcceptReservationProposalUseCase<R>>,
         update_resource_usage_usecase: Arc<UpdateResourceUsageUseCase<R>>,
         delete_usage_usecase: Arc<DeleteResourceUsageUseCase<R>>,
         notify_usecase: Arc<NotifyFutureResourceUsageChangesUseCase<R, N>>,
@@ -82,6 +85,7 @@ where
             mcp_token_repo,
             grant_access_usecase,
             create_resource_usage_usecase,
+            accept_reservation_proposal_usecase,
             update_resource_usage_usecase,
             delete_usage_usecase,
             notify_usecase,
@@ -334,6 +338,10 @@ where
 
     pub fn create_resource_usage_usecase(&self) -> &Arc<CreateResourceUsageUseCase<R>> {
         &self.create_resource_usage_usecase
+    }
+
+    pub fn accept_reservation_proposal_usecase(&self) -> &Arc<AcceptReservationProposalUseCase<R>> {
+        &self.accept_reservation_proposal_usecase
     }
 
     pub fn update_resource_usage_usecase(&self) -> &Arc<UpdateResourceUsageUseCase<R>> {

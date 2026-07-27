@@ -1,6 +1,6 @@
 //! 事後予約提案の受諾ボタンハンドラ
 
-use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod};
+use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ResourceUsageRepository;
@@ -71,28 +71,58 @@ where
     let payload: ProposalAcceptPayload = serde_json::from_str(value)?;
 
     info!(
-        "📍 事後予約作成: server={}, device={}, owner={}",
-        payload.server, payload.device_number, payload.owner_email
+        "📍 事後予約作成: server={}, devices={:?}, owner={}, duration_minutes={}",
+        payload.server, payload.device_numbers, payload.owner_email, payload.duration_minutes
     );
 
-    let resource = Resource::Gpu(Gpu::new(
-        payload.server,
-        payload.device_number,
-        payload.model,
-    ));
+    let resources = resolve_gpu_resources(app, &payload.server, &payload.device_numbers)?;
     let owner_email = EmailAddress::new(payload.owner_email)?;
-    let start = payload.active_since;
-    let end = start + Duration::minutes(payload.duration_minutes);
-    let time_period = TimePeriod::new(start, end)?;
 
-    app.create_resource_usage_usecase()
+    app.accept_reservation_proposal_usecase()
         .execute(
             owner_email,
-            time_period,
-            vec![resource],
-            Some("GPU実利用検知による事後予約".to_string()),
+            resources,
+            payload.active_since,
+            Duration::minutes(payload.duration_minutes),
         )
         .await?;
 
     Ok(())
+}
+
+/// デバイス番号からGPUリソースを復元する
+///
+/// モデル名はボタンのペイロードに載せていないため、リソース設定から引く。
+fn resolve_gpu_resources<R, N>(
+    app: &SlackApp<R, N>,
+    server_name: &str,
+    device_numbers: &[u32],
+) -> Result<Vec<Resource>, Box<dyn std::error::Error + Send + Sync>>
+where
+    R: ResourceUsageRepository + Send + Sync + 'static,
+    N: Notifier + Send + Sync + 'static,
+{
+    let server = app
+        .resource_config()
+        .get_server(server_name)
+        .ok_or_else(|| format!("サーバーが見つかりません: {}", server_name))?;
+
+    device_numbers
+        .iter()
+        .map(|device_number| {
+            let device = server
+                .devices
+                .iter()
+                .find(|device| device.id == *device_number)
+                .ok_or_else(|| {
+                    format!("デバイス{}が{}に存在しません", device_number, server_name)
+                })?;
+
+            Ok(Resource::Gpu(Gpu::new(
+                server_name.to_string(),
+                *device_number,
+                device.model.clone(),
+            )))
+        })
+        .collect()
 }
