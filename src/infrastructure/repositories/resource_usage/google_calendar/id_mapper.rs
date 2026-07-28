@@ -1,4 +1,11 @@
 //! Google Calendar Event ID マッピング (内部実装)
+//!
+//! イベントIDは予約IDから決定的に導出されるため、通常は対応表を必要としない。
+//! 例外は、イベントIDをアプリが指定するようになる前に作られた予約である。それらは
+//! Google側が採番したイベントIDを持ち、予約IDから導出できない。この対応表は
+//! そうした予約を解決するために読み取り専用で残している。
+//!
+//! TODO(#111): 次のメジャーリリースでこのモジュールと`GOOGLE_CALENDAR_MAPPINGS_FILE`を削除する
 
 use crate::domain::ports::repositories::RepositoryError;
 use serde::{Deserialize, Serialize};
@@ -15,7 +22,9 @@ pub(super) struct ExternalId {
     pub event_id: String,
 }
 
-/// Domain ID と Google Calendar Event ID のマッピングを管理
+/// 予約IDから導出できないイベントIDを解決するための対応表
+///
+/// 新しい対応は追加されない。読み取りのみを担う。
 pub(super) struct IdMapper {
     file_path: PathBuf,
     mappings: Arc<Mutex<HashMap<String, ExternalId>>>,

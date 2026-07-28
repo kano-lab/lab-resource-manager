@@ -45,6 +45,9 @@ const RESERVATION_ID_LINE_PREFIX: &str = "予約ID: ";
 /// イベントIDに使える文字はbase32hex（英小文字a-vと数字0-9）に限られるため、
 /// UUIDのハイフンを除いた表現を用いる。予約IDとイベントIDが決定的に対応するので、
 /// 両者の対応表を持たなくても相互に解決できる。
+///
+/// イベントIDをアプリが指定するようになる前に作られた予約は、Google側が採番した
+/// イベントIDを持つためこの導出が使えない。それらは`IdMapper`が解決する。
 fn event_id_for(usage_id: &UsageId) -> String {
     usage_id.as_str().replace('-', "")
 }
