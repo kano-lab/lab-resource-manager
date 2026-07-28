@@ -37,6 +37,17 @@ impl ResourceUsageRepository for MockUsageRepository {
         Ok(storage.get(id.as_str()).cloned())
     }
 
+    async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
+        // ポートの契約どおり、終了済みのリソース使用は返さない
+        let now = chrono::Utc::now();
+        let storage = self.storage.lock().unwrap();
+        Ok(storage
+            .values()
+            .filter(|usage| usage.time_period().end() > now)
+            .cloned()
+            .collect())
+    }
+
     async fn find_overlapping(
         &self,
         time_period: &TimePeriod,
@@ -53,13 +64,11 @@ impl ResourceUsageRepository for MockUsageRepository {
     async fn find_by_owner(
         &self,
         owner_email: &crate::domain::common::EmailAddress,
-        time_period: &TimePeriod,
     ) -> Result<Vec<ResourceUsage>, RepositoryError> {
         let storage = self.storage.lock().unwrap();
         let owned: Vec<ResourceUsage> = storage
             .values()
             .filter(|usage| usage.owner_email() == owner_email)
-            .filter(|usage| usage.time_period().overlaps_with(time_period))
             .cloned()
             .collect();
         Ok(owned)

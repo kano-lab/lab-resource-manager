@@ -434,6 +434,10 @@ mod tests {
             Ok(self.all().into_iter().find(|usage| usage.id() == id))
         }
 
+        async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
+            Ok(self.visible.lock().unwrap().clone())
+        }
+
         async fn find_overlapping(
             &self,
             time_period: &TimePeriod,
@@ -451,7 +455,6 @@ mod tests {
         async fn find_by_owner(
             &self,
             owner_email: &EmailAddress,
-            time_period: &TimePeriod,
         ) -> Result<Vec<ResourceUsage>, RepositoryError> {
             Ok(self
                 .visible
@@ -459,7 +462,6 @@ mod tests {
                 .unwrap()
                 .iter()
                 .filter(|usage| usage.owner_email() == owner_email)
-                .filter(|usage| usage.time_period().overlaps_with(time_period))
                 .cloned()
                 .collect())
         }

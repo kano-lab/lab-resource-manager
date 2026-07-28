@@ -64,14 +64,8 @@
 //! // (Slack, Mock, etc.) based on config/resources.toml
 //! let notifier = NotificationRouter::new(config, identity_repo);
 //!
-//! // Create and run use case. The watch window states how far ahead changes are tracked;
-//! // recurring reservations expand into individual instances, so it cannot be unbounded.
-//! let usecase = NotifyFutureResourceUsageChangesUseCase::new(
-//!     repository,
-//!     notifier,
-//!     chrono::Duration::days(60),
-//! )
-//! .await?;
+//! // Create and run use case
+//! let usecase = NotifyFutureResourceUsageChangesUseCase::new(repository, notifier).await?;
 //! usecase.poll_once().await?;
 //! # Ok(())
 //! # }
