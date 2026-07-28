@@ -47,7 +47,7 @@ Google Calendarリポジトリを使用する場合:
 
 ```toml
 [[servers]]
-name = "Thalys"
+name = "gpu-server-1"
 calendar_id = "your-calendar-id@group.calendar.google.com"  # リポジトリ実装固有のID
 
 # リソースごとに通知先を設定
@@ -143,9 +143,9 @@ date_format = "md"           # 日付フォーマット
 
 | 値 | 出力例 |
 |----|--------|
-| `full`（デフォルト） | Thalys / A100 80GB PCIe / GPU:0 |
-| `compact` | Thalys 0,1,2 |
-| `server_only` | Thalys |
+| `full`（デフォルト） | gpu-server-1 / A100 80GB PCIe / GPU:0 |
+| `compact` | gpu-server-1 0,1,2 |
+| `server_only` | gpu-server-1 |
 
 **time_style オプション:**
 
@@ -181,31 +181,27 @@ cron登録する必要があります。このバイナリはリリースアー�
 
 **前提条件:**
 
-- 監視対象の全サーバー（例: Thalys, Freccia, Lyria）から読み書きできる共有ディレクトリ（NFS等）
+- 監視対象の全サーバーから読み書きできる共有ディレクトリ（NFS等）
 - 各サーバーに`nvidia-smi`・`getconf`・`getent`（いずれも標準的なLinux環境に含まれる）があること。
   `gpu-usage-reporter`自体はmuslスタティックビルドのため、これ以外の実行時依存はない
 
 **セットアップ手順:**
 
-このバイナリは「送り出す側」の設定です。LRM本体が動くサーバー（例: Thalys）だけでなく、
-**監視対象の全サーバー（Thalys・Freccia・Lyriaそれぞれ）に個別にデプロイ**し、
+このバイナリは「送り出す側」の設定です。LRM本体が動くサーバー自身も含め、
+**監視対象の全サーバーに個別にデプロイ**し、
 各サーバー自身の`--server-name`を指定してcron登録してください。
 
 1. `gpu-usage-reporter`を監視対象の全サーバーに配置する
 2. 各サーバーのcrontabに、そのサーバー自身の名前で登録する（1分間隔の例）:
 
    ```cron
-   # Thalys側のcrontab
+   # gpu-server-1側のcrontab
    * * * * * /usr/local/bin/gpu-usage-reporter \
-       --server-name Thalys --output-dir /mnt/shared/lrm-gpu-status
+       --server-name gpu-server-1 --output-dir /mnt/shared/lrm-gpu-status
 
-   # Freccia側のcrontab
+   # gpu-server-2側のcrontab
    * * * * * /usr/local/bin/gpu-usage-reporter \
-       --server-name Freccia --output-dir /mnt/shared/lrm-gpu-status
-
-   # Lyria側のcrontab
-   * * * * * /usr/local/bin/gpu-usage-reporter \
-       --server-name Lyria --output-dir /mnt/shared/lrm-gpu-status
+       --server-name gpu-server-2 --output-dir /mnt/shared/lrm-gpu-status
    ```
 
    `--output-dir`はどのサーバーからも同じ共有ディレクトリを指す必要があります（前提条件参照）。
@@ -217,10 +213,10 @@ cron登録する必要があります。このバイナリはリリースアー�
 
 ```json
 {
-  "server": "Thalys",
+  "server": "gpu-server-1",
   "generated_at": "2026-07-24T12:00:00+00:00",
   "processes": [
-    {"device_number": 0, "os_user": "kkawaguchi", "started_at": "2026-07-24T10:00:00+00:00"}
+    {"device_number": 0, "os_user": "alice", "started_at": "2026-07-24T10:00:00+00:00"}
   ]
 }
 ```

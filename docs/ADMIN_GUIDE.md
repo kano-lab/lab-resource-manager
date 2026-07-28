@@ -47,7 +47,7 @@ Define GPU servers and rooms in `config/resources.toml`:
 
 ```toml
 [[servers]]
-name = "Thalys"
+name = "gpu-server-1"
 calendar_id = "your-calendar-id@group.calendar.google.com"  # Repository implementation-specific ID
 
 # Configure notification destinations per resource
@@ -147,9 +147,9 @@ conflict is silently dropped.
 
 | Value | Example Output |
 |-------|----------------|
-| `full` (default) | Thalys / A100 80GB PCIe / GPU:0 |
-| `compact` | Thalys 0,1,2 |
-| `server_only` | Thalys |
+| `full` (default) | gpu-server-1 / A100 80GB PCIe / GPU:0 |
+| `compact` | gpu-server-1 0,1,2 |
+| `server_only` | gpu-server-1 |
 
 **time_style options:**
 
@@ -186,7 +186,7 @@ binary as a cron job on each GPU server. This binary ships alongside the main
 
 **Prerequisites:**
 
-- A shared directory (e.g., NFS) readable/writable from every monitored server (e.g., Thalys, Freccia, Lyria)
+- A shared directory (e.g., NFS) readable/writable from every monitored server
 - `nvidia-smi`, `getconf`, and `getent` available on each server (all standard on typical
   Linux setups). `gpu-usage-reporter` itself is a musl static build with no other runtime
   dependencies.
@@ -194,24 +194,20 @@ binary as a cron job on each GPU server. This binary ships alongside the main
 **Setup steps:**
 
 This binary is the "reporting side" of the setup. Deploy it to **every monitored server
-individually** — not just the one running the LRM binary (e.g., Thalys) — including
-Freccia and Lyria, each with its own `--server-name`.
+individually**, including the one that runs the LRM binary itself, each with its own
+`--server-name`.
 
 1. Deploy `gpu-usage-reporter` to every monitored server.
 2. Register it in each server's crontab, using that server's own name (example: every minute):
 
    ```cron
-   # crontab on Thalys
+   # crontab on gpu-server-1
    * * * * * /usr/local/bin/gpu-usage-reporter \
-       --server-name Thalys --output-dir /mnt/shared/lrm-gpu-status
+       --server-name gpu-server-1 --output-dir /mnt/shared/lrm-gpu-status
 
-   # crontab on Freccia
+   # crontab on gpu-server-2
    * * * * * /usr/local/bin/gpu-usage-reporter \
-       --server-name Freccia --output-dir /mnt/shared/lrm-gpu-status
-
-   # crontab on Lyria
-   * * * * * /usr/local/bin/gpu-usage-reporter \
-       --server-name Lyria --output-dir /mnt/shared/lrm-gpu-status
+       --server-name gpu-server-2 --output-dir /mnt/shared/lrm-gpu-status
    ```
 
    `--output-dir` must point to the same shared directory from every server (see
@@ -223,10 +219,10 @@ Freccia and Lyria, each with its own `--server-name`.
 
 ```json
 {
-  "server": "Thalys",
+  "server": "gpu-server-1",
   "generated_at": "2026-07-24T12:00:00+00:00",
   "processes": [
-    {"device_number": 0, "os_user": "kkawaguchi", "started_at": "2026-07-24T10:00:00+00:00"}
+    {"device_number": 0, "os_user": "alice", "started_at": "2026-07-24T10:00:00+00:00"}
   ]
 }
 ```

@@ -2,8 +2,8 @@
 # このファイルをコピーして config/resources.toml として使用してください
 
 [[servers]]
-name = "Name1"
-calendar_id = "hoge@group.calendar.google.com"
+name = "gpu-server-1"
+calendar_id = "your-calendar-id@group.calendar.google.com"
 
 # 通知設定(複数設定可能)
 [[servers.notifications]]
@@ -28,9 +28,9 @@ channel_id = "C01234567..."
 # フォーマット設定（オプション）
 # [servers.notifications.format]
 # resource_style = "full"    # "full" | "compact" | "server_only"
-#   - full: "Thalys / A100 80GB PCIe / GPU:0"
-#   - compact: "Thalys 0,1,2"
-#   - server_only: "Thalys"
+#   - full: "gpu-server-1 / A100 80GB PCIe / GPU:0"
+#   - compact: "gpu-server-1 0,1,2"
+#   - server_only: "gpu-server-1"
 # time_style = "full"        # "full" | "smart" | "relative"
 #   - full: "2024-01-15 19:00 - 2024-01-15 21:00 (Asia/Tokyo)"
 #   - smart: "1/15 19:00 - 21:00" (同日なら終了日省略)
@@ -47,17 +47,17 @@ channel_id = "C01234567..."
 
 [[servers.devices]]
 id = 0
-model = "RTX PRO 6000 Blackwell Max-Q"
+model = "A100 80GB PCIe"
 
 [[servers.devices]]
 id = 1
-model = "RTX PRO 6000 Blackwell Max-Q"
+model = "A100 80GB PCIe"
 
 # ---
 
 [[servers]]
-name = "Name2"
-calendar_id = "hoge@group.calendar.google.com"
+name = "gpu-server-2"
+calendar_id = "your-calendar-id@group.calendar.google.com"
 
 [[servers.notifications]]
 type = "slack"
@@ -75,8 +75,8 @@ model = "A100 80GB PCIe"
 # ---
 
 [[rooms]]
-name = "部屋1"
-calendar_id = "hoge@group.calendar.google.com"
+name = "Meeting Room A"
+calendar_id = "your-calendar-id@group.calendar.google.com"
 
 [[rooms.notifications]]
 type = "slack"
