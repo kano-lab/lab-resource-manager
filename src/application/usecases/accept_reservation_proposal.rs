@@ -49,7 +49,7 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
     /// # Arguments
     /// * `owner_email` - 予約者
     /// * `resources` - 実利用が観測されたリソース
-    /// * `active_since` - 利用開始時刻（予約の開始時刻になる）
+    /// * `active_since` - 実利用の開始時刻。どの機会への受諾かを見分けるために使う
     /// * `duration` - 受諾された利用時間
     ///
     /// # Returns
@@ -65,7 +65,11 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
         active_since: DateTime<Utc>,
         duration: Duration,
     ) -> Result<UsageId, ApplicationError> {
-        let time_period = TimePeriod::new(active_since, active_since + duration)?;
+        // 予約は受諾した時点から始める。実利用の開始時刻を起点にすると、長く使い続けて
+        // いる利用者では作った瞬間に終わっている予約になり、リソースを押さえられない。
+        // 事後予約が果たす役割は、これから先を他の人に使われないようにすることである。
+        let accepted_at = Utc::now();
+        let time_period = TimePeriod::new(accepted_at, accepted_at + duration)?;
         let session_key = Self::session_key(&owner_email, &resources, active_since);
 
         // 同じ機会への受諾を直列化する。連打で書き込みが検索へ反映される前に次の受諾が
@@ -75,14 +79,10 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
         let existing = match settled_sessions.get(&session_key) {
             // このプロセスで既に確定させた予約は、検索の反映を待たずIDで引く
             Some(settled_id) => self.repository.find_by_id(settled_id).await?,
+            // プロセスが入れ替わった場合に備え、進行中の事後予約から同じ機会のものを探す
             None => {
-                self.find_same_session_reservation(
-                    &owner_email,
-                    &resources,
-                    active_since,
-                    &time_period,
-                )
-                .await?
+                self.find_settled_reservation_in_progress(&owner_email, &resources, accepted_at)
+                    .await?
             }
         };
 
@@ -135,25 +135,29 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
         (owner_email.as_str().to_string(), active_since, normalized)
     }
 
-    /// 同じ観測セッションに対して既に作られた予約を探す
+    /// 同じ機会について既に確定している事後予約を探す
     ///
-    /// 受諾しようとしている期間と重なる予約のうち、予約者・利用開始時刻・リソース集合が
-    /// 一致するものを同一セッションとみなす。終了時刻が過去になっていても対象に含める
-    /// 必要があるため、進行中・今後の予約に限定する検索は使わない。
-    async fn find_same_session_reservation(
+    /// 受諾した時点を開始とするため、開始時刻では同じ機会かを判別できない。
+    /// 進行中の事後予約のうち、予約者とリソース集合が一致するものを同じ機会とみなす。
+    /// 同じ利用者が同じリソースの組について事後予約を二重に持つことはないため、
+    /// これで取り違えは起こらない。
+    async fn find_settled_reservation_in_progress(
         &self,
         owner_email: &EmailAddress,
         resources: &[Resource],
-        active_since: DateTime<Utc>,
-        time_period: &TimePeriod,
+        now: DateTime<Utc>,
     ) -> Result<Option<ResourceUsage>, ApplicationError> {
         let requested: HashSet<&Resource> = resources.iter().collect();
 
-        let candidates = self.repository.find_overlapping(time_period).await?;
+        // 進行中かどうかを見るため、現在時刻を含む最小の期間を問う
+        let in_progress = TimePeriod::new(now, now + Duration::seconds(1))?;
+        let candidates = self
+            .repository
+            .find_by_owner(owner_email, &in_progress)
+            .await?;
 
         Ok(candidates.into_iter().find(|usage| {
-            usage.owner_email() == owner_email
-                && usage.time_period().start() == active_since
+            usage.notes().map(String::as_str) == Some(POST_HOC_RESERVATION_NOTES)
                 && usage.resources().iter().collect::<HashSet<_>>() == requested
         }))
     }
@@ -237,24 +241,25 @@ mod tests {
 
         let reservations = all_reservations(&repository).await;
         assert_eq!(reservations.len(), 1, "予約が増えてはいけない");
+        let period = reservations[0].time_period();
         assert_eq!(
-            reservations[0].time_period().end(),
-            active_since + Duration::hours(12),
+            period.end() - period.start(),
+            Duration::hours(12),
             "受諾された長さに更新されるべき"
         );
     }
 
     #[tokio::test]
-    async fn accepting_updates_even_when_the_existing_reservation_already_ended() {
+    async fn an_ended_post_hoc_reservation_is_left_alone_and_a_new_one_is_created() {
         let repository = Arc::new(MockUsageRepository::new());
-        // 2時間の受諾後に時間が経ち、既存予約の終了時刻が過去になっている状況
+        // 以前の受諾で作った予約が既に終わっている状況
         let active_since = Utc::now() - Duration::hours(5);
         save_post_hoc_reservation(
             &repository,
             "owner@example.com",
             vec![gpu(0)],
             active_since,
-            active_since + Duration::hours(2),
+            Utc::now() - Duration::hours(1),
         )
         .await;
 
@@ -269,12 +274,9 @@ mod tests {
             .await
             .unwrap();
 
-        let reservations = all_reservations(&repository).await;
-        assert_eq!(
-            reservations.len(),
-            1,
-            "終了済みの予約も同一セッションとして扱い、更新するべき"
-        );
+        // 終わった予約を延長するのは記録の書き換えになる。これから先の分を別に作る
+        let all = all_reservations(&repository).await;
+        assert_eq!(all.len(), 2, "終了済みの予約は残し、新しい予約を作るべき");
     }
 
     #[tokio::test]
@@ -303,9 +305,10 @@ mod tests {
 
         let reservations = all_reservations(&repository).await;
         assert_eq!(reservations.len(), 1);
+        let period = reservations[0].time_period();
         assert_eq!(
-            reservations[0].time_period().end(),
-            active_since + Duration::hours(2),
+            period.end() - period.start(),
+            Duration::hours(2),
             "短い候補を押した場合は期間が縮むべき"
         );
     }
@@ -554,10 +557,79 @@ mod tests {
         assert_eq!(first, second, "同じ予約を指すべき");
         let all = repository.all();
         assert_eq!(all.len(), 1, "予約は増えない");
+        let period = all[0].time_period();
         assert_eq!(
-            all[0].time_period().end(),
-            active_since + Duration::hours(12),
+            period.end() - period.start(),
+            Duration::hours(12),
             "選び直した長さに更新されるべき"
+        );
+    }
+    #[tokio::test]
+    async fn the_reservation_starts_when_the_button_is_pressed_not_when_the_usage_began() {
+        let repository = Arc::new(MockUsageRepository::new());
+        let usecase = AcceptReservationProposalUseCase::new(repository.clone());
+        // 6日間使い続けている状況。利用開始を起点にすると、押した時点で既に終わった予約になる
+        let active_since = Utc::now() - Duration::days(6);
+
+        let pressed_at = Utc::now();
+        usecase
+            .execute(
+                email("owner@example.com"),
+                vec![gpu(0)],
+                active_since,
+                Duration::hours(1),
+            )
+            .await
+            .unwrap();
+
+        let all = all_reservations(&repository).await;
+        assert_eq!(all.len(), 1);
+        let period = all[0].time_period();
+        assert!(
+            period.start() >= pressed_at,
+            "押した時刻を開始にするべき（利用開始の {} ではなく）: {}",
+            active_since,
+            period.start()
+        );
+        assert!(
+            period.end() > Utc::now(),
+            "押した直後に終わっている予約を作ってはいけない: {}",
+            period.end()
+        );
+    }
+
+    #[tokio::test]
+    async fn an_earlier_reservation_of_the_same_user_does_not_block_acceptance() {
+        let repository = Arc::new(MockUsageRepository::new());
+        // 利用開始から現在までの間に、自分の予約が既にあった（切れた直後に提案が来る状況）
+        let active_since = Utc::now() - Duration::days(6);
+        save_post_hoc_reservation(
+            &repository,
+            "owner@example.com",
+            vec![gpu(0)],
+            active_since,
+            Utc::now() - Duration::hours(1),
+        )
+        .await;
+
+        let usecase = AcceptReservationProposalUseCase::new(repository.clone());
+        let result = usecase
+            .execute(
+                email("owner@example.com"),
+                vec![gpu(0)],
+                active_since,
+                Duration::hours(1),
+            )
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "過去に自分の予約があっても、これから先の予約は取れるべき: {result:?}"
+        );
+        assert_eq!(
+            all_reservations(&repository).await.len(),
+            2,
+            "過去の予約は残し、新しい予約を足すべき"
         );
     }
 }
