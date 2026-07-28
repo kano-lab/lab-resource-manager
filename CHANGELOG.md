@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/kano-lab/lab-resource-manager/compare/v1.6.0...v1.6.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* convert the log messages that [#121](https://github.com/kano-lab/lab-resource-manager/issues/121) left behind ([#130](https://github.com/kano-lab/lab-resource-manager/issues/130)) ([487187b](https://github.com/kano-lab/lab-resource-manager/commit/487187b3e39bc326cff1ef4c19ca9e77ab561f96))
+
 ## [1.6.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.5.3...v1.6.0) (2026-07-28)
 
 
