@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.6.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.5.3...v1.6.0) (2026-07-28)
+
+
+### Features
+
+* make operations traceable through structured logs ([#121](https://github.com/kano-lab/lab-resource-manager/issues/121)) ([2ae3321](https://github.com/kano-lab/lab-resource-manager/commit/2ae332116ff9f1eef731a9293f90a0a2fae9aa24))
+* record the Slack identifier of every message sent ([#127](https://github.com/kano-lab/lab-resource-manager/issues/127)) ([b5d53df](https://github.com/kano-lab/lab-resource-manager/commit/b5d53dfc1a56cb716b6a9a0c9b673a2b0ffa32c2))
+
+
+### Bug Fixes
+
+* list resources one per line in the proposal DM ([#124](https://github.com/kano-lab/lab-resource-manager/issues/124)) ([fba281c](https://github.com/kano-lab/lab-resource-manager/commit/fba281c77e13a3e853159fdf287618751be4b3a6))
+* name the conflicting reservation's owner when acceptance fails ([#129](https://github.com/kano-lab/lab-resource-manager/issues/129)) ([0b332f3](https://github.com/kano-lab/lab-resource-manager/commit/0b332f387b253b4c74b972cb5db42dfacc0abca0))
+* report conflicts per reservation instead of per resource ([#125](https://github.com/kano-lab/lab-resource-manager/issues/125)) ([d36a22d](https://github.com/kano-lab/lab-resource-manager/commit/d36a22db95742609383031760c96e94f5eb9f7e8))
+* send one unauthorized-usage notice per reservation ([#123](https://github.com/kano-lab/lab-resource-manager/issues/123)) ([e8bd325](https://github.com/kano-lab/lab-resource-manager/commit/e8bd3255979b91473bb8662a52ea677faac22a6a))
+* start a post-hoc reservation when the proposal is accepted ([#128](https://github.com/kano-lab/lab-resource-manager/issues/128)) ([a5bd0fd](https://github.com/kano-lab/lab-resource-manager/commit/a5bd0fd42c096336b91ebc9c772ee449ffbc016f))
+
 ## [1.5.3](https://github.com/kano-lab/lab-resource-manager/compare/v1.5.2...v1.5.3) (2026-07-28)
 
 
