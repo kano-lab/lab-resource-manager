@@ -1,9 +1,7 @@
 use crate::application::ApplicationError;
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-use crate::domain::aggregates::resource_usage::value_objects::TimePeriod;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::ports::{NotificationEvent, Notifier};
-use chrono::{Duration, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -24,11 +22,6 @@ where
 {
     repository: Arc<R>,
     notifier: N,
-    /// 変更を監視する期間の長さ
-    ///
-    /// 前回と今回の状態を突き合わせて差分を通知するため、範囲を狭めると
-    /// 範囲外に出た予約が削除として扱われる。用途に見合う長さを与える必要がある。
-    watch_window: Duration,
     previous_state: tokio::sync::Mutex<HashMap<String, ResourceUsage>>,
 }
 
@@ -45,16 +38,10 @@ where
     ///
     /// # Errors
     /// リポジトリから初期状態の取得に失敗した場合
-    /// * `watch_window` - 変更を監視する期間の長さ（現在時刻から先へこの長さ）
-    pub async fn new(
-        repository: Arc<R>,
-        notifier: N,
-        watch_window: Duration,
-    ) -> Result<Self, ApplicationError> {
+    pub async fn new(repository: Arc<R>, notifier: N) -> Result<Self, ApplicationError> {
         let instance = Self {
             repository,
             notifier,
-            watch_window,
             previous_state: tokio::sync::Mutex::new(HashMap::new()),
         };
 
@@ -89,10 +76,7 @@ where
     async fn fetch_current_usages(
         &self,
     ) -> Result<HashMap<String, ResourceUsage>, ApplicationError> {
-        // 監視する期間は現在時刻を起点に取り直す。ポーリングごとに窓が前へ進む
-        let now = Utc::now();
-        let window = TimePeriod::new(now, now + self.watch_window)?;
-        let usages = self.repository.find_overlapping(&window).await?;
+        let usages = self.repository.find_future().await?;
         Ok(usages
             .into_iter()
             .map(|usage| (usage.id().as_str().to_string(), usage))

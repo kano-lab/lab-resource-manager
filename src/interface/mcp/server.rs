@@ -72,19 +72,6 @@ fn resolved_caller(parts: &http::request::Parts) -> Result<EmailAddress, ErrorDa
 }
 
 /// アプリケーションエラーをツールレベルのエラーとして呼び出し元に見せる
-/// 予約一覧が対象とする期間の長さ
-///
-/// 繰り返し予約は個々の予定へ展開されるため、上限を設けないと数十年先の予定まで返る。
-/// エージェントが把握したいのは手近な予定なので、ここで区切る。
-const LISTING_WINDOW_DAYS: i64 = 60;
-
-/// 一覧の対象期間（現在時刻から`LISTING_WINDOW_DAYS`日先まで）
-fn listing_window()
--> Result<TimePeriod, crate::domain::aggregates::resource_usage::errors::ResourceUsageError> {
-    let now = chrono::Utc::now();
-    TimePeriod::new(now, now + chrono::Duration::days(LISTING_WINDOW_DAYS))
-}
-
 fn tool_error(message: impl std::fmt::Display) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(message.to_string())])
 }
@@ -185,11 +172,7 @@ where
 
     #[tool(description = "今後（進行中含む）の全ての予約を一覧表示する")]
     async fn list_all_reservations(&self) -> Result<CallToolResult, ErrorData> {
-        let window = match listing_window() {
-            Ok(window) => window,
-            Err(e) => return Ok(tool_error(e)),
-        };
-        match self.list_all_usecase.execute(&window).await {
+        match self.list_all_usecase.execute().await {
             Ok(usages) => {
                 let dtos: Vec<ReservationDto> = usages.iter().map(ReservationDto::from).collect();
                 Ok(success_json(&dtos))
@@ -204,11 +187,7 @@ where
         Extension(parts): Extension<http::request::Parts>,
     ) -> Result<CallToolResult, ErrorData> {
         let caller = resolved_caller(&parts)?;
-        let window = match listing_window() {
-            Ok(window) => window,
-            Err(e) => return Ok(tool_error(e)),
-        };
-        match self.list_mine_usecase.execute(&caller, &window).await {
+        match self.list_mine_usecase.execute(&caller).await {
             Ok(usages) => {
                 let dtos: Vec<ReservationDto> = usages.iter().map(ReservationDto::from).collect();
                 Ok(success_json(&dtos))

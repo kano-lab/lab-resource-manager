@@ -106,6 +106,10 @@ mod tests {
             unimplemented!("このテストでは使用しない")
         }
 
+        async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
+            unimplemented!("このテストでは使用しない")
+        }
+
         async fn find_overlapping(
             &self,
             _time_period: &TimePeriod,
@@ -116,7 +120,6 @@ mod tests {
         async fn find_by_owner(
             &self,
             _owner_email: &EmailAddress,
-            _time_period: &TimePeriod,
         ) -> Result<Vec<ResourceUsage>, RepositoryError> {
             unimplemented!("このテストでは使用しない")
         }
