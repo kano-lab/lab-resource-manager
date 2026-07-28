@@ -1,7 +1,7 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::identity_link::value_objects::ExternalIdentity;
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-use crate::domain::aggregates::resource_usage::value_objects::Resource;
+use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{IdentityLinkRepository, ResourceUsageRepository};
 use crate::domain::ports::{
@@ -100,7 +100,9 @@ where
     pub async fn poll_once(&self) -> Result<(), ApplicationError> {
         let observed = self.observer.observe_active_usages().await?;
         let now = Utc::now();
-        let current_usages = self.repository.find_future().await?;
+        // 突合の相手は「今この瞬間に進行中の予約」だけなので、現在時刻を含む最小の期間を問う
+        let in_progress = TimePeriod::new(now, now + Duration::seconds(1))?;
+        let current_usages = self.repository.find_overlapping(&in_progress).await?;
 
         let mut unreserved = Vec::new();
 

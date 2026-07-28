@@ -618,3 +618,40 @@ async fn test_grouped_proposal_is_sent_only_once_per_session() {
         "同じ観測セッションへの提案は一度だけ"
     );
 }
+
+#[tokio::test]
+async fn a_reservation_that_starts_later_today_does_not_count_as_in_progress() {
+    let (usecase, repo, observer, identity_repo, proposal_notifier, notifier) = make_usecase(15);
+    identity_repo.add_link("user@example.com", os_system(), "kkawaguchi");
+
+    // 同じGPUに、今日のうちに始まる予約がある（まだ進行中ではない）
+    let now = Utc::now();
+    let later_today = make_reservation(
+        "someone-else@example.com",
+        now + Duration::hours(3),
+        now + Duration::hours(5),
+    );
+    repo.save(&later_today).await.unwrap();
+
+    observer.set_active_usages(vec![ObservedUsage::new(
+        gpu_resource(),
+        ExternalIdentity::new(os_system(), "kkawaguchi".to_string()),
+        now - Duration::minutes(20),
+    )]);
+
+    usecase.poll_once().await.unwrap();
+
+    // 進行中の予約はないので、未予約利用として提案される
+    let proposals = proposal_notifier.sent_proposals();
+    assert_eq!(
+        proposals.len(),
+        1,
+        "先の予約は突合の相手にならず、今の利用は未予約として扱われるべき"
+    );
+    assert_eq!(proposals[0].owner_email().as_str(), "user@example.com");
+    // 予約者が違う相手と照合してしまうと無断使用として通知されてしまう
+    assert!(
+        notifier.notified().is_empty(),
+        "先の予約を進行中とみなして無断使用通知を出してはいけない"
+    );
+}
