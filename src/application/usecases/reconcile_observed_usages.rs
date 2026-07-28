@@ -22,6 +22,11 @@ const SESSION_GROUPING_WINDOW: Duration = Duration::minutes(5);
 /// 提案済みの機会を表すキー（利用者・正規化したリソース名・開始時刻）
 type ProposedSessionKey = (ExternalIdentity, Vec<String>, DateTime<Utc>);
 
+/// 無断使用を知らせた機会を表すキー（利用者・予約ID・その機会の開始時刻）
+///
+/// 予約単位で数えるため、同じ予約が複数のリソースを押さえていても1回で済む。
+type NotifiedUnauthorizedKey = (ExternalIdentity, String, DateTime<Utc>);
+
 /// 実サーバーの利用状況と予約を突き合わせ、未予約利用の提案・無断使用の通知を行うユースケース
 ///
 /// # 検知ロジック
@@ -55,7 +60,7 @@ where
     unreserved_threshold: Duration,
     duration_candidates: Vec<Duration>,
     proposed_keys: tokio::sync::Mutex<HashSet<ProposedSessionKey>>,
-    notified_unauthorized_keys: tokio::sync::Mutex<HashSet<(Resource, DateTime<Utc>)>>,
+    notified_unauthorized_keys: tokio::sync::Mutex<HashSet<NotifiedUnauthorizedKey>>,
 }
 
 impl<R, O, I, P, U> ReconcileObservedUsagesUseCase<R, O, I, P, U>
@@ -108,25 +113,49 @@ where
         let mut unreserved = Vec::new();
         let mut reserved = 0_usize;
         let mut failures = 0_usize;
+        // 同じ予約の複数リソースを使っていても知らせるのは1回なので、予約ごとにまとめる
+        let mut reserved_by_usage: HashMap<(ExternalIdentity, String), &ObservedUsage> =
+            HashMap::new();
 
         for usage in &observed {
             match Self::find_active_reservation(&current_usages, usage.resource(), now) {
                 Some(reservation) => {
                     reserved += 1;
-                    if let Err(e) = self.reconcile_reserved(usage, reservation).await {
-                        failures += 1;
-                        error!(
-                            resource = %usage.resource(),
-                            error = %e,
-                            "reconciling an observed usage failed"
-                        );
-                    }
+                    let key = (
+                        usage.external_identity().clone(),
+                        reservation.id().as_str().to_string(),
+                    );
+                    // 同じ機会の開始時刻として、最も早い観測を代表に選ぶ
+                    reserved_by_usage
+                        .entry(key)
+                        .and_modify(|earliest| {
+                            if usage.active_since() < earliest.active_since() {
+                                *earliest = usage;
+                            }
+                        })
+                        .or_insert(usage);
                 }
                 // 未予約の利用は、同じ機会に使い始めた分をまとめて提案するため一旦集める
                 None if now - usage.active_since() >= self.unreserved_threshold => {
                     unreserved.push(usage.clone());
                 }
                 None => {}
+            }
+        }
+
+        for observed_usage in reserved_by_usage.into_values() {
+            let Some(reservation) =
+                Self::find_active_reservation(&current_usages, observed_usage.resource(), now)
+            else {
+                continue;
+            };
+            if let Err(e) = self.reconcile_reserved(observed_usage, reservation).await {
+                failures += 1;
+                error!(
+                    resource = %observed_usage.resource(),
+                    error = %e,
+                    "reconciling an observed usage failed"
+                );
             }
         }
 
@@ -222,9 +251,13 @@ where
             return Ok(());
         }
 
-        // 同一の観測セッションに対する再通知を防ぐ（提案と同じくUX上のスパム防止であり、
+        // 同一の機会に対する再通知を防ぐ（提案と同じくUX上のスパム防止であり、
         // 送信成功後にのみ記録することで失敗時の再試行を保つ）
-        let key = (observed.resource().clone(), observed.active_since());
+        let key = (
+            observed.external_identity().clone(),
+            reservation.id().as_str().to_string(),
+            observed.active_since(),
+        );
         if self.notified_unauthorized_keys.lock().await.contains(&key) {
             return Ok(());
         }

@@ -655,3 +655,90 @@ async fn a_reservation_that_starts_later_today_does_not_count_as_in_progress() {
         "先の予約を進行中とみなして無断使用通知を出してはいけない"
     );
 }
+
+#[tokio::test]
+async fn using_several_gpus_of_one_reservation_notifies_once() {
+    let (usecase, repo, observer, identity_repo, _proposal_notifier, notifier) = make_usecase(15);
+    identity_repo.add_link("other@example.com", os_system(), "kkawaguchi");
+
+    // 1件の予約が2枚のGPUを押さえていて、別の利用者がその2枚を使っている
+    let now = Utc::now();
+    let reservation = ResourceUsage::new(
+        EmailAddress::new("owner@example.com".to_string()).unwrap(),
+        TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap(),
+        vec![gpu_resource(), gpu_resource_device1()],
+        None,
+    )
+    .unwrap();
+    repo.save(&reservation).await.unwrap();
+
+    let active_since = now - Duration::minutes(20);
+    observer.set_active_usages(vec![
+        ObservedUsage::new(
+            gpu_resource(),
+            ExternalIdentity::new(os_system(), "kkawaguchi".to_string()),
+            active_since,
+        ),
+        ObservedUsage::new(
+            gpu_resource_device1(),
+            ExternalIdentity::new(os_system(), "kkawaguchi".to_string()),
+            active_since + Duration::seconds(4),
+        ),
+    ]);
+
+    usecase.poll_once().await.unwrap();
+
+    let notified = notifier.notified();
+    assert_eq!(
+        notified.len(),
+        1,
+        "ひとつの予約に対する無断使用の通知は、枚数分ではなく1回であるべき"
+    );
+    // 通知の本文は予約全体を示すため、2枚の情報は1通に収まる
+    assert_eq!(notified[0].0.resources().len(), 2);
+    assert_eq!(notified[0].1.as_str(), "other@example.com");
+}
+
+#[tokio::test]
+async fn using_gpus_of_two_different_reservations_notifies_for_each() {
+    let (usecase, repo, observer, identity_repo, _proposal_notifier, notifier) = make_usecase(15);
+    identity_repo.add_link("other@example.com", os_system(), "kkawaguchi");
+
+    // 別々の予約が1枚ずつ押さえている場合は、それぞれ知らせる必要がある
+    let now = Utc::now();
+    for (owner, resource) in [
+        ("owner-a@example.com", gpu_resource()),
+        ("owner-b@example.com", gpu_resource_device1()),
+    ] {
+        let reservation = ResourceUsage::new(
+            EmailAddress::new(owner.to_string()).unwrap(),
+            TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap(),
+            vec![resource],
+            None,
+        )
+        .unwrap();
+        repo.save(&reservation).await.unwrap();
+    }
+
+    let active_since = now - Duration::minutes(20);
+    observer.set_active_usages(vec![
+        ObservedUsage::new(
+            gpu_resource(),
+            ExternalIdentity::new(os_system(), "kkawaguchi".to_string()),
+            active_since,
+        ),
+        ObservedUsage::new(
+            gpu_resource_device1(),
+            ExternalIdentity::new(os_system(), "kkawaguchi".to_string()),
+            active_since,
+        ),
+    ]);
+
+    usecase.poll_once().await.unwrap();
+
+    assert_eq!(
+        notifier.notified().len(),
+        2,
+        "予約が別なら、それぞれの予約者について知らせるべき"
+    );
+}
