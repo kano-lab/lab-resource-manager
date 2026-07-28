@@ -1,5 +1,5 @@
 use super::errors::IdentityLinkError;
-use super::value_objects::{ExternalIdentity, ExternalSystem};
+use super::value_objects::{ExternalIdentity, ExternalIdentityBindingRecord, ExternalSystem};
 use crate::domain::common::EmailAddress;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 pub struct IdentityLink {
     /// 主識別子（このシステム内での一意なユーザー識別子）
     email: EmailAddress,
-    /// 外部システムでの識別情報
-    external_identities: Vec<ExternalIdentity>,
+    /// 結びつけの記録
+    external_identities: Vec<ExternalIdentityBindingRecord>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -38,7 +38,7 @@ impl IdentityLink {
         let now = Utc::now();
         Self {
             email,
-            external_identities: vec![identity],
+            external_identities: vec![ExternalIdentityBindingRecord::new(identity)],
             created_at: now,
             updated_at: now,
         }
@@ -50,7 +50,7 @@ impl IdentityLink {
     /// ビジネスロジックは適用されない（時刻は指定された値がそのまま使われる）。
     pub(crate) fn reconstitute(
         email: EmailAddress,
-        external_identities: Vec<ExternalIdentity>,
+        external_identities: Vec<ExternalIdentityBindingRecord>,
         created_at: DateTime<Utc>,
         updated_at: DateTime<Utc>,
     ) -> Self {
@@ -73,7 +73,8 @@ impl IdentityLink {
             });
         }
 
-        self.external_identities.push(identity);
+        self.external_identities
+            .push(ExternalIdentityBindingRecord::new(identity));
         self.updated_at = Utc::now();
         Ok(())
     }
@@ -84,7 +85,8 @@ impl IdentityLink {
         system: &ExternalSystem,
     ) -> Result<(), IdentityLinkError> {
         let initial_len = self.external_identities.len();
-        self.external_identities.retain(|id| id.system() != system);
+        self.external_identities
+            .retain(|record| record.identity().system() != system);
 
         if self.external_identities.len() == initial_len {
             return Err(IdentityLinkError::IdentityNotFound {
@@ -100,14 +102,15 @@ impl IdentityLink {
     pub fn get_identity_for_system(&self, system: &ExternalSystem) -> Option<&ExternalIdentity> {
         self.external_identities
             .iter()
-            .find(|id| id.system() == system)
+            .map(ExternalIdentityBindingRecord::identity)
+            .find(|identity| identity.system() == system)
     }
 
     /// 特定の外部システムと紐付けられているか
     pub fn has_identity_for_system(&self, system: &ExternalSystem) -> bool {
         self.external_identities
             .iter()
-            .any(|id| id.system() == system)
+            .any(|record| record.identity().system() == system)
     }
 
     /// いずれかの外部システムと紐付けられているか
@@ -120,8 +123,8 @@ impl IdentityLink {
         &self.email
     }
 
-    /// 外部システムの識別情報リストを取得
-    pub fn external_identities(&self) -> &[ExternalIdentity] {
+    /// 結びつけの記録を取得
+    pub fn binding_records(&self) -> &[ExternalIdentityBindingRecord] {
         &self.external_identities
     }
 
@@ -147,7 +150,7 @@ mod tests {
 
         assert_eq!(identity.email(), &email);
         assert!(!identity.is_linked_to_any_system());
-        assert_eq!(identity.external_identities().len(), 0);
+        assert_eq!(identity.binding_records().len(), 0);
     }
 
     #[test]
