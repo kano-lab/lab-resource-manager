@@ -1,5 +1,5 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
+use crate::domain::aggregates::identity_link::value_objects::ExternalIdentity;
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::aggregates::resource_usage::value_objects::Resource;
 use crate::domain::common::EmailAddress;
@@ -19,14 +19,8 @@ use tracing::{error, info};
 /// この幅に収まるものはひとつの機会としてまとめて提案する。
 const SESSION_GROUPING_WINDOW: Duration = Duration::minutes(5);
 
-/// 利用者を識別するキー（外部システムの種類＋ユーザーID）
-///
-/// `ExternalIdentity`は紐付け日時を同一性に含むため、観測ごとに生成された値どうしでは
-/// 同じ利用者と判定できない。利用者の同一判定にはこのキーを使う。
-type UserKey = (ExternalSystem, String);
-
 /// 提案済みの機会を表すキー（利用者・正規化したリソース名・開始時刻）
-type ProposedSessionKey = (UserKey, Vec<String>, DateTime<Utc>);
+type ProposedSessionKey = (ExternalIdentity, Vec<String>, DateTime<Utc>);
 
 /// 実サーバーの利用状況と予約を突き合わせ、未予約利用の提案・無断使用の通知を行うユースケース
 ///
@@ -144,10 +138,10 @@ where
     /// 利用者ごとに時刻順へ並べ、隣接する観測が`SESSION_GROUPING_WINDOW`以内であれば
     /// 同じ機会とみなす。
     fn group_into_sessions(unreserved: Vec<ObservedUsage>) -> Vec<Vec<ObservedUsage>> {
-        let mut by_user: HashMap<UserKey, Vec<ObservedUsage>> = HashMap::new();
+        let mut by_user: HashMap<ExternalIdentity, Vec<ObservedUsage>> = HashMap::new();
         for usage in unreserved {
             by_user
-                .entry(Self::user_key(&usage))
+                .entry(usage.external_identity().clone())
                 .or_default()
                 .push(usage);
         }
@@ -278,14 +272,10 @@ where
             .collect();
         normalized.sort();
 
-        (Self::user_key(first), normalized, first.active_since())
-    }
-
-    /// 観測結果から利用者を識別するキーを作る
-    fn user_key(observed: &ObservedUsage) -> UserKey {
         (
-            observed.external_identity().system().clone(),
-            observed.external_identity().user_id().to_string(),
+            first.external_identity().clone(),
+            normalized,
+            first.active_since(),
         )
     }
 

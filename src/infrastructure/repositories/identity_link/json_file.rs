@@ -1,6 +1,6 @@
 use crate::domain::aggregates::identity_link::{
     entity::IdentityLink,
-    value_objects::{ExternalIdentity, ExternalSystem},
+    value_objects::{ExternalIdentity, ExternalIdentityBindingRecord, ExternalSystem},
 };
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{IdentityLinkRepository, RepositoryError};
@@ -53,12 +53,12 @@ struct ExternalIdentityDto {
 impl IdentityLinkDto {
     fn from_entity(entity: &IdentityLink) -> Self {
         let external_identities = entity
-            .external_identities()
+            .binding_records()
             .iter()
-            .map(|id| ExternalIdentityDto {
-                system: id.system().as_str(),
-                user_id: id.user_id().to_string(),
-                linked_at: id.linked_at(),
+            .map(|record| ExternalIdentityDto {
+                system: record.identity().system().as_str(),
+                user_id: record.identity().user_id().to_string(),
+                linked_at: record.linked_at(),
             })
             .collect();
 
@@ -73,13 +73,16 @@ impl IdentityLinkDto {
     fn to_entity(&self) -> Result<IdentityLink, RepositoryError> {
         let email = EmailAddress::new(self.email.clone())?;
 
-        let external_identities: Vec<ExternalIdentity> = self
+        let external_identities: Vec<ExternalIdentityBindingRecord> = self
             .external_identities
             .iter()
             .filter_map(|dto| {
                 // 現在サポートしているシステムのみ復元
                 ExternalSystem::from_str(&dto.system).ok().map(|system| {
-                    ExternalIdentity::reconstitute(system, dto.user_id.clone(), dto.linked_at)
+                    ExternalIdentityBindingRecord::reconstitute(
+                        ExternalIdentity::new(system, dto.user_id.clone()),
+                        dto.linked_at,
+                    )
                 })
             })
             .collect();
@@ -208,5 +211,79 @@ impl IdentityLinkRepository for JsonFileIdentityLinkRepository {
         self.save_to_file().await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 運用中の identity_links.json に保存されている形
+    const PERSISTED: &str = r#"{
+      "email": "member@example.com",
+      "external_identities": [
+        {"system": "slack", "user_id": "U01ABCDEF", "linked_at": "2025-11-12T07:05:35Z"},
+        {"system": "os:Thalys", "user_id": "kkawaguchi", "linked_at": "2026-07-24T14:06:14Z"}
+      ],
+      "created_at": "2025-11-12T07:05:35Z",
+      "updated_at": "2025-11-12T07:05:35Z"
+    }"#;
+
+    #[test]
+    fn reads_the_identity_links_written_by_earlier_versions() {
+        let dto: IdentityLinkDto = serde_json::from_str(PERSISTED).unwrap();
+        let entity = dto.to_entity().unwrap();
+
+        assert_eq!(entity.email().as_str(), "member@example.com");
+
+        let slack = entity
+            .get_identity_for_system(&ExternalSystem::Slack)
+            .expect("Slackの識別子が読めるべき");
+        assert_eq!(slack.user_id(), "U01ABCDEF");
+
+        let os = entity
+            .get_identity_for_system(&ExternalSystem::Os {
+                server: "Thalys".to_string(),
+            })
+            .expect("サーバーごとの識別子が読めるべき");
+        assert_eq!(os.user_id(), "kkawaguchi");
+    }
+
+    #[test]
+    fn keeps_the_binding_time_through_a_round_trip() {
+        let dto: IdentityLinkDto = serde_json::from_str(PERSISTED).unwrap();
+        let entity = dto.to_entity().unwrap();
+
+        let written = serde_json::to_string(&IdentityLinkDto::from_entity(&entity)).unwrap();
+
+        assert!(
+            written.contains(r#""system":"os:Thalys""#),
+            "システムの表記を変えてはいけない: {written}"
+        );
+        assert!(
+            written.contains("2026-07-24T14:06:14Z"),
+            "結びつけた日時を失ってはいけない: {written}"
+        );
+    }
+
+    #[test]
+    fn skips_identities_for_systems_that_are_no_longer_supported() {
+        let json = r#"{
+          "email": "member@example.com",
+          "external_identities": [
+            {"system": "discord", "user_id": "x", "linked_at": "2025-11-12T07:05:35Z"},
+            {"system": "slack", "user_id": "U01ABCDEF", "linked_at": "2025-11-12T07:05:35Z"}
+          ],
+          "created_at": "2025-11-12T07:05:35Z",
+          "updated_at": "2025-11-12T07:05:35Z"
+        }"#;
+
+        let entity = serde_json::from_str::<IdentityLinkDto>(json)
+            .unwrap()
+            .to_entity()
+            .unwrap();
+
+        assert_eq!(entity.binding_records().len(), 1);
+        assert!(entity.has_identity_for_system(&ExternalSystem::Slack));
     }
 }
