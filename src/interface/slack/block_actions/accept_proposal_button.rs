@@ -37,7 +37,7 @@ where
     let feedback = match &outcome {
         Ok(_) => "✅ 予約を作成しました".to_string(),
         Err(failure) => {
-            error!(error = %failure, "settling the proposed reservation failed");
+            log_failure(failure);
             build_failure_message(app, failure).await
         }
     };
@@ -141,6 +141,26 @@ fn conflicts_only_with_own_reservations(
     conflicts
         .iter()
         .all(|conflict| conflict.existing_usage.owner_email() == accepted_by)
+}
+
+/// 受諾できなかった事実を記録する
+///
+/// 競合は利用者の操作から生まれる正常な結果で、運用者に対処できることはない。
+/// `error`に置くと連打のたびに運用者を呼ぶことになるため、`/reserve`と同じくwarnとする。
+/// ユースケースまで届かなかった失敗は運用者が調べる必要があるのでerrorに残す。
+fn log_failure(failure: &AcceptFailure) {
+    match failure {
+        AcceptFailure::Rejected {
+            accepted_by,
+            error: ApplicationError::ResourceConflict { conflicts },
+        } => warn!(
+            owner = %accepted_by.as_str(),
+            conflicts = conflicts.len(),
+            origin = "slack",
+            "reservation rejected: resources already booked"
+        ),
+        _ => error!(error = %failure, "settling the proposed reservation failed"),
+    }
 }
 
 /// 受諾できなかった理由を利用者に伝える文面を組み立てる
