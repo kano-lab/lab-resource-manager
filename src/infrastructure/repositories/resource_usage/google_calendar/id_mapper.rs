@@ -1,4 +1,11 @@
 //! Google Calendar Event ID マッピング (内部実装)
+//!
+//! イベントIDは予約IDから決定的に導出されるため、通常は対応表を必要としない。
+//! 例外は、イベントIDをアプリが指定するようになる前に作られた予約である。それらは
+//! Google側が採番したイベントIDを持ち、予約IDから導出できない。この対応表は
+//! そうした予約を解決するために読み取り専用で残している。
+//!
+//! TODO(#111): 次のメジャーリリースでこのモジュールと`GOOGLE_CALENDAR_MAPPINGS_FILE`を削除する
 
 use crate::domain::ports::repositories::RepositoryError;
 use serde::{Deserialize, Serialize};
@@ -15,7 +22,9 @@ pub(super) struct ExternalId {
     pub event_id: String,
 }
 
-/// Domain ID と Google Calendar Event ID のマッピングを管理
+/// 予約IDから導出できないイベントIDを解決するための対応表
+///
+/// 新しい対応は追加されない。読み取りのみを担う。
 pub(super) struct IdMapper {
     file_path: PathBuf,
     mappings: Arc<Mutex<HashMap<String, ExternalId>>>,
@@ -43,31 +52,6 @@ impl IdMapper {
             mappings: Arc::new(Mutex::new(mappings)),
             reverse_mappings: Arc::new(Mutex::new(reverse_mappings)),
         })
-    }
-
-    /// マッピングを保存
-    pub(super) fn save_mapping(
-        &self,
-        domain_id: &str,
-        external_id: ExternalId,
-    ) -> Result<(), RepositoryError> {
-        let mut mappings = self.mappings.lock().unwrap();
-        let mut reverse_mappings = self.reverse_mappings.lock().unwrap();
-
-        // 既存のマッピングがある場合は逆引きマップから削除
-        if let Some(old_external_id) = mappings.get(domain_id) {
-            reverse_mappings.remove(&old_external_id.event_id);
-        }
-
-        // 新しいマッピングを追加
-        reverse_mappings.insert(external_id.event_id.clone(), domain_id.to_string());
-        mappings.insert(domain_id.to_string(), external_id);
-
-        drop(mappings);
-        drop(reverse_mappings);
-
-        self.save_to_file()?;
-        Ok(())
     }
 
     /// Domain ID から外部ID を取得

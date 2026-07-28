@@ -38,6 +38,10 @@ struct ListQuery {
 struct FakeCalendarEventGateway {
     events: Vec<Event>,
     queries: Mutex<Vec<ListQuery>>,
+    /// insert_eventで受け取ったイベント（calendar_id, event）
+    inserted: Mutex<Vec<(String, Event)>>,
+    /// update_eventで受け取った対象（calendar_id, event_id）
+    updated: Mutex<Vec<(String, String)>>,
 }
 
 impl FakeCalendarEventGateway {
@@ -45,11 +49,21 @@ impl FakeCalendarEventGateway {
         Self {
             events,
             queries: Mutex::new(Vec::new()),
+            inserted: Mutex::new(Vec::new()),
+            updated: Mutex::new(Vec::new()),
         }
     }
 
     fn queries(&self) -> Vec<ListQuery> {
         self.queries.lock().unwrap().clone()
+    }
+
+    fn inserted(&self) -> Vec<(String, Event)> {
+        self.inserted.lock().unwrap().clone()
+    }
+
+    fn updated(&self) -> Vec<(String, String)> {
+        self.updated.lock().unwrap().clone()
     }
 }
 
@@ -95,26 +109,58 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
     async fn get_event(
         &self,
         _calendar_id: &str,
-        _event_id: &str,
+        event_id: &str,
     ) -> Result<Option<Event>, RepositoryError> {
-        unimplemented!("このテストでは使用しない")
+        let inserted = self
+            .inserted
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(_, event)| event.id.as_deref() == Some(event_id))
+            .map(|(_, event)| event.clone());
+
+        Ok(inserted.or_else(|| {
+            self.events
+                .iter()
+                .find(|event| event.id.as_deref() == Some(event_id))
+                .cloned()
+        }))
     }
 
     async fn insert_event(
         &self,
-        _calendar_id: &str,
-        _event: Event,
+        calendar_id: &str,
+        event: Event,
     ) -> Result<Event, RepositoryError> {
-        unimplemented!("このテストでは使用しない")
+        let mut created = event;
+        // 実APIはIDを指定しなければ自前で採番し、作成者を書き込んだアカウントで埋める
+        if created.id.is_none() {
+            created.id = Some("generated-by-google".to_string());
+        }
+        if created.creator.is_none() {
+            created.creator = Some(EventCreator {
+                email: Some(SERVICE_ACCOUNT_EMAIL.to_string()),
+                ..Default::default()
+            });
+        }
+        self.inserted
+            .lock()
+            .unwrap()
+            .push((calendar_id.to_string(), created.clone()));
+        Ok(created)
     }
 
     async fn update_event(
         &self,
-        _calendar_id: &str,
-        _event_id: &str,
+        calendar_id: &str,
+        event_id: &str,
         _event: Event,
     ) -> Result<(), RepositoryError> {
-        unimplemented!("このテストでは使用しない")
+        self.updated
+            .lock()
+            .unwrap()
+            .push((calendar_id.to_string(), event_id.to_string()));
+        Ok(())
     }
 
     async fn delete_event(
@@ -122,7 +168,7 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         _calendar_id: &str,
         _event_id: &str,
     ) -> Result<(), RepositoryError> {
-        unimplemented!("このテストでは使用しない")
+        Ok(())
     }
 }
 
@@ -694,5 +740,132 @@ async fn metadata_lines_are_not_mistaken_for_the_owner() {
         owner_lines,
         vec!["owner@example.com"],
         "予約者行はちょうど1行であるべき: {description}"
+    );
+}
+
+#[tokio::test]
+async fn saving_a_new_reservation_uses_an_event_id_derived_from_the_usage_id() {
+    let (repository, gateway, _mapping_path) =
+        repository_with_identities(StubIdentityLinkRepository::default());
+    let usage = gpu_usage("owner@example.com", 0);
+
+    repository.save(&usage).await.unwrap();
+
+    let inserted = gateway.inserted();
+    assert_eq!(inserted.len(), 1);
+    let event_id = inserted[0].1.id.clone().expect("イベントIDを指定するべき");
+    assert_eq!(
+        event_id,
+        usage.id().as_str().replace('-', ""),
+        "イベントIDは予約IDから導出されるべき"
+    );
+    assert!(
+        event_id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
+        "イベントIDに使える文字はbase32hexに限られる: {event_id}"
+    );
+}
+
+#[tokio::test]
+async fn a_saved_reservation_can_be_found_by_id_without_a_mapping_file() {
+    let (repository, _gateway, mapping_path) =
+        repository_with_identities(StubIdentityLinkRepository::default());
+    let usage = gpu_usage("owner@example.com", 0);
+
+    repository.save(&usage).await.unwrap();
+    let found = repository.find_by_id(usage.id()).await.unwrap();
+
+    assert!(found.is_some(), "保存した予約はIDで引けるべき");
+    assert_eq!(found.unwrap().id(), usage.id());
+    assert!(
+        !mapping_path.path().exists(),
+        "マッピングファイルを作らずに解決できるべき"
+    );
+}
+
+#[tokio::test]
+async fn reading_an_event_without_a_mapping_uses_the_event_id_as_the_reservation_id() {
+    let now = Utc::now();
+    let event = reservation_event(
+        "someeventid1234",
+        "0",
+        "owner@example.com",
+        now - Duration::hours(1),
+        now + Duration::hours(1),
+    );
+    let (repository, _gateway, mapping_path) = repository_with(vec![event]);
+
+    let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
+    let found = repository.find_overlapping(&period).await.unwrap();
+
+    assert_eq!(found.len(), 1);
+    assert_eq!(
+        found[0].id().as_str(),
+        "someeventid1234",
+        "イベントIDをそのまま予約IDとして扱うべき"
+    );
+    assert!(
+        !mapping_path.path().exists(),
+        "読み取りでマッピングを書き込んではいけない"
+    );
+}
+
+#[tokio::test]
+async fn reading_the_same_event_twice_yields_a_stable_reservation_id() {
+    let now = Utc::now();
+    let event = reservation_event(
+        "stableeventid99",
+        "0",
+        "owner@example.com",
+        now - Duration::hours(1),
+        now + Duration::hours(1),
+    );
+    let (repository, _gateway, _mapping_path) = repository_with(vec![event]);
+    let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
+
+    let first = repository.find_overlapping(&period).await.unwrap();
+    let second = repository.find_overlapping(&period).await.unwrap();
+
+    assert_eq!(
+        first[0].id(),
+        second[0].id(),
+        "同じイベントを読むたびにIDが変わってはいけない"
+    );
+}
+
+#[tokio::test]
+async fn updating_a_saved_reservation_updates_the_event_instead_of_inserting_again() {
+    let (repository, gateway, _mapping_path) =
+        repository_with_identities(StubIdentityLinkRepository::default());
+    let usage = gpu_usage("owner@example.com", 0);
+    repository.save(&usage).await.unwrap();
+
+    // 期間を変えて同じ予約を保存し直す
+    let extended = ResourceUsage::reconstruct(
+        usage.id().clone(),
+        usage.owner_email().clone(),
+        TimePeriod::new(
+            usage.time_period().start(),
+            usage.time_period().start() + Duration::hours(6),
+        )
+        .unwrap(),
+        usage.resources().to_vec(),
+        usage.notes().cloned(),
+    )
+    .unwrap();
+    repository.save(&extended).await.unwrap();
+
+    assert_eq!(
+        gateway.inserted().len(),
+        1,
+        "既存の予約を作り直してはいけない（同じIDのイベント作成はAPIが拒否する）"
+    );
+    let updated = gateway.updated();
+    assert_eq!(updated.len(), 1, "更新として扱うべき");
+    assert_eq!(
+        updated[0].1,
+        usage.id().as_str().replace('-', ""),
+        "同じイベントIDを更新するべき"
     );
 }
