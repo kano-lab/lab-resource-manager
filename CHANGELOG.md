@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.1](https://github.com/kano-lab/lab-resource-manager/compare/v1.5.0...v1.5.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* decide identity equality by system and user id only ([#110](https://github.com/kano-lab/lab-resource-manager/issues/110)) ([bfa2fcc](https://github.com/kano-lab/lab-resource-manager/commit/bfa2fcc9403078bf9f7da4ed709b007ea14fd8be))
+* serialize acceptances of the same proposal ([#108](https://github.com/kano-lab/lab-resource-manager/issues/108)) ([6d4997e](https://github.com/kano-lab/lab-resource-manager/commit/6d4997e9de481b1c442077977b58ea78cf0238ab))
+
 ## [1.5.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.4.1...v1.5.0) (2026-07-27)
 
 
