@@ -92,10 +92,18 @@ impl UnauthorizedUsageNotifier for SlackUnauthorizedUsageNotifier {
             SlackMessageContent::new().with_text(text),
         );
 
-        session
+        let sent = session
             .chat_post_message(&post_req)
             .await
             .map_err(|e| NotificationError::SendFailure(format!("Slack DM送信失敗: {}", e)))?;
+
+        tracing::info!(
+            channel = %sent.channel,
+            ts = %sent.ts,
+            usage_id = %reserved_usage.id().as_str(),
+            recipient = %actual_user_email.as_str(),
+            "sent an unauthorized-usage dm"
+        );
 
         Ok(())
     }

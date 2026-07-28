@@ -122,10 +122,18 @@ impl ReservationProposalNotifier for SlackReservationProposalNotifier {
                 .with_blocks(blocks),
         );
 
-        session
+        let sent = session
             .chat_post_message(&post_req)
             .await
             .map_err(|e| NotificationError::SendFailure(format!("Slack DM送信失敗: {}", e)))?;
+
+        tracing::info!(
+            channel = %sent.channel,
+            ts = %sent.ts,
+            recipient = %proposal.owner_email().as_str(),
+            active_since = %proposal.active_since(),
+            "sent a reservation proposal dm"
+        );
 
         Ok(())
     }
