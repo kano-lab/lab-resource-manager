@@ -12,7 +12,7 @@ use crate::domain::ports::repositories::{
 };
 use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use google_calendar3::{
     CalendarHub,
     api::Event,
@@ -51,13 +51,6 @@ const RESERVATION_ID_LINE_PREFIX: &str = "予約ID: ";
 fn event_id_for(usage_id: &UsageId) -> String {
     usage_id.as_str().replace('-', "")
 }
-
-/// 「今後の予約」として扱う期間の上限
-///
-/// 繰り返し予約は個々の予定へ展開して取得するため、上限を設けないとカレンダーが
-/// 展開できる限り（数十年先まで）返ってくる。予約の閲覧・変更通知にとって遠い将来は
-/// 意味を持たないので、ここで区切る。
-const FUTURE_HORIZON: Duration = Duration::days(365);
 
 /// キャンセル済みイベントのstatus値
 const EVENT_STATUS_CANCELLED: &str = "cancelled";
@@ -788,18 +781,9 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
         Ok(Some(Self::with_id(usage, id)?))
     }
 
-    async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        // 終了時刻が現在より後のイベントに限る。開始時刻の下限は設けないため、
-        // 進行中のイベント（開始時刻が過去）も含まれる。
-        let now = Utc::now();
-        let events = self.fetch_events(now, Some(now + FUTURE_HORIZON)).await?;
-
-        Ok(self.parse_events(events))
-    }
-
     /// 指定期間と重複するResourceUsageを検索
     ///
-    /// 対象期間そのものをカレンダーに問い合わせる。`find_future`は使わない。
+    /// 対象期間そのものをカレンダーに問い合わせる。終了済みかどうかで絞ってはいけない。
     /// 事後予約のように過去の期間を予約する場合、相手の予約が既に終了していても
     /// 競合は競合であり、終了済みを除外すると重複予約を許してしまう。
     async fn find_overlapping(
@@ -817,15 +801,14 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
             .collect())
     }
 
-    /// 特定のユーザーが所有するResourceUsageを検索
-    ///
-    /// 進行中および今後の予約のみを対象とする（終了済みの予約は返さない）。
     async fn find_by_owner(
         &self,
         owner_email: &EmailAddress,
+        time_period: &TimePeriod,
     ) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        let all_usages = self.find_future().await?;
-        Ok(all_usages
+        Ok(self
+            .find_overlapping(time_period)
+            .await?
             .into_iter()
             .filter(|usage| usage.owner_email() == owner_email)
             .collect())
