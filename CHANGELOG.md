@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.2](https://github.com/kano-lab/lab-resource-manager/compare/v1.5.1...v1.5.2) (2026-07-28)
+
+
+### Bug Fixes
+
+* bound how far ahead future reservations are searched ([#115](https://github.com/kano-lab/lab-resource-manager/issues/115)) ([121d7bb](https://github.com/kano-lab/lab-resource-manager/commit/121d7bbbdcb431361194a5ee7b0b629dfc64f6e2))
+
 ## [1.5.1](https://github.com/kano-lab/lab-resource-manager/compare/v1.5.0...v1.5.1) (2026-07-28)
 
 
