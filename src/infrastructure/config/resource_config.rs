@@ -66,6 +66,10 @@ impl NotificationConfig {
 }
 
 /// リソース全体の設定
+///
+/// TODO(#113): 保存先の指定をリソース定義から分離する。この設定はSlackのビューやMCPなど
+/// 「何が予約できるか」を知りたいだけの箇所にも渡るため、永続化実装の識別子が
+/// 不要な範囲まで届いている
 #[derive(Debug, Deserialize, Clone)]
 pub struct ResourceConfig {
     /// サーバー（GPU）の設定リスト
@@ -79,7 +83,7 @@ pub struct ResourceConfig {
 pub struct ServerConfig {
     /// サーバー名
     pub name: String,
-    /// カレンダーID
+    /// カレンダーID（Google Calendar実装固有。TODO(#113)を参照）
     pub calendar_id: String,
     /// デバイス（GPU）のリスト
     pub devices: Vec<DeviceConfig>,
@@ -101,7 +105,7 @@ pub struct DeviceConfig {
 pub struct RoomConfig {
     /// 部屋名
     pub name: String,
-    /// カレンダーID
+    /// カレンダーID（Google Calendar実装固有。TODO(#113)を参照）
     pub calendar_id: String,
     /// 通知設定のリスト
     pub notifications: Vec<NotificationConfig>,
