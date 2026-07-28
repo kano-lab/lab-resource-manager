@@ -425,6 +425,43 @@ This opens a modal where a radio button switches between two link targets:
   unauthorized-usage-DM features described above able to identify who is actually running a
   process — without it, an observed OS username can never be resolved to a person.
 
+### Logs
+
+Logs go to journald as structured records. `RUST_LOG` controls the level for everything the
+service emits.
+
+```bash
+# Follow the log
+sudo journalctl -u lab-resource-manager -f
+
+# Read fields instead of formatted lines
+sudo journalctl -u lab-resource-manager -o json | jq 'select(.MESSAGE | contains("reservation created"))'
+```
+
+Each polling pass ends with a one-line summary, which is the quickest way to notice something
+is off:
+
+```text
+reconcile pass finished
+  observed=6 reservations_in_progress=5 matched_to_a_reservation=5
+  unreserved_sessions=1 failures=0 elapsed_ms=412
+change detection pass finished
+  reservations=23 created=0 deleted=0 elapsed_ms=380
+```
+
+A count that jumps or an `elapsed_ms` that grows points at a problem well before anything
+visibly breaks.
+
+Set `RUST_LOG=debug` to also see per-step detail (form parsing, modal handling, individual
+Slack API calls). This is verbose and meant for investigating a specific problem, not for
+normal operation.
+
+**Personal information in logs**: logs contain the email addresses and OS usernames of the
+people who make reservations. This is deliberate — it is what makes it possible to answer who
+booked or cancelled something. Access is limited to whoever can read journald (the `adm` and
+`systemd-journal` groups). If you forward these logs to an external collector, that personal
+information leaves the host, so decide whether that is acceptable first.
+
 ## Installation
 
 Download the latest release from [GitHub Releases](https://github.com/kano-lab/lab-resource-manager/releases) and run:
