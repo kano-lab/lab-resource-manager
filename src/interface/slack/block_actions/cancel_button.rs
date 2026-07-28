@@ -64,9 +64,10 @@ where
     // 予約を削除
     let usage_id = UsageId::from_string(usage_id_str.to_string());
     info!(
-        "📍 削除処理開始: usage_id={}, owner={}",
-        usage_id.as_str(),
-        owner_email.as_str()
+        usage_id = %usage_id.as_str(),
+        owner = %owner_email.as_str(),
+        origin = "slack",
+        "cancelling a reservation"
     );
 
     let result = delete_usage_usecase

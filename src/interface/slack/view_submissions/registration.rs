@@ -52,8 +52,8 @@ where
     let message_text = match registration_result {
         Ok(_) => {
             info!(
-                "✅ ユーザー登録成功: {}",
-                email_result.as_ref().unwrap().as_str()
+                email = %email_result.as_ref().unwrap().as_str(),
+                "email address registered"
             );
             format!(
                 "✅ メールアドレス {} を登録しました",
