@@ -6,6 +6,7 @@ use crate::domain::ports::{NotificationEvent, Notifier};
 use chrono::{Duration, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::info;
 
 /// 未来および進行中のリソース使用状況の変更を監視し、通知するユースケース
 ///
@@ -71,8 +72,18 @@ where
     /// # Errors
     /// リポジトリアクセスまたは通知送信に失敗した場合
     pub async fn poll_once(&self) -> Result<(), ApplicationError> {
+        let started_at = Utc::now();
         let current_usages = self.fetch_current_usages().await?;
         let mut previous_usages = self.previous_state.lock().await;
+
+        let created = current_usages
+            .keys()
+            .filter(|id| !previous_usages.contains_key(*id))
+            .count();
+        let deleted = previous_usages
+            .keys()
+            .filter(|id| !current_usages.contains_key(*id))
+            .count();
 
         self.detect_and_notify_created_usages(&previous_usages, &current_usages)
             .await?;
@@ -80,6 +91,15 @@ where
             .await?;
         self.detect_and_notify_deleted_usages(&previous_usages, &current_usages)
             .await?;
+
+        // 1周の要約。件数の推移から、取得範囲や取りこぼしの異常に気づける
+        info!(
+            reservations = current_usages.len(),
+            created,
+            deleted,
+            elapsed_ms = (Utc::now() - started_at).num_milliseconds(),
+            "change detection pass finished"
+        );
 
         *previous_usages = current_usages;
 

@@ -6,7 +6,7 @@ use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::utility::user_resolver;
 use slack_morphism::prelude::*;
-use tracing::{error, info};
+use tracing::{debug, info, warn};
 
 /// /mcp-token スラッシュコマンドを処理
 ///
@@ -21,14 +21,14 @@ where
     R: ResourceUsageRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
-    info!("🔑 MCPトークン発行を処理中: user={}", event.user_id);
+    debug!(user = %event.user_id, "issuing an mcp token");
 
     let email_str = match user_resolver::resolve_user_email(&event.user_id, app.identity_repo())
         .await
     {
         Ok(email) => email,
         Err(e) => {
-            error!("❌ メールアドレス解決に失敗: {}", e);
+            warn!(user = %event.user_id, error = %e, "could not resolve the caller to an email address");
             return Ok(SlackCommandEventResponse::new(
                 SlackMessageContent::new().with_text(format!(
                     "❌ メールアドレスが紐付けられていません。管理者に `/link-user` での紐付けを依頼してください。（{}）",
@@ -42,7 +42,7 @@ where
 
     let token = app.mcp_token_repo().issue_token(&email).await?;
 
-    info!("✅ MCPトークンを発行しました: {}", email.as_str());
+    info!(owner = %email.as_str(), "mcp token issued");
 
     let message = format!(
         "🔑 MCPアクセストークンを発行しました。\n\

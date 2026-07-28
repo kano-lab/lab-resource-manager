@@ -7,7 +7,7 @@ use crate::interface::slack::slack_client::modals;
 use crate::interface::slack::utility::user_resolver;
 use crate::interface::slack::views::modals::{registration, reserve};
 use slack_morphism::prelude::*;
-use tracing::info;
+use tracing::{debug, info};
 
 /// /reserve スラッシュコマンドを処理
 ///
@@ -42,7 +42,7 @@ where
         let modal = registration::create();
         modals::open(slack_client, bot_token, trigger_id, modal).await?;
 
-        info!("✅ メールアドレス登録モーダルを開きました");
+        debug!("email registration modal opened");
         return Ok(SlackCommandEventResponse::new(SlackMessageContent::new()));
     }
 
@@ -58,6 +58,6 @@ where
 
     modals::open(slack_client, bot_token, trigger_id, modal).await?;
 
-    info!("✅ 予約モーダルを開きました");
+    debug!("reservation modal opened");
     Ok(SlackCommandEventResponse::new(SlackMessageContent::new()))
 }

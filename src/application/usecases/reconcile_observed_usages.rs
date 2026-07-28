@@ -98,22 +98,27 @@ where
     /// # Errors
     /// 観測・リポジトリアクセス・通知送信に失敗した場合
     pub async fn poll_once(&self) -> Result<(), ApplicationError> {
+        let started_at = Utc::now();
         let observed = self.observer.observe_active_usages().await?;
-        let now = Utc::now();
+        let now = started_at;
         // 突合の相手は「今この瞬間に進行中の予約」だけなので、現在時刻を含む最小の期間を問う
         let in_progress = TimePeriod::new(now, now + Duration::seconds(1))?;
         let current_usages = self.repository.find_overlapping(&in_progress).await?;
 
         let mut unreserved = Vec::new();
+        let mut reserved = 0_usize;
+        let mut failures = 0_usize;
 
         for usage in &observed {
             match Self::find_active_reservation(&current_usages, usage.resource(), now) {
                 Some(reservation) => {
+                    reserved += 1;
                     if let Err(e) = self.reconcile_reserved(usage, reservation).await {
+                        failures += 1;
                         error!(
-                            "実利用の突合処理に失敗しました (resource={}): {}",
-                            usage.resource(),
-                            e
+                            resource = %usage.resource(),
+                            error = %e,
+                            "reconciling an observed usage failed"
                         );
                     }
                 }
@@ -125,11 +130,26 @@ where
             }
         }
 
-        for session in Self::group_into_sessions(unreserved) {
+        let sessions = Self::group_into_sessions(unreserved);
+        let session_count = sessions.len();
+
+        for session in sessions {
             if let Err(e) = self.propose_for_session(&session).await {
-                error!("事後予約の提案に失敗しました: {}", e);
+                failures += 1;
+                error!(error = %e, "sending the reservation proposal failed");
             }
         }
+
+        // 1周の要約。個別の出来事より、件数の推移から異常に気づける
+        info!(
+            observed = observed.len(),
+            reservations_in_progress = current_usages.len(),
+            matched_to_a_reservation = reserved,
+            unreserved_sessions = session_count,
+            failures,
+            elapsed_ms = (Utc::now() - started_at).num_milliseconds(),
+            "reconcile pass finished"
+        );
 
         Ok(())
     }
@@ -208,6 +228,14 @@ where
         if self.notified_unauthorized_keys.lock().await.contains(&key) {
             return Ok(());
         }
+
+        info!(
+            resource = %observed.resource(),
+            actual_user = %actual_email.as_str(),
+            reserved_by = %reservation.owner_email().as_str(),
+            usage_id = %reservation.id().as_str(),
+            "notifying unauthorized usage"
+        );
 
         self.unauthorized_notifier
             .notify(reservation, &actual_email)

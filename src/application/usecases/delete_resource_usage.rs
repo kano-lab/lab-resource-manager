@@ -4,6 +4,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{RepositoryError, ResourceUsageRepository};
 use crate::domain::services::{AuthorizationPolicy, ResourceUsageAuthorizationPolicy};
 use std::sync::Arc;
+use tracing::info;
 
 /// リソース使用予定を削除するユースケース
 pub struct DeleteResourceUsageUseCase<R: ResourceUsageRepository> {
@@ -56,6 +57,15 @@ impl<R: ResourceUsageRepository> DeleteResourceUsageUseCase<R> {
 
         // 削除
         self.repository.delete(id).await?;
+
+        info!(
+            usage_id = %id.as_str(),
+            owner = %usage.owner_email().as_str(),
+            requested_by = %owner_email.as_str(),
+            start = %usage.time_period().start(),
+            end = %usage.time_period().end(),
+            "reservation cancelled"
+        );
 
         Ok(())
     }

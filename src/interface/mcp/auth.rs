@@ -35,7 +35,7 @@ pub async fn bearer_auth(
         .resolve(token)
         .await
         .map_err(|e| {
-            error!("MCPトークンの解決に失敗しました（リポジトリエラー）: {}", e);
+            error!(error = %e, "resolving the mcp token failed");
             StatusCode::UNAUTHORIZED
         })?
         .ok_or(StatusCode::UNAUTHORIZED)?;

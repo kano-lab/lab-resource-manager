@@ -83,7 +83,7 @@ impl SharedFileResourceUsageObserver {
             Ok(content) => content,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
             Err(e) => {
-                warn!("観測ファイル読み込み失敗 ({}): {}", path.display(), e);
+                warn!(path = %path.display(), error = %e, "reading a usage report failed");
                 return Vec::new();
             }
         };
@@ -91,7 +91,7 @@ impl SharedFileResourceUsageObserver {
         let report: GpuUsageReport = match serde_json::from_str(&content) {
             Ok(report) => report,
             Err(e) => {
-                warn!("観測ファイルのパース失敗 ({}): {}", path.display(), e);
+                warn!(path = %path.display(), error = %e, "parsing a usage report failed");
                 return Vec::new();
             }
         };

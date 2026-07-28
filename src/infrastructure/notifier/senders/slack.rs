@@ -117,7 +117,7 @@ impl SlackSender {
     fn build_message_blocks(message: &str, context: &NotificationContext) -> Vec<SlackBlock> {
         let usage = Self::extract_usage_from_event(context.event);
         let usage_id = usage.id().as_str();
-        tracing::info!("🔔 通知ボタン作成: usage_id={}", usage_id);
+        tracing::debug!(usage_id = %usage_id, "attached action buttons to the notification");
 
         // Deleted イベントの場合はボタンなし
         let should_add_buttons = matches!(
@@ -175,7 +175,7 @@ impl SlackSender {
         };
 
         serde_json::from_value(blocks_json).unwrap_or_else(|e| {
-            error!("Failed to deserialize Slack blocks: {}", e);
+            error!(error = %e, "building the notification message blocks failed");
             vec![]
         })
     }

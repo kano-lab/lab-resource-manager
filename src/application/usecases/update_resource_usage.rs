@@ -6,6 +6,7 @@ use crate::domain::services::{
     AuthorizationPolicy, ResourceConflictChecker, ResourceUsageAuthorizationPolicy,
 };
 use std::sync::Arc;
+use tracing::info;
 
 /// リソース使用予定を更新するユースケース
 pub struct UpdateResourceUsageUseCase<R: ResourceUsageRepository> {
@@ -86,6 +87,14 @@ impl<R: ResourceUsageRepository> UpdateResourceUsageUseCase<R> {
 
         // 更新
         self.repository.save(&usage).await?;
+
+        info!(
+            usage_id = %usage.id().as_str(),
+            owner = %usage.owner_email().as_str(),
+            start = %usage.time_period().start(),
+            end = %usage.time_period().end(),
+            "reservation updated"
+        );
 
         Ok(())
     }

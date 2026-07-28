@@ -6,7 +6,7 @@ use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::slack_client::modals;
 use crate::interface::slack::views;
 use slack_morphism::prelude::*;
-use tracing::info;
+use tracing::debug;
 
 /// /link-user スラッシュコマンドを処理
 ///
@@ -19,7 +19,7 @@ where
     R: ResourceUsageRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
-    info!("🔗 ユーザーリンクモーダルを開きます");
+    debug!("opening the identity link modal");
 
     // ユーザーリンクモーダルを作成
     let modal = views::modals::link_user::create(app.resource_config(), None);

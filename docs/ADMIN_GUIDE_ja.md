@@ -412,6 +412,38 @@ sudo systemctl enable lab-resource-manager
   いるか」を特定できるようになります。これを行わないと、観測されたOSユーザー名は誰にも
   解決できません。
 
+### ログ
+
+ログは構造化されたレコードとしてjournaldへ出力されます。レベルは`RUST_LOG`で制御します。
+
+```bash
+# ログを追う
+sudo journalctl -u lab-resource-manager -f
+
+# 整形済みの行ではなくフィールドとして読む
+sudo journalctl -u lab-resource-manager -o json | jq 'select(.MESSAGE | contains("reservation created"))'
+```
+
+各ポーリングの終わりに1行の要約が出ます。異常に気づく手段としてはこれが最も速いです。
+
+```text
+reconcile pass finished
+  observed=6 reservations_in_progress=5 matched_to_a_reservation=5
+  unreserved_sessions=1 failures=0 elapsed_ms=412
+change detection pass finished
+  reservations=23 created=0 deleted=0 elapsed_ms=380
+```
+
+件数が跳ねたり`elapsed_ms`が伸びていれば、目に見える形で壊れる前に問題を捉えられます。
+
+`RUST_LOG=debug`にすると、各処理の詳細（フォームの解析、モーダルの操作、個別のSlack API呼び出し）も出ます。
+量が多いため、特定の問題を調べるときに使うもので、通常運用向けではありません。
+
+**ログに含まれる個人情報**: ログには予約者のメールアドレスとOSユーザー名が含まれます。これは意図的なもので、
+誰が予約し、誰がキャンセルしたかを後から答えられるようにするためです。閲覧できるのはjournaldを読める範囲
+（`adm`および`systemd-journal`グループ）に限られます。外部のログ収集サービスへ転送する場合は、
+この個人情報がホストの外へ出ることになるため、許容できるかを先に判断してください。
+
 ## インストール
 
 [GitHub Releases](https://github.com/kano-lab/lab-resource-manager/releases)から最新版をダウンロードして実行:

@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio_util::task::TaskTracker;
+use tracing::{debug, error, info, warn};
 
 /// 依存性注入を備えたSlackアプリケーション
 ///
@@ -102,27 +103,13 @@ where
     /// Socket Modeリスナーとポーリングタスクを起動し、
     /// Ctrl+Cシグナルまで実行を継続します。
     pub async fn run(self: Arc<Self>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        println!("🤖 Slack Bot を起動しています...");
-        println!(
-            "📁 リソース設定ファイル: {}",
-            self.app_config.resource_config_path.display()
+        info!(
+            resource_config = %self.app_config.resource_config_path.display(),
+            identity_links = %self.app_config.identity_links_file.display(),
+            servers = self.resource_config.servers.len(),
+            rooms = self.resource_config.rooms.len(),
+            "starting slack bot"
         );
-        println!(
-            "📁 ID紐付けファイル: {}",
-            self.app_config.identity_links_file.display()
-        );
-        println!(
-            "✅ 設定を読み込みました: {} サーバー, {} 部屋",
-            self.resource_config.servers.len(),
-            self.resource_config.rooms.len()
-        );
-        println!("✅ Slack App を初期化しました");
-        println!("✅ 通知機能を初期化しました");
-
-        println!("🚀 Bot の準備ができました！");
-        println!("   /register-calendar <your-email@gmail.com>");
-        println!("   /link-user <@slack_user> <email@gmail.com>");
-        println!();
 
         // Socket Mode リスナーの設定
         let socket_mode_callbacks = SlackSocketModeListenerCallbacks::new()
@@ -141,21 +128,13 @@ where
             socket_mode_callbacks,
         );
 
-        println!("🔌 Slack Socket Mode に接続しています...");
-
         let app_token = SlackApiToken::new(self.app_config.slack_app_token.clone().into());
         socket_mode_listener.listen_for(&app_token).await?;
 
-        println!("✅ Slack Socket Mode に接続しました！");
-        println!("🎉 Bot がスラッシュコマンドを待機しています");
-        println!();
-
-        println!(
-            "🔍 カレンダー監視を開始します（間隔: {}秒）",
-            self.app_config.polling_interval_secs
+        info!(
+            polling_interval_secs = self.app_config.polling_interval_secs,
+            "connected to slack socket mode; accepting commands"
         );
-        println!();
-        println!("Bot を停止するには Ctrl+C を押してください");
 
         // バックグラウンドでポーリングタスクを実行
         let polling_handle = {
@@ -166,7 +145,7 @@ where
                     match notify_usecase.poll_once().await {
                         Ok(_) => {}
                         Err(e) => {
-                            eprintln!("❌ ポーリングエラー: {}", e);
+                            error!(error = %e, "reservation change polling failed");
                         }
                     }
                     tokio::time::sleep(polling_interval).await;
@@ -177,17 +156,17 @@ where
         // Socket Mode リスナーとポーリングタスクを並行実行
         tokio::select! {
             _ = socket_mode_listener.serve() => {
-                println!("\n🔌 Socket Mode リスナーが終了しました");
+                info!("socket mode listener ended");
             }
             _ = tokio::signal::ctrl_c() => {
-                println!("\n👋 シャットダウンシグナルを受信しました");
+                info!("received shutdown signal");
             }
         }
 
         // ポーリングタスクを停止
         polling_handle.abort();
 
-        println!("👋 シャットダウンしています...");
+        info!("shutting down");
         self.shutdown().await;
 
         Ok(())
@@ -199,7 +178,9 @@ where
         _client: Arc<SlackHyperClient>,
         state: SlackClientEventsUserState,
     ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
-        println!("📩 コマンドを受信しました: {}", event.command);
+        // ハンドラの結果ログでも使うため、イベントを渡す前に控えておく
+        let command = event.command.to_string();
+        debug!(command = %command, "received slash command");
 
         let app = state
             .read()
@@ -210,11 +191,11 @@ where
 
         match app.route_slash_command(event).await {
             Ok(response) => {
-                println!("✅ コマンドを正常に処理しました");
+                debug!("slash command handled");
                 Ok(response)
             }
             Err(e) => {
-                eprintln!("❌ コマンド処理エラー: {}", e);
+                error!(command = %command, error = %e, "slash command failed");
                 Ok(SlackCommandEventResponse::new(
                     SlackMessageContent::new().with_text(format!("エラー: {}", e)),
                 ))
@@ -228,7 +209,7 @@ where
         client: Arc<SlackHyperClient>,
         state: SlackClientEventsUserState,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        println!("🔘 インタラクションを受信しました");
+        debug!("received interaction");
 
         let app = state
             .read()
@@ -243,7 +224,7 @@ where
 
             match result {
                 Ok(Some(response)) => {
-                    println!("📤 ビュー応答を送信中...");
+                    debug!("sending view response");
 
                     let token = &app.bot_token;
                     let session = client.open_session(token);
@@ -264,8 +245,8 @@ where
                                 request.hash = hash;
 
                                 match session.views_update(&request).await {
-                                    Ok(_) => println!("✅ ビューを更新しました"),
-                                    Err(e) => eprintln!("❌ ビュー更新エラー: {}", e),
+                                    Ok(_) => debug!("view updated"),
+                                    Err(e) => error!(error = %e, "updating the view failed"),
                                 }
                             }
                         }
@@ -280,24 +261,24 @@ where
                                     ))
                                     .await
                                 {
-                                    Ok(_) => println!("✅ ビューをpushしました"),
-                                    Err(e) => eprintln!("❌ ビューpushエラー: {}", e),
+                                    Ok(_) => debug!("view pushed"),
+                                    Err(e) => error!(error = %e, "pushing the view failed"),
                                 }
                             }
                         }
                         SlackViewSubmissionResponse::Clear(_) => {
-                            println!("⚠️ Clear responseは未実装です");
+                            warn!("clear response is not implemented");
                         }
                         _ => {}
                     }
 
-                    println!("✅ インタラクションを正常に処理しました");
+                    debug!("interaction handled");
                 }
                 Ok(None) => {
-                    println!("✅ インタラクションを正常に処理しました（応答なし）");
+                    debug!("interaction handled without a response");
                 }
                 Err(e) => {
-                    eprintln!("❌ インタラクション処理エラー: {}", e);
+                    error!(error = %e, "interaction failed");
                 }
             }
         });

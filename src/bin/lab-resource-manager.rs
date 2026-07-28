@@ -35,6 +35,7 @@ use lab_resource_manager::{
 };
 use slack_morphism::prelude::*;
 use std::sync::Arc;
+use tracing::{error, info};
 
 /// 予約の変更を監視する期間の長さ
 ///
@@ -188,17 +189,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ));
 
             let interval = std::time::Duration::from_secs(app_config.polling_interval_secs);
-            println!("🔍 実利用観測機能を有効化しました");
+            info!(
+                interval_secs = app_config.polling_interval_secs,
+                "usage observation enabled"
+            );
             Some(tokio::spawn(async move {
                 loop {
                     if let Err(e) = reconcile_usecase.poll_once().await {
-                        eprintln!("❌ 実利用観測ポーリングエラー: {}", e);
+                        error!(error = %e, "usage observation polling failed");
                     }
                     tokio::time::sleep(interval).await;
                 }
             }))
         } else {
-            println!("ℹ️  GPU_USAGE_REPORTS_DIR未設定のため、実利用観測機能は無効です");
+            info!("usage observation disabled: GPU_USAGE_REPORTS_DIR is not set");
             None
         };
 
@@ -217,7 +221,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         let mcp_token_repo_for_serve = mcp_token_repo.clone();
 
-        println!("🔌 MCPサーバー機能を有効化しました: {}", mcp_listen_addr);
+        info!(listen_addr = %mcp_listen_addr, "mcp server enabled");
         Some(tokio::spawn(async move {
             if let Err(e) = mcp::serve(
                 mcp_listen_addr,
@@ -228,11 +232,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .await
             {
-                eprintln!("❌ MCPサーバーエラー: {}", e);
+                error!(error = %e, "mcp server stopped with an error");
             }
         }))
     } else {
-        println!("ℹ️  MCP_LISTEN_ADDR未設定のため、MCPサーバー機能は無効です");
+        info!("mcp server disabled: MCP_LISTEN_ADDR is not set");
         None
     };
 

@@ -221,7 +221,7 @@ fn build_proposal_blocks(
     ]);
 
     serde_json::from_value(blocks_json).unwrap_or_else(|e| {
-        warn!("Slack blocksのデシリアライズに失敗: {}", e);
+        warn!(error = %e, "building the proposal message blocks failed");
         vec![]
     })
 }

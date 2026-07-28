@@ -8,7 +8,7 @@ use crate::infrastructure::reservation_proposal::ProposalAcceptPayload;
 use crate::interface::slack::app::SlackApp;
 use chrono::Duration;
 use slack_morphism::prelude::*;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// 事後予約提案の受諾ボタンのクリックを処理
 pub async fn handle<R, N>(
@@ -21,12 +21,12 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     let Some(value) = &action.value else {
-        error!("❌ 提案データが取得できませんでした");
+        error!("accept button carried no proposal payload");
         return Ok(());
     };
 
     let Some(channel_id) = dm_channel_id(block_actions) else {
-        error!("❌ DMチャンネルIDが取得できませんでした");
+        error!("could not resolve the DM channel for the proposal");
         return Ok(());
     };
 
@@ -34,7 +34,7 @@ where
     let feedback = match &outcome {
         Ok(_) => "✅ 予約を作成しました".to_string(),
         Err(e) => {
-            error!("❌ 事後予約の作成に失敗: {}", e);
+            error!(error = %e, "settling the proposed reservation failed");
             format!("❌ 予約の作成に失敗しました: {}", e)
         }
     };
@@ -53,7 +53,7 @@ where
         );
         if let Err(e) = session.chat_update(&settled).await {
             // ボタンが残るだけで予約自体は成立しているため、失敗しても処理は続ける
-            error!("⚠️ 提案メッセージの更新に失敗: {}", e);
+            warn!(error = %e, "clearing the proposal buttons failed; the reservation still stands");
         }
     }
 
@@ -62,7 +62,7 @@ where
         SlackMessageContent::new().with_text(feedback),
     );
     if let Err(e) = session.chat_post_message(&post_req).await {
-        error!("❌ フィードバックメッセージ送信失敗: {}", e);
+        error!(error = %e, "sending the feedback message failed");
     }
 
     Ok(())
