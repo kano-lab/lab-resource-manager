@@ -36,6 +36,13 @@ use lab_resource_manager::{
 use slack_morphism::prelude::*;
 use std::sync::Arc;
 
+/// 予約の変更を監視する期間の長さ
+///
+/// 前回と今回の状態を突き合わせて差分を通知するため、この長さを縮めると
+/// 範囲外に出た予約が削除として通知される。繰り返し予約は個々の予定へ展開されるので、
+/// 上限なしにはできない。
+const NOTIFICATION_WATCH_WINDOW_DAYS: i64 = 60;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // tracingの初期化（RUST_LOGで制御、未設定時はinfo）
@@ -136,9 +143,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let notifier = NotificationRouter::new(resource_config.as_ref().clone(), identity_repo.clone());
     let notify_usecase = Arc::new(
-        NotifyFutureResourceUsageChangesUseCase::new(resource_usage_repo.clone(), notifier)
-            .await
-            .map_err(|e| format!("通知UseCaseの初期化に失敗: {}", e))?,
+        NotifyFutureResourceUsageChangesUseCase::new(
+            resource_usage_repo.clone(),
+            notifier,
+            ChronoDuration::days(NOTIFICATION_WATCH_WINDOW_DAYS),
+        )
+        .await
+        .map_err(|e| format!("通知UseCaseの初期化に失敗: {}", e))?,
     );
 
     // Slackインフラ

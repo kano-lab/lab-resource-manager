@@ -371,7 +371,7 @@ async fn find_overlapping_skips_unparsable_events_but_keeps_the_rest() {
 }
 
 #[tokio::test]
-async fn find_future_excludes_reservation_that_already_ended() {
+async fn a_window_starting_now_excludes_reservations_that_already_ended() {
     let now = Utc::now();
     let ended = reservation_event(
         "already-ended",
@@ -382,16 +382,14 @@ async fn find_future_excludes_reservation_that_already_ended() {
     );
     let (repository, _gateway, _mapping_path) = repository_with(vec![ended]);
 
-    let future = repository.find_future().await.unwrap();
+    let window = TimePeriod::new(now, now + Duration::days(30)).unwrap();
+    let future = repository.find_overlapping(&window).await.unwrap();
 
-    assert!(
-        future.is_empty(),
-        "終了済みの予約は今後の予約として扱わない"
-    );
+    assert!(future.is_empty(), "終了済みの予約は今後の期間に含まれない");
 }
 
 #[tokio::test]
-async fn find_future_keeps_ongoing_reservation() {
+async fn a_window_starting_now_keeps_an_ongoing_reservation() {
     let now = Utc::now();
     let ongoing = reservation_event(
         "ongoing",
@@ -402,7 +400,8 @@ async fn find_future_keeps_ongoing_reservation() {
     );
     let (repository, _gateway, _mapping_path) = repository_with(vec![ongoing]);
 
-    let future = repository.find_future().await.unwrap();
+    let window = TimePeriod::new(now, now + Duration::days(30)).unwrap();
+    let future = repository.find_overlapping(&window).await.unwrap();
 
     assert_eq!(
         future.len(),
@@ -868,47 +867,4 @@ async fn updating_a_saved_reservation_updates_the_event_instead_of_inserting_aga
         usage.id().as_str().replace('-', ""),
         "同じイベントIDを更新するべき"
     );
-}
-
-#[tokio::test]
-async fn find_future_bounds_how_far_ahead_it_looks() {
-    // 繰り返し予約は個々の予定へ展開されるため、上限を設けないとカレンダーが
-    // 展開できる限り（数十年先まで）返ってくる
-    let (repository, gateway, _mapping_path) = repository_with(vec![]);
-
-    repository.find_future().await.unwrap();
-
-    let queries = gateway.queries();
-    assert_eq!(queries.len(), 1);
-    let time_max = queries[0]
-        .time_max
-        .expect("今後の予約を探す範囲には上限が必要");
-    let horizon = time_max - queries[0].time_min;
-    assert!(
-        horizon <= Duration::days(366),
-        "上限が遠すぎる: {}日",
-        horizon.num_days()
-    );
-    assert!(
-        horizon >= Duration::days(90),
-        "上限が近すぎると先の予約が見えなくなる: {}日",
-        horizon.num_days()
-    );
-}
-
-#[tokio::test]
-async fn find_future_still_returns_a_reservation_inside_the_horizon() {
-    let now = Utc::now();
-    let soon = reservation_event(
-        "within-horizon",
-        "0",
-        "owner@example.com",
-        now + Duration::days(30),
-        now + Duration::days(30) + Duration::hours(1),
-    );
-    let (repository, _gateway, _mapping_path) = repository_with(vec![soon]);
-
-    let future = repository.find_future().await.unwrap();
-
-    assert_eq!(future.len(), 1, "上限内の予約は返るべき");
 }
