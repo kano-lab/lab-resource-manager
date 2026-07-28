@@ -300,14 +300,14 @@ where
         }
 
         info!(
-            "📨 事後予約を提案: owner={}, resources=[{}], active_since={}",
-            owner_email.as_str(),
-            resources
+            owner = %owner_email.as_str(),
+            resources = %resources
                 .iter()
                 .map(|resource| resource.to_string())
                 .collect::<Vec<_>>()
                 .join(", "),
-            first.active_since()
+            active_since = %first.active_since(),
+            "proposing a post-hoc reservation"
         );
 
         let proposal = ReservationProposal::new(

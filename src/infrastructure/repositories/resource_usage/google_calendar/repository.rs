@@ -188,8 +188,9 @@ impl GoogleCalendarUsageRepository {
             .await
             .inspect_err(|e| {
                 tracing::warn!(
-                    "予約者の紐付け取得に失敗しました（OS名は省略します）: {}",
-                    e
+                    owner = %usage.owner_email().as_str(),
+                    error = %e,
+                    "looking up the reserver's identity link failed; omitting the os user name"
                 )
             })
             .ok()
@@ -268,15 +269,15 @@ impl GoogleCalendarUsageRepository {
                     Err(e) => {
                         if self.should_report_parse_failure(&event_id) {
                             tracing::warn!(
-                                "イベントを予約として解釈できませんでした: calendar_id={}, event_id={}, error={}",
-                                calendar_id,
-                                event_id,
-                                e
+                                calendar_id = %calendar_id,
+                                event_id = %event_id,
+                                error = %e,
+                                "the event is not a reservation; skipping it"
                             );
                         } else {
                             tracing::debug!(
-                                "イベントを予約として解釈できませんでした(既報): event_id={}",
-                                event_id
+                                event_id = %event_id,
+                                "the event is not a reservation; skipping it (already reported)"
                             );
                         }
                         None
@@ -705,18 +706,18 @@ impl GoogleCalendarUsageRepository {
             match self.gateway.delete_event(&calendar_id, event_id).await {
                 Ok(_) => {
                     tracing::info!(
-                        "✅ イベント削除成功: event_id={}, calendar_id={}",
-                        event_id,
-                        calendar_id
+                        event_id = %event_id,
+                        calendar_id = %calendar_id,
+                        "event deleted"
                     );
                     return Ok(());
                 }
                 Err(e) => {
                     tracing::debug!(
-                        "カレンダー {} でイベント {} が見つかりませんでした: {}",
-                        calendar_id,
-                        event_id,
-                        e
+                        calendar_id = %calendar_id,
+                        event_id = %event_id,
+                        error = %e,
+                        "the event is not on this calendar; trying the next one"
                     );
                     // 次のカレンダーを試す
                     continue;
@@ -726,8 +727,8 @@ impl GoogleCalendarUsageRepository {
 
         // すべてのカレンダーで見つからなかった
         tracing::error!(
-            "❌ イベントが全カレンダーで見つかりませんでした: event_id={}",
-            event_id
+            event_id = %event_id,
+            "the event was not found on any calendar"
         );
         Err(RepositoryError::NotFound)
     }

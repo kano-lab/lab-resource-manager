@@ -7,7 +7,7 @@ use crate::interface::slack::constants::*;
 use crate::interface::slack::slack_client::modals;
 use crate::interface::slack::views::modals::{link_user, reserve};
 use slack_morphism::prelude::*;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 /// モーダル状態変更を処理（リソースタイプ選択、サーバー選択、リンク対象種別選択）
 ///
@@ -27,10 +27,7 @@ where
     // Get view_id from container
     let view_id = match &block_actions.container {
         SlackInteractionActionContainer::View(view_container) => {
-            info!(
-                "  → view_id取得成功: {}",
-                view_container.view_id.to_string()
-            );
+            debug!(view_id = %view_container.view_id, "resolved the modal to update");
             view_container.view_id.clone()
         }
         SlackInteractionActionContainer::Message(_)
@@ -52,10 +49,7 @@ where
     debug!("requesting a modal update");
     modals::update(app.slack_client(), app.bot_token(), &view_id, updated_modal).await?;
 
-    info!(
-        "✅ モーダルを動的に更新しました (view_id: {})",
-        view_id.to_string()
-    );
+    debug!(view_id = %view_id, "modal updated");
 
     Ok(())
 }
@@ -93,9 +87,10 @@ where
         None
     };
 
-    info!(
-        "📝 選択値: type={:?}, server={:?}",
-        new_resource_type, new_selected_server
+    debug!(
+        resource_type = ?new_resource_type,
+        server = ?new_selected_server,
+        "rebuilding the reservation modal from the current selection"
     );
 
     reserve::create_reserve_modal(

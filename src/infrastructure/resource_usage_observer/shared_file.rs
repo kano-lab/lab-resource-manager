@@ -98,9 +98,10 @@ impl SharedFileResourceUsageObserver {
 
         if Utc::now() - report.generated_at > self.max_staleness {
             warn!(
-                "観測ファイルが古いため無視します ({}): generated_at={}",
-                path.display(),
-                report.generated_at
+                path = %path.display(),
+                generated_at = %report.generated_at,
+                max_staleness_secs = self.max_staleness.num_seconds(),
+                "the usage report is too old; ignoring it"
             );
             return Vec::new();
         }
@@ -111,8 +112,8 @@ impl SharedFileResourceUsageObserver {
     fn build_observed_usages(&self, report: &GpuUsageReport) -> Vec<ObservedUsage> {
         let Some(server_config) = self.resource_config.get_server(&report.server) else {
             warn!(
-                "未設定のサーバーからの観測データを無視します: {}",
-                report.server
+                server = %report.server,
+                "the usage report is for a server that is not configured; ignoring it"
             );
             return Vec::new();
         };

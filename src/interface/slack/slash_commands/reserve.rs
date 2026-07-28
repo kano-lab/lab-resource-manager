@@ -35,8 +35,8 @@ where
     if !is_linked {
         // Unlinked: Show email registration modal
         info!(
-            "ユーザー {} は未リンク。メールアドレス登録モーダルを表示します",
-            user_id
+            slack_user = %user_id,
+            "the user has no identity link; opening the email registration modal"
         );
 
         let modal = registration::create();
@@ -48,8 +48,8 @@ where
 
     // Linked: Show reservation modal
     info!(
-        "ユーザー {} はリンク済み。予約モーダルを表示します",
-        user_id
+        slack_user = %user_id,
+        "opening the reservation modal"
     );
 
     // Create and open reservation modal

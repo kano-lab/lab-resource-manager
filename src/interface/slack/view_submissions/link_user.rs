@@ -115,9 +115,9 @@ where
     let message_text = match link_result {
         Ok(_) => {
             info!(
-                "✅ ユーザーリンク成功: {} -> {}",
-                link_target.display,
-                email_result.as_ref().unwrap().as_str()
+                identity = %link_target.display,
+                email = %email_result.as_ref().unwrap().as_str(),
+                "identity linked"
             );
             format!(
                 "✅ ユーザー {} をメールアドレス {} に紐付けました",

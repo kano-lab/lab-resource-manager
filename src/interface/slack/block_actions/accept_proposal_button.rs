@@ -197,8 +197,11 @@ where
     let payload: ProposalAcceptPayload = serde_json::from_str(value)?;
 
     info!(
-        "📍 事後予約作成: server={}, devices={:?}, owner={}, duration_minutes={}",
-        payload.server, payload.device_numbers, payload.owner_email, payload.duration_minutes
+        server = %payload.server,
+        devices = ?payload.device_numbers,
+        owner = %payload.owner_email,
+        duration_minutes = payload.duration_minutes,
+        "accepting a post-hoc reservation proposal"
     );
 
     let resources = resolve_gpu_resources(app, &payload.server, &payload.device_numbers)?;
