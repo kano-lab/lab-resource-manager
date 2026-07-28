@@ -111,7 +111,7 @@ impl<'a> TemplateRenderer<'a> {
     /// `conflicting_resource`は競合したリソース単体（要求リソースのうち衝突した1件）。
     pub fn render_conflict(
         &self,
-        conflicting_resource: &Resource,
+        conflicting_resources: &[Resource],
         existing_usage: &ResourceUsage,
         user_display: &str,
     ) -> String {
@@ -122,7 +122,7 @@ impl<'a> TemplateRenderer<'a> {
             .unwrap_or(defaults::CONFLICT);
         self.render(
             template,
-            std::slice::from_ref(conflicting_resource),
+            conflicting_resources,
             existing_usage.time_period(),
             existing_usage.notes().map(String::as_str),
             user_display,
@@ -355,7 +355,11 @@ mod tests {
         let conflicting_resource =
             Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
 
-        let result = renderer.render_conflict(&conflicting_resource, &existing_usage, "<@U67890>");
+        let result = renderer.render_conflict(
+            std::slice::from_ref(&conflicting_resource),
+            &existing_usage,
+            "<@U67890>",
+        );
 
         assert!(result.contains("⚠️ 予約が重複しています"));
         assert!(result.contains("<@U67890>"));
@@ -379,7 +383,11 @@ mod tests {
         let conflicting_resource =
             Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string()));
 
-        let result = renderer.render_conflict(&conflicting_resource, &existing_usage, "田中太郎");
+        let result = renderer.render_conflict(
+            std::slice::from_ref(&conflicting_resource),
+            &existing_usage,
+            "田中太郎",
+        );
 
         assert!(result.contains("田中太郎が既に"));
         assert!(result.contains("GPU:1"));

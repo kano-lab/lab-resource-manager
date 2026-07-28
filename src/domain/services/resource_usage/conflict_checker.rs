@@ -1,6 +1,7 @@
 use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod, UsageId};
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::services::resource_usage::errors::{ConflictCheckError, ResourceConflictError};
+use std::collections::HashMap;
 
 /// リソース競合チェックサービス
 ///
@@ -31,8 +32,12 @@ impl ResourceConflictChecker {
     ///
     /// # Returns
     /// 競合がない場合はOk(())、競合がある場合はエラー。
-    /// 複数リソースを同時にリクエストした場合、競合したリソースが複数あれば
-    /// その全件をまとめて返す（最初の1件で打ち切らない）。
+    ///
+    /// 競合は既存予約ごとに1件へまとめ、その予約と重なったリソースを併せて返す。
+    /// 打ち切りは行わない。複数のリソースが競合していれば全件を、ひとつのリソースが
+    /// 複数の予約と競合していれば（既存の予約同士が重複している場合に起こりうる）
+    /// その全ての予約を返す。時間をずらせば解決するのか、他にも障害があるのかを
+    /// 呼び出し側が判断できる必要がある。
     ///
     /// # Errors
     /// - 競合するリソースがある場合
@@ -47,8 +52,11 @@ impl ResourceConflictChecker {
         // 指定期間と重複する予約を検索
         let overlapping = repository.find_overlapping(time_period).await?;
 
-        // リソースごとに競合をチェックし、全件収集する
-        let mut conflicts = Vec::new();
+        // 競合は既存予約ごとに1件へまとめる。ひとつの予約が複数のリソースを押さえている
+        // 場合、リソースごとに分けて返すと受け取った側がまとめ直すことになる。
+        // 検出した順序を保つため、予約IDから収集先の位置を引く。
+        let mut conflicts: Vec<ResourceConflictError> = Vec::new();
+        let mut position_of: HashMap<UsageId, usize> = HashMap::new();
 
         for new_resource in resources {
             for existing_usage in &overlapping {
@@ -65,11 +73,18 @@ impl ResourceConflictChecker {
                     .any(|existing_resource| new_resource.conflicts_with(existing_resource));
 
                 if conflicts_with_this_usage {
-                    conflicts.push(ResourceConflictError::new(
-                        new_resource.clone(),
-                        existing_usage.clone(),
-                    ));
-                    break;
+                    match position_of.get(existing_usage.id()) {
+                        Some(&position) => {
+                            conflicts[position].resources.push(new_resource.clone());
+                        }
+                        None => {
+                            position_of.insert(existing_usage.id().clone(), conflicts.len());
+                            conflicts.push(ResourceConflictError::new(
+                                vec![new_resource.clone()],
+                                existing_usage.clone(),
+                            ));
+                        }
+                    }
                 }
             }
         }
@@ -219,5 +234,80 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
+    }
+    #[tokio::test]
+    async fn conflicts_with_one_reservation_are_reported_as_a_single_entry() {
+        // ひとつの予約が3枚を押さえていて、その3枚をまとめて予約しようとする
+        let existing = usage_with(
+            "alice@example.com",
+            vec![
+                Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string())),
+                Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string())),
+                Resource::Gpu(Gpu::new("Thalys".to_string(), 2, "A100".to_string())),
+            ],
+        );
+        let repository = StubRepository {
+            overlapping: vec![existing],
+        };
+
+        let requested = vec![
+            Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string())),
+            Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string())),
+            Resource::Gpu(Gpu::new("Thalys".to_string(), 2, "A100".to_string())),
+        ];
+
+        let checker = ResourceConflictChecker::new();
+        let result = checker
+            .check_conflicts(&repository, &test_period(), &requested, None)
+            .await;
+
+        let Err(ConflictCheckError::Conflict(conflicts)) = result else {
+            panic!("expected Conflict, got {result:?}");
+        };
+
+        assert_eq!(
+            conflicts.len(),
+            1,
+            "同じ予約との競合は1件にまとめるべき（受け取った側がまとめ直さずに済むように）"
+        );
+        assert_eq!(
+            conflicts[0].resources.len(),
+            3,
+            "競合した全リソースを持つべき"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_resource_conflicting_with_several_reservations_reports_all_of_them() {
+        // 既存の予約同士が重複している状況（同じGPUを2件が押さえている）
+        let gpu0 = || Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
+        let repository = StubRepository {
+            overlapping: vec![
+                usage_with("alice@example.com", vec![gpu0()]),
+                usage_with("bob@example.com", vec![gpu0()]),
+            ],
+        };
+
+        let checker = ResourceConflictChecker::new();
+        let result = checker
+            .check_conflicts(&repository, &test_period(), &[gpu0()], None)
+            .await;
+
+        let Err(ConflictCheckError::Conflict(conflicts)) = result else {
+            panic!("expected Conflict, got {result:?}");
+        };
+
+        // 片方だけ知らせると、時間をずらしてもまた失敗する
+        assert_eq!(
+            conflicts.len(),
+            2,
+            "ひとつのリソースが複数の予約と競合するなら、その全てを知らせるべき"
+        );
+        let owners: Vec<&str> = conflicts
+            .iter()
+            .map(|c| c.existing_usage.owner_email().as_str())
+            .collect();
+        assert!(owners.contains(&"alice@example.com"));
+        assert!(owners.contains(&"bob@example.com"));
     }
 }

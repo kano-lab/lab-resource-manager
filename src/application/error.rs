@@ -78,7 +78,11 @@ impl fmt::Display for ApplicationError {
                     .map(|c| {
                         format!(
                             "リソース {} は既に使用予定 {} で使用されています",
-                            c.resource,
+                            c.resources
+                                .iter()
+                                .map(|resource| resource.to_string())
+                                .collect::<Vec<_>>()
+                                .join(", "),
                             c.existing_usage.id().as_str()
                         )
                     })
