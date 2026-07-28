@@ -21,12 +21,12 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     let Some(usage_id_str) = &action.value else {
-        error!("❌ usage_idが取得できませんでした");
+        error!("cancel button carried no usage id");
         return Ok(());
     };
 
     let Some(user) = &block_actions.user else {
-        error!("❌ ユーザー情報が取得できませんでした");
+        error!("interaction carried no user information");
         return Ok(());
     };
 

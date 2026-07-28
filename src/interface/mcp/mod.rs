@@ -49,7 +49,7 @@ where
         .layer(middleware::from_fn_with_state(mcp_token_repo, bearer_auth));
 
     if let Some(tls_config) = tls_config {
-        info!("🔐 MCPサーバーをHTTPSでリッスンしています: {}", listen_addr);
+        info!(listen_addr = %listen_addr, tls = true, "mcp server listening");
         axum_server::bind_rustls(listen_addr, tls_config)
             .serve(router.into_make_service())
             .await?;
@@ -59,7 +59,7 @@ where
             MCP_TLS_CERT_FILE/MCP_TLS_KEY_FILEの設定を推奨します"
         );
         let listener = tokio::net::TcpListener::bind(listen_addr).await?;
-        info!("🔌 MCPサーバーをリッスンしています: {}", listen_addr);
+        info!(listen_addr = %listen_addr, tls = false, "mcp server listening");
         axum::serve(listener, router).await?;
     }
 

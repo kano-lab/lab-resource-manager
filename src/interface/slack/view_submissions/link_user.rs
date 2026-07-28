@@ -11,7 +11,7 @@ use crate::interface::slack::constants::{
 };
 use crate::interface::slack::utility::extract_form_data;
 use slack_morphism::prelude::*;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 /// リンク対象（外部システム上のユーザー識別情報）
 struct LinkTarget {
@@ -71,7 +71,7 @@ where
     R: ResourceUsageRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
-    info!("ユーザーリンクを処理中...");
+    debug!("handling identity link submission");
 
     let user_id = view_submission.user.id.clone();
 
@@ -126,7 +126,7 @@ where
             )
         }
         Err(e) => {
-            error!("❌ ユーザーリンクに失敗: {}", e);
+            error!(error = %e, "linking the identity failed");
             format!("❌ 紐付けに失敗しました: {}", e)
         }
     };

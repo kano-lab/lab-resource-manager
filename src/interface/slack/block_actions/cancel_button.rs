@@ -7,7 +7,7 @@ use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::utility::user_resolver;
 use slack_morphism::prelude::*;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 /// 予約キャンセルボタンのクリックを処理
 pub async fn handle<R, N>(
@@ -20,16 +20,16 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     let Some(usage_id_str) = &action.value else {
-        error!("❌ usage_idが取得できませんでした");
+        error!("cancel button carried no usage id");
         return Ok(());
     };
 
     let Some(user) = &block_actions.user else {
-        error!("❌ ユーザー情報が取得できませんでした");
+        error!("interaction carried no user information");
         return Ok(());
     };
 
-    info!("🗑️ 予約キャンセル要求: usage_id={}", usage_id_str);
+    debug!(usage_id = %usage_id_str, "cancel requested");
 
     // channel_idを取得してuser_channel_mapに登録（エフェメラルメッセージ送信用）
     let channel_id = if let Some(channel) = &block_actions.channel {
@@ -77,11 +77,11 @@ where
     if let Some(ch_id) = channel_id {
         let message_text = match &result {
             Ok(_) => {
-                info!("✅ 削除成功: {}", usage_id.as_str());
+                info!(usage_id = %usage_id.as_str(), origin = "slack", "reservation cancelled");
                 "✅ 予約をキャンセルしました".to_string()
             }
             Err(e) => {
-                error!("❌ 削除失敗: usage_id={}, error={}", usage_id.as_str(), e);
+                error!(usage_id = %usage_id.as_str(), origin = "slack", error = %e, "cancelling the reservation failed");
 
                 // エラーの種類に応じてユーザーフレンドリーなメッセージを返す
                 let error_msg = e.to_string();
@@ -105,10 +105,10 @@ where
 
         let session = app.slack_client().open_session(app.bot_token());
         if let Err(e) = session.chat_post_ephemeral(&ephemeral_req).await {
-            error!("❌ エフェメラルメッセージ送信失敗: {}", e);
+            error!(error = %e, "sending the ephemeral message failed");
         }
     } else {
-        error!("❌ channel_idが取得できないため、エフェメラルメッセージを送信できませんでした");
+        error!("cannot send the ephemeral message: no channel id");
     }
 
     // エラーの場合もOkを返す（ユーザーには既にメッセージを送信済み）

@@ -7,6 +7,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::services::ResourceConflictChecker;
 use std::sync::Arc;
+use tracing::info;
 
 /// リソース使用予定を作成するユースケース
 pub struct CreateResourceUsageUseCase<R: ResourceUsageRepository> {
@@ -58,6 +59,20 @@ impl<R: ResourceUsageRepository> CreateResourceUsageUseCase<R> {
 
         // 保存
         self.repository.save(&usage).await?;
+
+        info!(
+            usage_id = %usage.id().as_str(),
+            owner = %usage.owner_email().as_str(),
+            resources = %usage
+                .resources()
+                .iter()
+                .map(|resource| resource.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+            start = %usage.time_period().start(),
+            end = %usage.time_period().end(),
+            "reservation created"
+        );
 
         // 生成されたIDを返す
         Ok(usage.id().clone())

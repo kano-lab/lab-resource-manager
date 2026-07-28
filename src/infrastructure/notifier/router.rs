@@ -10,6 +10,7 @@ use super::senders::{
     sender::{NotificationContext, Sender},
     slack::SlackNotificationConfig,
 };
+use tracing::warn;
 
 /// 複数の通知手段をオーケストレートし、リソースに基づいて適切な通知先にルーティングする
 ///
@@ -120,7 +121,8 @@ impl Notifier for NotificationRouter {
         // 各通知設定に対して送信（ベストエフォート）
         for config in &notification_configs {
             if let Err(e) = self.send_to_destination(config, &event).await {
-                eprintln!("⚠️  通知送信エラー: {}", e); // TODO: エラーハンドリングの改善
+                // 宛先ごとに独立して送るため、1つ失敗しても他の宛先には送り続ける
+                warn!(error = %e, "sending a notification to one destination failed");
                 errors.push(e);
             }
         }

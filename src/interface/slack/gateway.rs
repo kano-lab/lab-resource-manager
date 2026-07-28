@@ -109,7 +109,7 @@ where
                     .await
             }
             _ => {
-                error!("❌ 不明なcallback_id: {:?}", callback_id);
+                error!(callback_id = ?callback_id, "unknown callback id");
                 Ok(None)
             }
         }

@@ -4,7 +4,7 @@
 
 use slack_morphism::prelude::*;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{debug, error};
 
 /// モーダルビューを開く
 ///
@@ -19,18 +19,18 @@ pub async fn open(
     trigger_id: &SlackTriggerId,
     view: SlackView,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    info!("🚀 Opening modal");
+    debug!("opening a modal");
 
     let session = client.open_session(token);
     let request = SlackApiViewsOpenRequest::new(trigger_id.clone(), view);
 
     match session.views_open(&request).await {
         Ok(_) => {
-            info!("✅ Modal opened successfully");
+            debug!("modal opened");
             Ok(())
         }
         Err(e) => {
-            error!("❌ Failed to open modal: {:?}", e);
+            error!(error = ?e, "opening the modal failed");
             Err(e.into())
         }
     }
@@ -49,18 +49,18 @@ pub async fn update(
     view_id: &SlackViewId,
     view: SlackView,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    info!("🔧 Updating modal (view_id: {})", view_id.to_string());
+    debug!(view_id = %view_id, "updating a modal");
 
     let session = client.open_session(token);
     let request = SlackApiViewsUpdateRequest::new(view).with_view_id(view_id.clone());
 
     match session.views_update(&request).await {
-        Ok(response) => {
-            info!("✅ Modal updated successfully: {:?}", response);
+        Ok(_) => {
+            debug!("modal updated");
             Ok(())
         }
         Err(e) => {
-            error!("❌ Failed to update modal: {:?}", e);
+            error!(error = ?e, "updating the modal failed");
             Err(e.into())
         }
     }

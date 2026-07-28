@@ -11,7 +11,7 @@ use crate::interface::slack::utility::datetime_parser::parse_datetime;
 use crate::interface::slack::utility::extract_form_data;
 use crate::interface::slack::utility::user_resolver;
 use slack_morphism::prelude::*;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
 /// リソース予約モーダル送信を処理
 pub async fn handle<R, N>(
@@ -22,8 +22,6 @@ where
     R: ResourceUsageRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
-    info!("🔍 予約フォームから値を抽出中...");
-
     let user_id = view_submission.user.id.clone();
 
     // Get dependencies
@@ -35,7 +33,7 @@ where
     let resource_type =
         extract_form_data::get_selected_option_value(view_submission, ACTION_RESERVE_RESOURCE_TYPE)
             .ok_or("リソースタイプが選択されていません")?;
-    info!("  → リソースタイプ: {}", resource_type);
+    debug!(resource_type = %resource_type, "parsed reservation form");
 
     let start_date =
         extract_form_data::get_selected_date(view_submission, ACTION_RESERVE_START_DATE)
@@ -58,11 +56,11 @@ where
         start_datetime,
         end_datetime,
     )?;
-    info!("  → 期間: {} ~ {}", start_datetime, end_datetime);
+    debug!(start = %start_datetime, end = %end_datetime, "parsed period");
 
     // Get owner email from user_id
     let owner_email = user_resolver::resolve_user_email(&user_id, identity_repo).await?;
-    info!("  → オーナー: {}", owner_email);
+    debug!(owner = %owner_email, "resolved owner");
 
     // Extract resources based on type
     let resource_type_val = resource_type.as_str();
@@ -73,7 +71,7 @@ where
             ACTION_RESERVE_SERVER_SELECT,
         )
         .ok_or("サーバーが選択されていません")?;
-        info!("  → サーバー: {}", server_name);
+        debug!(server = %server_name, "selected server");
 
         // Get server config
         let server_config = config
@@ -85,7 +83,7 @@ where
         // Get selected devices (optional)
         let device_id_values =
             extract_form_data::get_selected_options(view_submission, ACTION_RESERVE_DEVICES);
-        info!("  → 選択デバイス数: {}", device_id_values.len());
+        debug!(devices = device_id_values.len(), "selected devices");
 
         if device_id_values.is_empty() {
             // No specific devices selected - reserve entire server (all devices)
@@ -126,16 +124,21 @@ where
             ACTION_RESERVE_ROOM_SELECT,
         )
         .ok_or("部屋が選択されていません")?;
-        info!("  → 部屋: {}", room_name);
+        debug!(room = %room_name, "selected room");
         vec![Resource::Room { name: room_name }]
     } else {
         return Err(format!("不明なリソースタイプ: {}", resource_type_val).into());
     };
 
-    info!("  → リソース: {:?}", resources);
+    debug!(resources = ?resources, "resolved resources");
+
+    // 結果のログでも参照するため、ユースケースへ渡す前に控えておく
+    let logged_owner = owner_email.clone();
+    let logged_resources = format!("{:?}", resources);
+    let logged_start = time_period.start();
+    let logged_end = time_period.end();
 
     // Create reservation
-    info!("📝 予約を作成中...");
     let reservation_result = create_usage_usecase
         .execute(
             crate::domain::common::EmailAddress::new(owner_email)?,
@@ -157,19 +160,39 @@ where
     // エフェメラルメッセージで結果を送信
     let message_text = match reservation_result {
         Ok(usage_id) => {
-            info!("✅ 予約を作成しました: {}", usage_id.as_str());
+            info!(
+                usage_id = %usage_id.as_str(),
+                owner = %logged_owner,
+                resources = %logged_resources,
+                start = %logged_start,
+                end = %logged_end,
+                origin = "slack",
+                "reservation created"
+            );
             format!(
                 "✅ リソースの予約が完了しました\n予約ID: {}",
                 usage_id.as_str()
             )
         }
         Err(ApplicationError::ResourceConflict { conflicts }) => {
-            error!("❌ 予約作成に失敗: リソース競合 ({}件)", conflicts.len());
+            warn!(
+                owner = %logged_owner,
+                resources = %logged_resources,
+                conflicts = conflicts.len(),
+                origin = "slack",
+                "reservation rejected: resources already booked"
+            );
             let conflict_detail = conflict_message::build(&conflicts, config, identity_repo).await;
             format!("❌ 予約の作成に失敗しました\n\n{}", conflict_detail)
         }
         Err(e) => {
-            error!("❌ 予約作成に失敗: {}", e);
+            error!(
+                owner = %logged_owner,
+                resources = %logged_resources,
+                origin = "slack",
+                error = %e,
+                "creating the reservation failed"
+            );
             format!("❌ 予約の作成に失敗しました\n\n{}", e)
         }
     };

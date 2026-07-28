@@ -7,7 +7,7 @@ use crate::interface::slack::constants::*;
 use crate::interface::slack::slack_client::modals;
 use crate::interface::slack::views::modals::{link_user, reserve};
 use slack_morphism::prelude::*;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 /// モーダル状態変更を処理（リソースタイプ選択、サーバー選択、リンク対象種別選択）
 ///
@@ -22,7 +22,7 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     let action_id = action.action_id.to_string();
-    info!("🔄 モーダル更新トリガー検出: {}", action_id);
+    debug!(action_id = %action_id, "modal update triggered");
 
     // Get view_id from container
     let view_id = match &block_actions.container {
@@ -35,7 +35,7 @@ where
         }
         SlackInteractionActionContainer::Message(_)
         | SlackInteractionActionContainer::MessageAttachment(_) => {
-            error!("❌ モーダル外のインタラクションです");
+            error!("interaction did not come from a modal");
             return Ok(());
         }
     };
@@ -49,7 +49,7 @@ where
     };
 
     // Update modal
-    info!("🚀 Slack APIにモーダル更新をリクエスト中...");
+    debug!("requesting a modal update");
     modals::update(app.slack_client(), app.bot_token(), &view_id, updated_modal).await?;
 
     info!(
@@ -123,7 +123,7 @@ where
         .as_ref()
         .map(|opt| opt.value.as_str());
 
-    info!("📝 選択値: target_type={:?}", new_target_type);
+    debug!(target_type = ?new_target_type, "selection changed");
 
     link_user::create(app.resource_config(), new_target_type)
 }

@@ -8,7 +8,7 @@ use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::ACTION_EMAIL_INPUT;
 use crate::interface::slack::utility::extract_form_data;
 use slack_morphism::prelude::*;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 /// メールアドレス登録モーダル送信を処理
 ///
@@ -21,7 +21,7 @@ where
     R: ResourceUsageRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
-    info!("メールアドレス登録を処理中...");
+    debug!("handling email registration submission");
 
     let user_id = view_submission.user.id.clone();
 
@@ -61,7 +61,7 @@ where
             )
         }
         Err(e) => {
-            error!("❌ ユーザー登録に失敗: {}", e);
+            error!(error = %e, "registering the calendar access failed");
             format!("❌ 登録に失敗しました: {}", e)
         }
     };

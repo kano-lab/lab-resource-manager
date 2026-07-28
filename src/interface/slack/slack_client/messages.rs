@@ -3,7 +3,7 @@
 //! Wrappers around Slack API for message operations
 
 use slack_morphism::prelude::*;
-use tracing::{error, info};
+use tracing::{debug, error};
 
 /// response URL経由でフォローアップメッセージを送信
 ///
@@ -27,8 +27,8 @@ pub async fn send_followup(
         .send()
         .await
     {
-        Ok(_) => info!("✅ Follow-up message sent successfully"),
-        Err(e) => error!("❌ Failed to send follow-up message: {}", e),
+        Ok(_) => debug!("follow-up message sent"),
+        Err(e) => error!(error = %e, "sending the follow-up message failed"),
     }
 }
 
@@ -54,7 +54,7 @@ pub async fn send_ephemeral(
         .send()
         .await
     {
-        Ok(_) => info!("✅ Ephemeral message sent successfully"),
-        Err(e) => error!("❌ Failed to send ephemeral message: {}", e),
+        Ok(_) => debug!("ephemeral message sent"),
+        Err(e) => error!(error = %e, "sending the ephemeral message failed"),
     }
 }

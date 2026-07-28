@@ -6,7 +6,7 @@ use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::slack_client::modals;
 use crate::interface::slack::views;
 use slack_morphism::prelude::*;
-use tracing::info;
+use tracing::debug;
 
 /// /register-calendar スラッシュコマンドを処理（非推奨）
 ///
@@ -20,7 +20,7 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     let user_id = event.user_id.to_string();
-    info!("📧 メールアドレス登録モーダルを開きます: user={}", user_id);
+    debug!(user = %user_id, "opening the email registration modal");
 
     // メールアドレス登録モーダルを作成
     let modal = views::modals::registration::create();
