@@ -51,7 +51,7 @@ where
     {
         let settled = SlackApiChatUpdateRequest::new(
             message_channel,
-            SlackMessageContent::new().with_text(feedback.clone()),
+            settled_message(feedback.clone()),
             message_ts,
         );
         match session.chat_update(&settled).await {
@@ -116,6 +116,18 @@ where
     fn from(error: E) -> Self {
         Self::Unprocessable(error.into())
     }
+}
+
+/// 受諾済みの提案メッセージの中身
+///
+/// `chat.update`は渡さなかったフィールドをそのまま残すため、`text`だけを送っても
+/// 提案時の`blocks`が生き続けてボタンが押せてしまう。結果だけを載せた`blocks`で
+/// 上書きして初めてボタンが消える。
+fn settled_message(feedback: String) -> SlackMessageContent {
+    let block = SlackSectionBlock::new().with_text(md!(feedback.clone()));
+    SlackMessageContent::new()
+        .with_text(feedback)
+        .with_blocks(slack_blocks![some_into(block)])
 }
 
 /// 競合の相手がすべて受諾者本人か
@@ -294,6 +306,30 @@ mod tests {
 
     fn accepter() -> EmailAddress {
         EmailAddress::new("member@example.com".to_string()).unwrap()
+    }
+
+    #[test]
+    fn the_settled_message_carries_blocks_without_any_button() {
+        // chat.updateは渡さなかったフィールドをそのまま残す。textだけを送っても
+        // 提案時のblocksが生き続け、ボタンは消えない。blocksを送り直す必要がある。
+        let content = settled_message("✅ 予約を作成しました".to_string());
+        let json = serde_json::to_value(&content).unwrap();
+
+        let blocks = json["blocks"]
+            .as_array()
+            .expect("blocksを送らないと提案時のボタンが残る");
+        assert!(
+            blocks.iter().all(|block| block["type"] != "actions"),
+            "受諾後のメッセージにボタンが残っている: {:?}",
+            blocks
+        );
+        assert!(
+            serde_json::to_string(&json)
+                .unwrap()
+                .contains("予約を作成しました"),
+            "受諾の結果が本文に出ていない: {:?}",
+            json
+        );
     }
 
     #[test]
