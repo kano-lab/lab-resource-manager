@@ -7,6 +7,8 @@ use crate::domain::ports::repositories::IdentityLinkRepository;
 use crate::domain::ports::reservation_proposal::{
     ReservationProposal, ReservationProposalNotifier,
 };
+use crate::infrastructure::config::ResourceStyle;
+use crate::infrastructure::notifier::formatter::format_resources_styled;
 use async_trait::async_trait;
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -108,8 +110,8 @@ impl ReservationProposalNotifier for SlackReservationProposalNotifier {
             })?;
 
         let text = format!(
-            "{} が予約なしで使用中です。事後予約を作成しますか？",
-            format_resource_list(&proposal)
+            "⏱️ 予約なしでリソースを使用しています\n\n💻 使用中のリソース\n{}\n\nこのまま事後予約を作成しますか？",
+            format_resources_styled(proposal.resources(), ResourceStyle::Full)
         );
         let blocks = build_proposal_blocks(&proposal, &gpus, &text);
 
@@ -152,16 +154,6 @@ fn collect_gpus(proposal: &ReservationProposal) -> Result<Vec<Gpu>, Notification
     }
 
     Ok(gpus)
-}
-
-/// 提案対象のリソースを読みやすく並べる
-fn format_resource_list(proposal: &ReservationProposal) -> String {
-    proposal
-        .resources()
-        .iter()
-        .map(|resource| resource.to_string())
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 /// 事後予約提案のBlock Kitメッセージを構築する（純粋関数、ユニットテスト対象）
@@ -346,5 +338,16 @@ mod tests {
         let json = serde_json::to_string(&payload).unwrap();
         let decoded: ProposalAcceptPayload = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded, payload);
+    }
+    #[test]
+    fn the_message_lists_each_resource_on_its_own_line() {
+        let proposal = sample_proposal_with_devices(vec![4, 5, 6], vec![Duration::hours(1)]);
+
+        let listed = format_resources_styled(proposal.resources(), ResourceStyle::Full);
+
+        assert_eq!(
+            listed, "Thalys / A100 / GPU:4\nThalys / A100 / GPU:5\nThalys / A100 / GPU:6",
+            "枚数が増えても1行に詰めず、通知と同じ表現で並べる"
+        );
     }
 }
