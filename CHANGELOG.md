@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/kano-lab/lab-resource-manager/compare/v1.6.1...v1.6.2) (2026-07-28)
+
+
+### Bug Fixes
+
+* replace the proposal blocks so the buttons actually disappear ([#132](https://github.com/kano-lab/lab-resource-manager/issues/132)) ([3cc6a9b](https://github.com/kano-lab/lab-resource-manager/commit/3cc6a9ba492f7123e2c1cc44149eebf2ff02c06a))
+
 ## [1.6.1](https://github.com/kano-lab/lab-resource-manager/compare/v1.6.0...v1.6.1) (2026-07-28)
 
 
