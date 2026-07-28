@@ -12,7 +12,7 @@ use crate::domain::ports::repositories::{
 };
 use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use google_calendar3::{
     CalendarHub,
     api::Event,
@@ -51,6 +51,13 @@ const RESERVATION_ID_LINE_PREFIX: &str = "予約ID: ";
 fn event_id_for(usage_id: &UsageId) -> String {
     usage_id.as_str().replace('-', "")
 }
+
+/// 「今後の予約」として扱う期間の上限
+///
+/// 繰り返し予約は個々の予定へ展開して取得するため、上限を設けないとカレンダーが
+/// 展開できる限り（数十年先まで）返ってくる。予約の閲覧・変更通知にとって遠い将来は
+/// 意味を持たないので、ここで区切る。
+const FUTURE_HORIZON: Duration = Duration::days(365);
 
 /// キャンセル済みイベントのstatus値
 const EVENT_STATUS_CANCELLED: &str = "cancelled";
@@ -782,9 +789,10 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     }
 
     async fn find_future(&self) -> Result<Vec<ResourceUsage>, RepositoryError> {
-        // 終了時刻が現在より後のイベントに限る。開始時刻では絞らないため、
+        // 終了時刻が現在より後のイベントに限る。開始時刻の下限は設けないため、
         // 進行中のイベント（開始時刻が過去）も含まれる。
-        let events = self.fetch_events(Utc::now(), None).await?;
+        let now = Utc::now();
+        let events = self.fetch_events(now, Some(now + FUTURE_HORIZON)).await?;
 
         Ok(self.parse_events(events))
     }
