@@ -51,9 +51,16 @@ where
             SlackMessageContent::new().with_text(feedback.clone()),
             message_ts,
         );
-        if let Err(e) = session.chat_update(&settled).await {
+        match session.chat_update(&settled).await {
+            Ok(updated) => info!(
+                channel = %updated.channel,
+                ts = %updated.ts,
+                "cleared the proposal buttons"
+            ),
             // ボタンが残るだけで予約自体は成立しているため、失敗しても処理は続ける
-            warn!(error = %e, "clearing the proposal buttons failed; the reservation still stands");
+            Err(e) => {
+                warn!(error = %e, "clearing the proposal buttons failed; the reservation still stands")
+            }
         }
     }
 
@@ -61,8 +68,14 @@ where
         channel_id,
         SlackMessageContent::new().with_text(feedback),
     );
-    if let Err(e) = session.chat_post_message(&post_req).await {
-        error!(error = %e, "sending the feedback message failed");
+    match session.chat_post_message(&post_req).await {
+        Ok(sent) => info!(
+            channel = %sent.channel,
+            ts = %sent.ts,
+            accepted = outcome.is_ok(),
+            "sent the acceptance feedback"
+        ),
+        Err(e) => error!(error = %e, "sending the feedback message failed"),
     }
 
     Ok(())

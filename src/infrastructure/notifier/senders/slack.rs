@@ -48,6 +48,7 @@ impl SlackSender {
         channel_id: &str,
         message: String,
         blocks: Vec<SlackBlock>,
+        usage_id: &str,
     ) -> Result<(), NotificationError> {
         let token = SlackApiToken::new(bot_token.into());
         let session = self.slack_client.open_session(&token);
@@ -59,10 +60,19 @@ impl SlackSender {
                 .with_blocks(blocks),
         );
 
-        session
+        let sent = session
             .chat_post_message(&post_chat_req)
             .await
             .map_err(|e| NotificationError::SendFailure(format!("Slack API送信失敗: {}", e)))?;
+
+        // 受け取った側から「この通知はおかしい」と言われたとき、channelとtsの組で
+        // 当該メッセージを特定できる
+        tracing::info!(
+            channel = %sent.channel,
+            ts = %sent.ts,
+            usage_id,
+            "sent a reservation notification"
+        );
 
         Ok(())
     }
@@ -194,8 +204,20 @@ impl Sender for SlackSender {
         let message = Self::format_message(&context);
         let blocks = Self::build_message_blocks(&message, &context);
 
+        let usage_id = match context.event {
+            NotificationEvent::ResourceUsageCreated(usage)
+            | NotificationEvent::ResourceUsageUpdated(usage)
+            | NotificationEvent::ResourceUsageDeleted(usage) => usage.id().as_str().to_string(),
+        };
+
         // Bot Token方式
-        self.send_via_bot_token(&config.bot_token, &config.channel_id, message, blocks)
-            .await
+        self.send_via_bot_token(
+            &config.bot_token,
+            &config.channel_id,
+            message,
+            blocks,
+            &usage_id,
+        )
+        .await
     }
 }

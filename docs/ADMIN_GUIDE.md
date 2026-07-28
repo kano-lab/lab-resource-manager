@@ -462,6 +462,21 @@ booked or cancelled something. Access is limited to whoever can read journald (t
 `systemd-journal` groups). If you forward these logs to an external collector, that personal
 information leaves the host, so decide whether that is acceptable first.
 
+**Tracing a message a member asks about**: every message the service posts is logged with the
+`channel` and `ts` that Slack assigned it, which together identify that message. Given a Slack
+permalink of the form `.../archives/<channel>/p<digits>`, the `ts` is those digits with a dot
+inserted before the last six.
+
+```bash
+# find the log line for a message the member linked to
+sudo journalctl -u lab-resource-manager | grep 'ts=1785207600.123456'
+```
+
+The line also carries the reservation id and recipient, so a report of "this notification looks
+wrong" can be traced back to the reservation it came from. Ephemeral messages (the private
+replies to slash commands and buttons) are the exception: Slack returns no identifier for them,
+so they cannot be located this way.
+
 ## Installation
 
 Download the latest release from [GitHub Releases](https://github.com/kano-lab/lab-resource-manager/releases) and run:
