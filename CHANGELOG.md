@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.3](https://github.com/kano-lab/lab-resource-manager/compare/v1.5.2...v1.5.3) (2026-07-28)
+
+
+### Bug Fixes
+
+* bound the range of reservations each caller asks for ([#120](https://github.com/kano-lab/lab-resource-manager/issues/120)) ([70023d1](https://github.com/kano-lab/lab-resource-manager/commit/70023d1b068acaf139e82ce8316ab7d7b1b1efd1))
+
+
+### Reverts
+
+* "refactor: let callers state the range of reservations they need" ([#118](https://github.com/kano-lab/lab-resource-manager/issues/118)) ([38b4258](https://github.com/kano-lab/lab-resource-manager/commit/38b42589070e8fad0f6ec885f9edcf59a9efaf6d))
+
 ## [1.5.2](https://github.com/kano-lab/lab-resource-manager/compare/v1.5.1...v1.5.2) (2026-07-28)
 
 
