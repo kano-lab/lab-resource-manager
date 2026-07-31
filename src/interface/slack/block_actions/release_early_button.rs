@@ -7,7 +7,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{RepositoryError, ResourceUsageRepository};
 use crate::interface::slack::app::SlackApp;
-use crate::interface::slack::utility::{reservation_summary, user_resolver};
+use crate::interface::slack::utility::{interaction_reply, reservation_summary, user_resolver};
 use slack_morphism::prelude::*;
 use tracing::{error, info, warn};
 
@@ -31,7 +31,7 @@ where
         return Ok(());
     };
 
-    let Some(channel_id) = interaction_channel_id(block_actions) else {
+    let Some(channel_id) = interaction_reply::channel_id(block_actions) else {
         error!("cannot send the ephemeral message: no channel id");
         return Ok(());
     };
@@ -124,19 +124,6 @@ fn build_failure_message(failure: &ApplicationError) -> String {
         ApplicationError::Unauthorized(_) => "❌ 自分の予約だけを終了できます。".to_string(),
         other => format!("❌ 予約を終了できませんでした: {}", other),
     }
-}
-
-/// ボタンが押されたチャンネル
-fn interaction_channel_id(
-    block_actions: &SlackInteractionBlockActionsEvent,
-) -> Option<SlackChannelId> {
-    if let Some(channel) = &block_actions.channel {
-        return Some(channel.id.clone());
-    }
-    if let SlackInteractionActionContainer::Message(message) = &block_actions.container {
-        return message.channel_id.clone();
-    }
-    None
 }
 
 #[cfg(test)]
