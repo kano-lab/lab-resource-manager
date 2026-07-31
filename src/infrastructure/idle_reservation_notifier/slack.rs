@@ -1,0 +1,263 @@
+//! Slack DM経由の未使用予約の通知実装
+
+use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
+use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
+use crate::domain::common::EmailAddress;
+use crate::domain::ports::idle_reservation_notifier::{IdleReservation, IdleReservationNotifier};
+use crate::domain::ports::notifier::NotificationError;
+use crate::domain::ports::repositories::IdentityLinkRepository;
+use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
+use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
+use async_trait::async_trait;
+use chrono::{DateTime, Local, Utc};
+use slack_morphism::prelude::*;
+use std::sync::Arc;
+use tracing::warn;
+
+use crate::interface::slack::constants::{
+    ACTION_IDLE_CANCEL, ACTION_IDLE_KEEP, ACTION_IDLE_RELEASE,
+};
+
+/// Slack DM経由で未使用の予約を予約者へ知らせる実装
+pub struct SlackIdleReservationNotifier {
+    slack_client: Arc<SlackHyperClient>,
+    bot_token: SlackApiToken,
+    identity_repo: Arc<dyn IdentityLinkRepository>,
+}
+
+impl SlackIdleReservationNotifier {
+    /// 新しい実装を作成
+    pub fn new(
+        slack_client: Arc<SlackHyperClient>,
+        bot_token: SlackApiToken,
+        identity_repo: Arc<dyn IdentityLinkRepository>,
+    ) -> Self {
+        Self {
+            slack_client,
+            bot_token,
+            identity_repo,
+        }
+    }
+
+    /// 予約者のSlackユーザーIDを解決する
+    async fn resolve_slack_user_id(
+        &self,
+        owner_email: &EmailAddress,
+    ) -> Result<SlackUserId, NotificationError> {
+        let identity_link = self
+            .identity_repo
+            .find_by_email(owner_email)
+            .await
+            .map_err(|e| {
+                NotificationError::RepositoryError(format!("IdentityLink取得失敗: {}", e))
+            })?
+            .ok_or_else(|| {
+                NotificationError::SendFailure(format!(
+                    "IdentityLink未登録のためDMを送信できません: {}",
+                    owner_email.as_str()
+                ))
+            })?;
+
+        let slack_identity = identity_link
+            .get_identity_for_system(&ExternalSystem::Slack)
+            .ok_or_else(|| {
+                NotificationError::SendFailure(format!(
+                    "Slackアカウント未リンクのためDMを送信できません: {}",
+                    owner_email.as_str()
+                ))
+            })?;
+
+        Ok(SlackUserId::new(slack_identity.user_id().to_string()))
+    }
+}
+
+#[async_trait]
+impl IdleReservationNotifier for SlackIdleReservationNotifier {
+    async fn notify_idle(&self, idle: IdleReservation) -> Result<(), NotificationError> {
+        let reservation = idle.reservation();
+        let slack_user_id = self
+            .resolve_slack_user_id(reservation.owner_email())
+            .await?;
+
+        let session = self.slack_client.open_session(&self.bot_token);
+
+        let open_resp = session
+            .conversations_open(
+                &SlackApiConversationsOpenRequest::new().with_users(vec![slack_user_id]),
+            )
+            .await
+            .map_err(|e| {
+                NotificationError::SendFailure(format!("DMチャンネルのオープンに失敗: {}", e))
+            })?;
+
+        let text = build_idle_message(reservation, idle.idle_since());
+        let blocks = build_idle_blocks(reservation, &text);
+
+        let post_req = SlackApiChatPostMessageRequest::new(
+            open_resp.channel.id,
+            SlackMessageContent::new()
+                .with_text(text)
+                .with_blocks(blocks),
+        );
+
+        let sent = session
+            .chat_post_message(&post_req)
+            .await
+            .map_err(|e| NotificationError::SendFailure(format!("Slack DM送信失敗: {}", e)))?;
+
+        tracing::info!(
+            channel = %sent.channel,
+            ts = %sent.ts,
+            usage_id = %reservation.id().as_str(),
+            recipient = %reservation.owner_email().as_str(),
+            idle_since = %idle.idle_since(),
+            "sent an idle-reservation dm"
+        );
+
+        Ok(())
+    }
+}
+
+/// 未使用の予約を知らせるDMの本文を構築する（純粋関数、ユニットテスト対象）
+fn build_idle_message(reservation: &ResourceUsage, idle_since: DateTime<Utc>) -> String {
+    let resources = format_resources_styled(reservation.resources(), ResourceStyle::Full);
+    let period = format_time_styled(
+        reservation.time_period(),
+        None,
+        TimeStyle::Full,
+        DateFormat::Ymd,
+    );
+
+    format!(
+        "⏳ 予約したリソースが使われていません\n\n💻 予約リソース\n{}\n\n📅 予約期間\n{}\n\n{}以降、あなたの利用を確認できていません。使い終わっているなら、残りの時間を他の人に開放できます。",
+        resources,
+        period,
+        idle_since.with_timezone(&Local).format("%H:%M")
+    )
+}
+
+/// 未使用の予約を知らせるDMのBlock Kitメッセージを構築する（純粋関数、ユニットテスト対象）
+fn build_idle_blocks(reservation: &ResourceUsage, text: &str) -> Vec<SlackBlock> {
+    let usage_id = reservation.id().as_str();
+
+    let blocks_json = serde_json::json!([
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": text
+            }
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "⏹️ 今で終了する"
+                    },
+                    "style": "primary",
+                    "action_id": ACTION_IDLE_RELEASE,
+                    "value": usage_id
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "✅ まだ使う"
+                    },
+                    "action_id": ACTION_IDLE_KEEP,
+                    "value": usage_id
+                },
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "❌ 予約を取り消す"
+                    },
+                    "style": "danger",
+                    "action_id": ACTION_IDLE_CANCEL,
+                    "value": usage_id
+                }
+            ]
+        }
+    ]);
+
+    serde_json::from_value(blocks_json).unwrap_or_else(|e| {
+        warn!(error = %e, "building the idle reservation message blocks failed");
+        vec![]
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod};
+    use chrono::Duration;
+
+    fn sample_reservation() -> ResourceUsage {
+        let start = Utc::now() - Duration::hours(2);
+        ResourceUsage::new(
+            EmailAddress::new("owner@example.com".to_string()).unwrap(),
+            TimePeriod::new(start, start + Duration::hours(6)).unwrap(),
+            vec![Resource::Gpu(Gpu::new(
+                "Thalys".to_string(),
+                0,
+                "A100".to_string(),
+            ))],
+            None,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn the_message_names_the_resource_and_when_it_went_quiet() {
+        let reservation = sample_reservation();
+        let idle_since = Utc::now() - Duration::hours(1);
+
+        let message = build_idle_message(&reservation, idle_since);
+
+        assert!(message.contains("Thalys"), "{message}");
+        assert!(
+            message.contains(&idle_since.with_timezone(&Local).format("%H:%M").to_string()),
+            "いつから使われていないのかが分からないと、心当たりを確かめられない: {message}"
+        );
+    }
+
+    #[test]
+    fn every_button_carries_the_reservation_it_acts_on() {
+        let reservation = sample_reservation();
+
+        let blocks = build_idle_blocks(&reservation, "test message");
+        let json = serde_json::to_value(&blocks).unwrap();
+        let elements = json[1]["elements"].as_array().unwrap();
+
+        assert_eq!(elements.len(), 3, "終了・継続・取り消しの3択: {json}");
+        for element in elements {
+            assert_eq!(
+                element["value"].as_str(),
+                Some(reservation.id().as_str()),
+                "どの予約への操作か分からないボタンがある: {element}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_buttons_are_distinguishable_from_one_another() {
+        let reservation = sample_reservation();
+
+        let blocks = build_idle_blocks(&reservation, "test message");
+        let json = serde_json::to_value(&blocks).unwrap();
+        let action_ids: Vec<&str> = json[1]["elements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|element| element["action_id"].as_str().unwrap())
+            .collect();
+
+        // Slackはブロック内でaction_idが重複するとinvalid_blocksでメッセージ全体を拒否する
+        let unique: std::collections::HashSet<&&str> = action_ids.iter().collect();
+        assert_eq!(unique.len(), action_ids.len(), "{action_ids:?}");
+    }
+}

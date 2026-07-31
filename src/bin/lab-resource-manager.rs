@@ -10,6 +10,7 @@ use lab_resource_manager::{
         accept_reservation_proposal::AcceptReservationProposalUseCase,
         create_resource_usage::CreateResourceUsageUseCase,
         delete_resource_usage::DeleteResourceUsageUseCase,
+        detect_idle_reservations::{DetectIdleReservationsUseCase, IdleNoticeLog},
         get_resource_usage_by_id::GetResourceUsageByIdUseCase,
         grant_user_resource_access::GrantUserResourceAccessUseCase,
         list_all_future_resource_usages::ListAllFutureResourceUsagesUseCase,
@@ -21,6 +22,7 @@ use lab_resource_manager::{
     },
     infrastructure::{
         config::{load_config, load_from_env},
+        idle_reservation_notifier::SlackIdleReservationNotifier,
         notifier::NotificationRouter,
         repositories::{
             identity_link::JsonFileIdentityLinkRepository, mcp_token::JsonFileMcpTokenRepository,
@@ -164,6 +166,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ===========================================
     // 実利用観測（オプション機能、GPU_USAGE_REPORTS_DIR未設定なら無効）
     // ===========================================
+
+    // 予約者が「まだ使う」と答えたことを観測側に伝えるため、Slackと観測で同じ記録を共有する
+    let idle_notices = Arc::new(IdleNoticeLog::default());
+
     let reconcile_handle =
         if let Some(gpu_usage_reports_dir) = app_config.gpu_usage_reports_dir.clone() {
             let observer = Arc::new(SharedFileResourceUsageObserver::new(
@@ -184,12 +190,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let reconcile_usecase = Arc::new(ReconcileObservedUsagesUseCase::new(
                 resource_usage_repo.clone(),
-                observer,
+                observer.clone(),
                 identity_repo.clone(),
                 proposal_notifier,
                 unauthorized_notifier,
                 ChronoDuration::seconds(app_config.unreserved_usage_threshold_secs as i64),
                 app_config.reservation_proposal_duration_candidates.clone(),
+            ));
+
+            let idle_notifier = SlackIdleReservationNotifier::new(
+                slack_client.clone(),
+                SlackApiToken::new(app_config.slack_bot_token.clone().into()),
+                identity_repo.clone(),
+            );
+            let detect_idle_usecase = Arc::new(DetectIdleReservationsUseCase::new(
+                resource_usage_repo.clone(),
+                observer,
+                identity_repo.clone(),
+                idle_notifier,
+                ChronoDuration::seconds(app_config.idle_reservation_threshold_secs as i64),
+                idle_notices.clone(),
             ));
 
             let interval = std::time::Duration::from_secs(app_config.polling_interval_secs);
@@ -201,6 +221,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 loop {
                     if let Err(e) = reconcile_usecase.poll_once().await {
                         error!(error = %e, "usage observation polling failed");
+                    }
+                    if let Err(e) = detect_idle_usecase.poll_once().await {
+                        error!(error = %e, "idle reservation polling failed");
                     }
                     tokio::time::sleep(interval).await;
                 }
@@ -260,6 +283,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         delete_usecase,
         release_early_usecase,
         notify_usecase,
+        idle_notices,
         slack_client,
         bot_token,
     ));

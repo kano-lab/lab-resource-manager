@@ -109,7 +109,9 @@ fn log_failure(usage_id: &UsageId, failure: &ApplicationError) {
 }
 
 /// 終了できなかった理由を利用者に伝える文面を組み立てる（純粋関数、ユニットテスト対象）
-fn build_failure_message(failure: &ApplicationError) -> String {
+///
+/// 未使用予約のお知らせDMからの終了でも同じ理由が返るため、そちらとも共有する。
+pub(super) fn build_failure_message(failure: &ApplicationError) -> String {
     match failure {
         ApplicationError::ResourceUsage(ResourceUsageError::NotYetStarted { .. }) => {
             "ℹ️ この予約はまだ始まっていません。使わないのであれば「❌ キャンセル」で取り消してください。"

@@ -56,6 +56,14 @@ pub const ACTION_CANCEL_RESERVATION: &str = "cancel_reservation";
 /// 予約を今の時点で終了するボタンのアクション
 pub const ACTION_RELEASE_RESERVATION_EARLY: &str = "release_reservation_early";
 
+// アクションID - 未使用予約のお知らせDM
+/// 使われていない予約を今の時点で終了するボタンのアクション
+pub const ACTION_IDLE_RELEASE: &str = "idle_release_reservation";
+/// 使われていない予約をこれから使うと答えるボタンのアクション
+pub const ACTION_IDLE_KEEP: &str = "idle_keep_reservation";
+/// 使われていない予約を取り消すボタンのアクション
+pub const ACTION_IDLE_CANCEL: &str = "idle_cancel_reservation";
+
 // アクションID - 事後予約提案DM
 /// 事後予約提案の受諾ボタンのアクション
 pub const ACTION_ACCEPT_RESERVATION_PROPOSAL: &str = "accept_reservation_proposal";

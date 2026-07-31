@@ -95,6 +95,28 @@ Reservation notifications carry buttons for acting on your own reservations.
 Use "⏹️ End now" when you finish earlier than planned, and "❌ Cancel" when you are not
 going to use the resource at all. You can only act on reservations you own.
 
+## When a Reservation Goes Unused
+
+In labs where GPU usage monitoring is enabled, the bot sends you a direct message when
+none of your processes have been running on a GPU you reserved for a while.
+
+- **⏹️ End now**: End the reservation at that moment and open the remaining time to others
+  (the time you used stays on record)
+- **✅ Still using it**: You are about to use it — you won't be told about this reservation again
+- **❌ Cancel**: Drop the reservation entirely
+
+This is not meant to rush you. It exists so a reservation you held and forgot about doesn't
+keep others waiting. If you still intend to use it, press "✅ Still using it" and carry on.
+
+Some reservations are never reported:
+
+- Reservations on a server that cannot be observed (without a report, whether it is in use
+  is unknown)
+- Reservations whose owner has no OS username linked via `/link-user` (your processes cannot
+  be told apart from anyone else's)
+- Meeting room reservations
+- Reservations that are about to end
+
 ## Using AI Agents via MCP (Optional)
 
 If your lab has enabled the MCP (Model Context Protocol) server, you can let agents like
