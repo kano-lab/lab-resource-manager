@@ -39,5 +39,7 @@ pub use reservation_proposal::{ReservationProposal, ReservationProposalNotifier}
 pub use resource_collection_access::{
     ResourceCollectionAccessError, ResourceCollectionAccessService,
 };
-pub use resource_usage_observer::{ObservationError, ObservedUsage, ResourceUsageObserver};
+pub use resource_usage_observer::{
+    ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver,
+};
 pub use unauthorized_usage_notifier::UnauthorizedUsageNotifier;

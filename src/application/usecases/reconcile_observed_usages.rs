@@ -104,7 +104,8 @@ where
     /// 観測・リポジトリアクセス・通知送信に失敗した場合
     pub async fn poll_once(&self) -> Result<(), ApplicationError> {
         let started_at = Utc::now();
-        let observed = self.observer.observe_active_usages().await?;
+        let snapshot = self.observer.observe_active_usages().await?;
+        let observed = snapshot.usages();
         let now = started_at;
         // 突合の相手は「今この瞬間に進行中の予約」だけなので、現在時刻を含む最小の期間を問う
         let in_progress = TimePeriod::new(now, now + Duration::seconds(1))?;
@@ -117,7 +118,7 @@ where
         let mut reserved_by_usage: HashMap<(ExternalIdentity, String), &ObservedUsage> =
             HashMap::new();
 
-        for usage in &observed {
+        for usage in observed {
             match Self::find_active_reservation(&current_usages, usage.resource(), now) {
                 Some(reservation) => {
                     reserved += 1;
