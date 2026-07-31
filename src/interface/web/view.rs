@@ -18,6 +18,9 @@ const RANGES: [(i64, &str); 4] = [(1, "1日"), (3, "3日"), (7, "1週間"), (30,
 /// 1レーンの高さ（rem）
 const LANE_HEIGHT: f64 = 1.75;
 
+/// レーンの外側に取る余白（rem）。行の上下に1つずつ入る
+const LANE_MARGIN: f64 = 0.25;
+
 /// 予約ブロックの色
 ///
 /// 所有者ごとに色相を割り当てる。誰がどれだけ押さえているかが、名前を読まなくても
@@ -160,7 +163,10 @@ async fn now_marker(timeline: &Timeline) -> Result {
 #[component]
 async fn timeline_row(row: &TimelineRow, ticks: &[Tick], striped: bool) -> Result {
     let lane_count = row.lanes.len().max(1);
-    let height = format!("min-height: {}rem", lane_count as f64 * LANE_HEIGHT + 0.5);
+    let height = format!(
+        "min-height: {}rem",
+        lane_count as f64 * LANE_HEIGHT + LANE_MARGIN * 2.0
+    );
 
     view! {
         <div class=(class!(
@@ -208,7 +214,7 @@ async fn reservation(block: &TimelineBlock, lane: usize) -> Result {
         "left: {:.4}%; width: {:.4}%; top: {}rem; {}",
         block.start_ratio * 100.0,
         block.width_ratio() * 100.0,
-        lane as f64 * LANE_HEIGHT + 0.25,
+        lane as f64 * LANE_HEIGHT + LANE_MARGIN,
         owner_color(&block.owner)
     );
 
