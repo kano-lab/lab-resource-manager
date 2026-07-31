@@ -1,4 +1,4 @@
-use crate::domain::aggregates::resource_usage::value_objects::Resource;
+use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
 use crate::infrastructure::config::notification_format::{
     FormatConfig, NotificationCustomization, TemplateConfig,
 };
@@ -123,6 +123,27 @@ impl ResourceConfig {
     /// サーバー設定を名前で検索
     pub fn get_server(&self, name: &str) -> Option<&ServerConfig> {
         self.servers.iter().find(|s| s.name == name)
+    }
+
+    /// 予約できるリソースを全て列挙する
+    ///
+    /// 設定に書かれた順（サーバーはデバイス番号順、その後に部屋）で返す。
+    pub fn all_resources(&self) -> Vec<Resource> {
+        let gpus = self.servers.iter().flat_map(|server| {
+            server.devices.iter().map(move |device| {
+                Resource::Gpu(Gpu::new(
+                    server.name.clone(),
+                    device.id,
+                    device.model.clone(),
+                ))
+            })
+        });
+
+        let rooms = self.rooms.iter().map(|room| Resource::Room {
+            name: room.name.clone(),
+        });
+
+        gpus.chain(rooms).collect()
     }
 
     /// リソースに対する通知設定を取得

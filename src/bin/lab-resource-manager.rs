@@ -9,6 +9,7 @@ use lab_resource_manager::{
     application::idle_notice_log::IdleNoticeLog,
     application::usecases::{
         accept_reservation_proposal::AcceptReservationProposalUseCase,
+        check_resource_availability::CheckResourceAvailabilityUseCase,
         create_resource_usage::CreateResourceUsageUseCase,
         delete_resource_usage::DeleteResourceUsageUseCase,
         detect_idle_reservations::DetectIdleReservationsUseCase,
@@ -137,6 +138,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let update_usecase = Arc::new(UpdateResourceUsageUseCase::new(resource_usage_repo.clone()));
     let delete_usecase = Arc::new(DeleteResourceUsageUseCase::new(resource_usage_repo.clone()));
     let release_early_usecase = Arc::new(ReleaseResourceUsageEarlyUseCase::new(
+        resource_usage_repo.clone(),
+    ));
+    let check_availability_usecase = Arc::new(CheckResourceAvailabilityUseCase::new(
         resource_usage_repo.clone(),
     ));
     let list_all_usecase = Arc::new(ListAllFutureResourceUsagesUseCase::new(
@@ -283,6 +287,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         update_usecase,
         delete_usecase,
         release_early_usecase,
+        check_availability_usecase,
         notify_usecase,
         idle_notices,
         slack_client,

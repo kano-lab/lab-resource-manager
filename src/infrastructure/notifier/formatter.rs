@@ -187,6 +187,23 @@ fn date_format_string(format: DateFormat) -> &'static str {
     }
 }
 
+/// 時刻を指定タイムゾーンに変換
+///
+/// タイムゾーン名が未指定、または解釈できない場合はボットが動作している
+/// 環境のローカルタイムゾーンを使う。
+pub fn to_zoned(
+    instant: chrono::DateTime<Utc>,
+    timezone_str: Option<&str>,
+) -> chrono::DateTime<chrono::FixedOffset> {
+    if let Some(tz_str) = timezone_str
+        && let Ok(tz) = tz_str.parse::<Tz>()
+    {
+        return instant.with_timezone(&tz).fixed_offset();
+    }
+
+    instant.with_timezone(&Local).fixed_offset()
+}
+
 /// TimePeriodを指定タイムゾーンに変換
 fn convert_to_timezone(
     period: &TimePeriod,
@@ -195,17 +212,10 @@ fn convert_to_timezone(
     chrono::DateTime<chrono::FixedOffset>,
     chrono::DateTime<chrono::FixedOffset>,
 ) {
-    if let Some(tz_str) = timezone_str
-        && let Ok(tz) = tz_str.parse::<Tz>()
-    {
-        let start = period.start().with_timezone(&tz).fixed_offset();
-        let end = period.end().with_timezone(&tz).fixed_offset();
-        return (start, end);
-    }
-
-    let start = period.start().with_timezone(&Local).fixed_offset();
-    let end = period.end().with_timezone(&Local).fixed_offset();
-    (start, end)
+    (
+        to_zoned(period.start(), timezone_str),
+        to_zoned(period.end(), timezone_str),
+    )
 }
 
 #[cfg(test)]

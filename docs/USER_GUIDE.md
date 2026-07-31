@@ -25,6 +25,38 @@ with Google Calendar.
 /register-calendar alice@example.com
 ```
 
+### Check What Is Free Right Now
+
+```text
+/free
+```
+
+Lists the resources you can use right now. The reply is visible only to you and is not posted to the channel.
+
+**Reading the output:**
+
+```text
+いま GPU 5台 が空いています
+
+GPU             0  1  2  3
+gpu-server-1    .  #  #  .
+gpu-server-2    #  .  .  .
+
+`.` 空き 　`#` 使用中
+
+部屋
+🔴 Meeting Room A — @tanaka 〜16:00
+
+使用中のGPU
+🔴 gpu-server-1 1,2 — @sato 〜18:00
+🔴 gpu-server-2 0 — @tanaka 〜明日 09:00
+```
+
+Each column of the grid corresponds to a device number, showing which numbers are free.
+The list below it names the reserver and end time for whatever is taken.
+
+When everything is taken, the reply names the resource that frees up soonest and when.
+
 ## Resource Reservation Syntax
 
 ### Device Specification Format
