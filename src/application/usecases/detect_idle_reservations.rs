@@ -39,10 +39,20 @@ impl IdleNoticeLog {
     pub fn resume(&self, usage_id: &UsageId) {
         self.silenced.lock().unwrap().remove(usage_id.as_str());
     }
+
+    /// いま覚えておく意味のある予約についてだけ記録を残す
+    ///
+    /// 終わった予約について黙っていることに意味はない。放っておくと、
+    /// プロセスが動き続けるあいだ記録だけが増えていく。
+    pub fn retain_only(&self, is_worth_remembering: impl Fn(&str) -> bool) {
+        self.silenced
+            .lock()
+            .unwrap()
+            .retain(|usage_id| is_worth_remembering(usage_id));
+    }
 }
 
 /// 予約が使われているかどうかの見立て
-#[derive(Debug, PartialEq, Eq)]
 enum Verdict {
     /// 予約者本人の利用が観測できている
     InUse,
@@ -154,6 +164,8 @@ where
             }
         }
 
+        self.forget_reservations_that_ended(&reservations);
+
         info!(
             reservations_in_progress = reservations.len(),
             servers_observed = snapshot.observed_server_count(),
@@ -225,11 +237,7 @@ where
     ) -> Result<bool, ApplicationError> {
         let idle_since = self.idle_since_of(reservation.id(), now);
 
-        if now - idle_since < self.idle_threshold {
-            return Ok(false);
-        }
-
-        if reservation.time_period().end() - now < self.idle_threshold {
+        if !is_worth_telling(reservation, idle_since, now, self.idle_threshold) {
             return Ok(false);
         }
 
@@ -267,6 +275,24 @@ where
         self.idle_since.lock().unwrap().remove(usage_id.as_str());
         self.notices.resume(usage_id);
     }
+
+    /// 進行中でなくなった予約についての記録を落とす
+    ///
+    /// 終わった予約に対して知らせることはもう何もない。記録を持ち続けても
+    /// 増えていくだけで、次に同じ予約が現れることもない。
+    fn forget_reservations_that_ended(&self, in_progress: &[ResourceUsage]) {
+        let still_running: HashSet<&str> = in_progress
+            .iter()
+            .map(|reservation| reservation.id().as_str())
+            .collect();
+
+        self.idle_since
+            .lock()
+            .unwrap()
+            .retain(|usage_id, _| still_running.contains(usage_id.as_str()));
+        self.notices
+            .retain_only(|usage_id| still_running.contains(usage_id));
+    }
 }
 
 /// 予約が押さえているGPUのサーバー名（部屋を含む予約は観測の対象外）
@@ -282,9 +308,112 @@ fn servers_of(reservation: &ResourceUsage) -> Option<HashSet<String>> {
         }
     }
 
-    if servers.is_empty() {
-        None
-    } else {
-        Some(servers)
+    Some(servers)
+}
+
+/// 使われていない予約について、いま予約者へ知らせるべきか
+///
+/// 使われていない時間が閾値に達していても、残り時間が閾値に満たなければ知らせない。
+/// まもなく終わる予約を急かしても、予約者が開けられる時間はほとんど残っていない。
+fn is_worth_telling(
+    reservation: &ResourceUsage,
+    idle_since: DateTime<Utc>,
+    now: DateTime<Utc>,
+    threshold: Duration,
+) -> bool {
+    now - idle_since >= threshold && reservation.time_period().end() - now >= threshold
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::aggregates::resource_usage::value_objects::{Gpu, TimePeriod};
+    use crate::domain::common::EmailAddress;
+
+    fn reservation_ending_in(remaining: Duration, now: DateTime<Utc>) -> ResourceUsage {
+        ResourceUsage::new(
+            EmailAddress::new("owner@example.com".to_string()).unwrap(),
+            TimePeriod::new(now - Duration::hours(1), now + remaining).unwrap(),
+            vec![Resource::Gpu(Gpu::new(
+                "Thalys".to_string(),
+                0,
+                "A100".to_string(),
+            ))],
+            None,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn an_idle_stretch_shorter_than_the_threshold_is_not_worth_telling() {
+        let now = Utc::now();
+        let reservation = reservation_ending_in(Duration::hours(4), now);
+
+        assert!(!is_worth_telling(
+            &reservation,
+            now - Duration::minutes(20),
+            now,
+            Duration::minutes(30)
+        ));
+    }
+
+    #[test]
+    fn an_idle_stretch_past_the_threshold_is_worth_telling() {
+        let now = Utc::now();
+        let reservation = reservation_ending_in(Duration::hours(4), now);
+
+        assert!(is_worth_telling(
+            &reservation,
+            now - Duration::minutes(31),
+            now,
+            Duration::minutes(30)
+        ));
+    }
+
+    #[test]
+    fn a_reservation_about_to_end_is_not_worth_telling() {
+        let now = Utc::now();
+        // 1時間使われていないが、残りは10分しかない
+        let reservation = reservation_ending_in(Duration::minutes(10), now);
+
+        assert!(
+            !is_worth_telling(
+                &reservation,
+                now - Duration::hours(1),
+                now,
+                Duration::minutes(30)
+            ),
+            "開けられる時間がほとんどない予約を急かさない"
+        );
+    }
+
+    #[test]
+    fn a_notice_log_keeps_only_what_is_worth_remembering() {
+        let kept = UsageId::from_string("running".to_string());
+        let dropped = UsageId::from_string("finished".to_string());
+        let log = IdleNoticeLog::default();
+        log.silence(&kept);
+        log.silence(&dropped);
+
+        log.retain_only(|usage_id| usage_id == kept.as_str());
+
+        assert!(log.is_silenced(&kept));
+        assert!(
+            !log.is_silenced(&dropped),
+            "終わった予約について黙り続ける意味はない"
+        );
+    }
+
+    #[test]
+    fn a_reservation_with_exactly_the_threshold_left_is_still_worth_telling() {
+        let now = Utc::now();
+        let reservation = reservation_ending_in(Duration::minutes(30), now);
+
+        assert!(is_worth_telling(
+            &reservation,
+            now - Duration::minutes(30),
+            now,
+            Duration::minutes(30)
+        ));
     }
 }

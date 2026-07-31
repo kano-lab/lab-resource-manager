@@ -233,22 +233,6 @@ async fn someone_else_working_on_the_gpu_does_not_count_as_the_owner_using_it() 
 }
 
 #[tokio::test]
-async fn a_reservation_about_to_end_is_left_alone() {
-    let f = fixture(30);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
-    // 残り10分。ここで解放を促しても、開けられる時間はほとんどない
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::minutes(10));
-    f.repository.save(&reservation).await.unwrap();
-    f.observer.set_snapshot(nobody_is_working());
-
-    f.usecase.poll_once().await.unwrap();
-    f.usecase.poll_once().await.unwrap();
-
-    assert!(f.notifier.sent_notices().is_empty());
-}
-
-#[tokio::test]
 async fn a_room_reservation_is_out_of_scope() {
     let f = fixture(0);
     f.identity_repo
