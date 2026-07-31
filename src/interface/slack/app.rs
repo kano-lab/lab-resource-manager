@@ -2,10 +2,10 @@
 //!
 //! 依存関係を管理し、Slackインタラクションのメインエントリポイントを提供
 
+use crate::application::idle_notice_log::IdleNoticeLog;
 use crate::application::usecases::accept_reservation_proposal::AcceptReservationProposalUseCase;
 use crate::application::usecases::create_resource_usage::CreateResourceUsageUseCase;
 use crate::application::usecases::delete_resource_usage::DeleteResourceUsageUseCase;
-use crate::application::usecases::detect_idle_reservations::IdleNoticeLog;
 use crate::application::usecases::grant_user_resource_access::GrantUserResourceAccessUseCase;
 use crate::application::usecases::notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase;
 use crate::application::usecases::release_resource_usage_early::ReleaseResourceUsageEarlyUseCase;

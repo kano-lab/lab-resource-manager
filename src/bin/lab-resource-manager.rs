@@ -6,11 +6,12 @@
 use axum_server::tls_rustls::RustlsConfig;
 use chrono::Duration as ChronoDuration;
 use lab_resource_manager::{
+    application::idle_notice_log::IdleNoticeLog,
     application::usecases::{
         accept_reservation_proposal::AcceptReservationProposalUseCase,
         create_resource_usage::CreateResourceUsageUseCase,
         delete_resource_usage::DeleteResourceUsageUseCase,
-        detect_idle_reservations::{DetectIdleReservationsUseCase, IdleNoticeLog},
+        detect_idle_reservations::DetectIdleReservationsUseCase,
         get_resource_usage_by_id::GetResourceUsageByIdUseCase,
         grant_user_resource_access::GrantUserResourceAccessUseCase,
         list_all_future_resource_usages::ListAllFutureResourceUsagesUseCase,
