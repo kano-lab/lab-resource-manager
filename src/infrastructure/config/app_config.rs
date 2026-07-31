@@ -4,6 +4,7 @@
 //! デフォルト値や読み込み方法は別モジュールで定義される。
 
 use chrono::Duration;
+use chrono_tz::Tz;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -45,4 +46,8 @@ pub struct AppConfig {
     pub mcp_tls_cert_file: Option<PathBuf>,
     /// MCPサーバーのTLS秘密鍵ファイルのパス（PEM形式、未設定ならTLS無効）
     pub mcp_tls_key_file: Option<PathBuf>,
+    /// Web画面のリッスンアドレス（未設定ならWeb画面を無効化）
+    pub web_listen_addr: Option<SocketAddr>,
+    /// Web画面が時刻を表示するタイムゾーン
+    pub web_timezone: Tz,
 }

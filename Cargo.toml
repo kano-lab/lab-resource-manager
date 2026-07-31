@@ -45,3 +45,18 @@ http = "1.4.2"
 axum-server = { version = "0.8.0", default-features = false, features = [
   "tls-rustls-no-provider",
 ] }
+topcoat = { version = "0.5.0", features = ["tailwind"], optional = true }
+
+# TailwindのCSSはビルドスクリプトで生成し、`include_str!`でバイナリへ埋め込む。
+# アセットバンドルをディスクに配置する必要がなくなり、単一バイナリのまま配布できる。
+[build-dependencies]
+topcoat = { version = "0.5.0", default-features = false, features = [
+  "tailwind",
+], optional = true }
+
+[features]
+default = []
+
+# 予約タイムラインのWeb画面。crates.io経由のライブラリ利用者に
+# Topcoatの依存を負わせないため、既定では無効にする。
+web = ["dep:topcoat"]

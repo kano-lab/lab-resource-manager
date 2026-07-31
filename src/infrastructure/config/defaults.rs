@@ -29,3 +29,6 @@ pub const RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS: &str = "1,2,3,5,8";
 
 /// MCPアクセストークンファイルのデフォルトパス
 pub const MCP_TOKENS_FILE: &str = "/var/lib/lab-resource-manager/mcp_tokens.json";
+
+/// Web画面が時刻を表示するタイムゾーンのデフォルト値（IANAタイムゾーン名）
+pub const WEB_TIMEZONE: &str = "Asia/Tokyo";
