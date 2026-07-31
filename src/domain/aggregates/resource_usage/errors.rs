@@ -56,7 +56,7 @@ impl fmt::Display for ResourceUsageError {
             ResourceUsageError::NotYetStarted { start, at } => {
                 write!(
                     f,
-                    "まだ始まっていない予約です: 開始時刻({})は指定時刻({})よりあとです。早期終了ではなく取り消してください。",
+                    "まだ始まっていない予約です（開始時刻: {}、指定時刻: {}）。早期終了ではなく取り消してください。",
                     start.format("%Y-%m-%d %H:%M:%S"),
                     at.format("%Y-%m-%d %H:%M:%S")
                 )
@@ -64,7 +64,7 @@ impl fmt::Display for ResourceUsageError {
             ResourceUsageError::AlreadyEnded { end, at } => {
                 write!(
                     f,
-                    "すでに終わった予約です: 終了時刻({})は指定時刻({})より前です。",
+                    "すでに終わっている予約です（終了時刻: {}、指定時刻: {}）。",
                     end.format("%Y-%m-%d %H:%M:%S"),
                     at.format("%Y-%m-%d %H:%M:%S")
                 )
