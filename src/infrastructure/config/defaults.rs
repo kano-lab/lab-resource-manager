@@ -24,6 +24,9 @@ pub const GPU_USAGE_MAX_STALENESS_SECS: u64 = 300;
 /// 未予約利用を提案対象とみなす継続時間の閾値のデフォルト値（秒）
 pub const UNRESERVED_USAGE_THRESHOLD_SECS: u64 = 600;
 
+/// 予約が使われていないと知らせるまでの時間のデフォルト値（秒）
+pub const IDLE_RESERVATION_THRESHOLD_SECS: u64 = 1800;
+
 /// 事後予約提案で提示する利用時間候補のデフォルト値（時間、カンマ区切り）
 pub const RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS: &str = "1,2,3,5,8";
 

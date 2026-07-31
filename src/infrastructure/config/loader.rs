@@ -84,6 +84,18 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
         .transpose()?
         .unwrap_or(defaults::UNRESERVED_USAGE_THRESHOLD_SECS);
 
+    let idle_reservation_threshold_secs = env::var("IDLE_RESERVATION_THRESHOLD_SECS")
+        .ok()
+        .map(|s| {
+            s.parse::<u64>()
+                .map_err(|_| ConfigLoadError::InvalidEnvVar {
+                    name: "IDLE_RESERVATION_THRESHOLD_SECS",
+                    reason: "正の整数である必要があります".to_string(),
+                })
+        })
+        .transpose()?
+        .unwrap_or(defaults::IDLE_RESERVATION_THRESHOLD_SECS);
+
     let reservation_proposal_duration_candidates =
         env::var("RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS")
             .ok()
@@ -134,6 +146,7 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
         gpu_usage_max_staleness_secs,
         unreserved_usage_threshold_secs,
         reservation_proposal_duration_candidates,
+        idle_reservation_threshold_secs,
         mcp_listen_addr,
         mcp_tokens_file,
         mcp_allowed_hosts,
