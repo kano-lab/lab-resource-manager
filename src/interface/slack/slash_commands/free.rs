@@ -42,7 +42,8 @@ where
 
     let resources = app.resource_config().all_resources();
     let availabilities = app
-        .check_availability_usecase()
+        .usecases()
+        .check_resource_availability
         .execute(&resources, &window)
         .await?;
 
@@ -57,7 +58,8 @@ where
         "reporting resource availability"
     );
 
-    let owner_displays = resolve_owner_displays(&availabilities, now, app.identity_repo()).await;
+    let owner_displays =
+        resolve_owner_displays(&availabilities, now, &app.repositories().identity_link).await;
     let timezone = display_timezone(app.resource_config());
 
     let content =

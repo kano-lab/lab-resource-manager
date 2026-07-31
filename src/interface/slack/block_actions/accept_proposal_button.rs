@@ -169,8 +169,12 @@ where
         return format!("❌ 予約の作成に失敗しました: {}", failure);
     };
 
-    let detail =
-        conflict_message::build(conflicts, app.resource_config(), app.identity_repo()).await;
+    let detail = conflict_message::build(
+        conflicts,
+        app.resource_config(),
+        &app.repositories().identity_link,
+    )
+    .await;
 
     if conflicts_only_with_own_reservations(conflicts, accepted_by) {
         format!(
@@ -203,7 +207,8 @@ where
     let resources = resolve_gpu_resources(app, &payload.server, &payload.device_numbers)?;
     let owner_email = EmailAddress::new(payload.owner_email)?;
 
-    app.accept_reservation_proposal_usecase()
+    app.usecases()
+        .accept_reservation_proposal
         .execute(
             owner_email.clone(),
             resources,

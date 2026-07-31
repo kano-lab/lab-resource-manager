@@ -11,6 +11,7 @@
 //! ### モジュール構成
 //!
 //! - `app`: 依存性注入を備えたアプリケーションコア
+//! - `dependencies`: ボットが必要とするユースケースとリポジトリの束
 //! - `gateway`: Slackイベントのルーティング（イベント種別に応じたハンドラへの振り分け）
 //! - `slash_commands`: スラッシュコマンドハンドラ（`/register-calendar`、`/link-user`）
 //! - `block_actions`: ブロックアクションハンドラ（モーダル内ボタンクリックなど）
@@ -35,6 +36,7 @@ pub mod app;
 pub mod async_execution;
 pub mod block_actions;
 pub mod constants;
+pub mod dependencies;
 pub mod gateway;
 pub mod slack_client;
 pub mod slash_commands;
@@ -44,3 +46,4 @@ pub mod views;
 
 // 主要な型を再エクスポート
 pub use app::SlackApp;
+pub use dependencies::{SlackRepositories, SlackUseCases};

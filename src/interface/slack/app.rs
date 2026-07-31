@@ -3,19 +3,10 @@
 //! 依存関係を管理し、Slackインタラクションのメインエントリポイントを提供
 
 use crate::application::idle_notice_log::IdleNoticeLog;
-use crate::application::usecases::accept_reservation_proposal::AcceptReservationProposalUseCase;
-use crate::application::usecases::check_resource_availability::CheckResourceAvailabilityUseCase;
-use crate::application::usecases::create_resource_usage::CreateResourceUsageUseCase;
-use crate::application::usecases::delete_resource_usage::DeleteResourceUsageUseCase;
-use crate::application::usecases::grant_user_resource_access::GrantUserResourceAccessUseCase;
-use crate::application::usecases::notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase;
-use crate::application::usecases::release_resource_usage_early::ReleaseResourceUsageEarlyUseCase;
-use crate::application::usecases::update_resource_usage::UpdateResourceUsageUseCase;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::{
-    IdentityLinkRepository, McpTokenRepository, ResourceUsageRepository,
-};
+use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::infrastructure::config::{AppConfig, ResourceConfig};
+use crate::interface::slack::dependencies::{SlackRepositories, SlackUseCases};
 use slack_morphism::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -36,22 +27,12 @@ where
     app_config: AppConfig,
     resource_config: Arc<ResourceConfig>,
 
-    // UseCases
-    grant_access_usecase: Arc<GrantUserResourceAccessUseCase>,
-    create_resource_usage_usecase: Arc<CreateResourceUsageUseCase<R>>,
-    accept_reservation_proposal_usecase: Arc<AcceptReservationProposalUseCase<R>>,
-    update_resource_usage_usecase: Arc<UpdateResourceUsageUseCase<R>>,
-    delete_usage_usecase: Arc<DeleteResourceUsageUseCase<R>>,
-    release_early_usecase: Arc<ReleaseResourceUsageEarlyUseCase<R>>,
-    check_availability_usecase: Arc<CheckResourceAvailabilityUseCase<R>>,
-    notify_usecase: Arc<NotifyFutureResourceUsageChangesUseCase<R, N>>,
+    // 依存
+    usecases: SlackUseCases<R, N>,
+    repositories: SlackRepositories,
 
     // 予約者の応答で更新される、未使用予約のお知らせの抑制記録
     idle_notices: Arc<IdleNoticeLog>,
-
-    // リポジトリ
-    identity_repo: Arc<dyn IdentityLinkRepository>,
-    mcp_token_repo: Arc<dyn McpTokenRepository>,
 
     // Slackインフラストラクチャ
     slack_client: Arc<SlackHyperClient>,
@@ -72,20 +53,11 @@ where
     ///
     /// すべての依存関係をコンストラクタで受け取ります（Dependency Injection）。
     /// 内部状態（user_channel_map, task_tracker, http_client）はコンストラクタ内で生成します。
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         app_config: AppConfig,
         resource_config: Arc<ResourceConfig>,
-        identity_repo: Arc<dyn IdentityLinkRepository>,
-        mcp_token_repo: Arc<dyn McpTokenRepository>,
-        grant_access_usecase: Arc<GrantUserResourceAccessUseCase>,
-        create_resource_usage_usecase: Arc<CreateResourceUsageUseCase<R>>,
-        accept_reservation_proposal_usecase: Arc<AcceptReservationProposalUseCase<R>>,
-        update_resource_usage_usecase: Arc<UpdateResourceUsageUseCase<R>>,
-        delete_usage_usecase: Arc<DeleteResourceUsageUseCase<R>>,
-        release_early_usecase: Arc<ReleaseResourceUsageEarlyUseCase<R>>,
-        check_availability_usecase: Arc<CheckResourceAvailabilityUseCase<R>>,
-        notify_usecase: Arc<NotifyFutureResourceUsageChangesUseCase<R, N>>,
+        repositories: SlackRepositories,
+        usecases: SlackUseCases<R, N>,
         idle_notices: Arc<IdleNoticeLog>,
         slack_client: Arc<SlackHyperClient>,
         bot_token: SlackApiToken,
@@ -93,16 +65,8 @@ where
         Self {
             app_config,
             resource_config,
-            identity_repo,
-            mcp_token_repo,
-            grant_access_usecase,
-            create_resource_usage_usecase,
-            accept_reservation_proposal_usecase,
-            update_resource_usage_usecase,
-            delete_usage_usecase,
-            release_early_usecase,
-            check_availability_usecase,
-            notify_usecase,
+            repositories,
+            usecases,
             idle_notices,
             slack_client,
             bot_token,
@@ -152,7 +116,7 @@ where
 
         // バックグラウンドでポーリングタスクを実行
         let polling_handle = {
-            let notify_usecase = self.notify_usecase.clone();
+            let notify_usecase = self.usecases.notify_resource_usage_changes.clone();
             let polling_interval = Duration::from_secs(self.app_config.polling_interval_secs);
             tokio::spawn(async move {
                 loop {
@@ -319,40 +283,12 @@ where
         &self.resource_config
     }
 
-    pub fn identity_repo(&self) -> &Arc<dyn IdentityLinkRepository> {
-        &self.identity_repo
+    pub fn repositories(&self) -> &SlackRepositories {
+        &self.repositories
     }
 
-    pub fn mcp_token_repo(&self) -> &Arc<dyn McpTokenRepository> {
-        &self.mcp_token_repo
-    }
-
-    pub fn grant_access_usecase(&self) -> &Arc<GrantUserResourceAccessUseCase> {
-        &self.grant_access_usecase
-    }
-
-    pub fn create_resource_usage_usecase(&self) -> &Arc<CreateResourceUsageUseCase<R>> {
-        &self.create_resource_usage_usecase
-    }
-
-    pub fn accept_reservation_proposal_usecase(&self) -> &Arc<AcceptReservationProposalUseCase<R>> {
-        &self.accept_reservation_proposal_usecase
-    }
-
-    pub fn update_resource_usage_usecase(&self) -> &Arc<UpdateResourceUsageUseCase<R>> {
-        &self.update_resource_usage_usecase
-    }
-
-    pub fn delete_usage_usecase(&self) -> &Arc<DeleteResourceUsageUseCase<R>> {
-        &self.delete_usage_usecase
-    }
-
-    pub fn release_early_usecase(&self) -> &Arc<ReleaseResourceUsageEarlyUseCase<R>> {
-        &self.release_early_usecase
-    }
-
-    pub fn check_availability_usecase(&self) -> &Arc<CheckResourceAvailabilityUseCase<R>> {
-        &self.check_availability_usecase
+    pub fn usecases(&self) -> &SlackUseCases<R, N> {
+        &self.usecases
     }
 
     pub fn idle_notices(&self) -> &Arc<IdleNoticeLog> {

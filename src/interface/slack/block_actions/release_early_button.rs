@@ -37,8 +37,9 @@ where
         return Ok(());
     };
 
-    let requested_by =
-        EmailAddress::new(user_resolver::resolve_user_email(&user.id, app.identity_repo()).await?)?;
+    let requested_by = EmailAddress::new(
+        user_resolver::resolve_user_email(&user.id, &app.repositories().identity_link).await?,
+    )?;
     let usage_id = UsageId::from_string(usage_id_str.to_string());
 
     info!(
@@ -49,7 +50,8 @@ where
     );
 
     let outcome = app
-        .release_early_usecase()
+        .usecases()
+        .release_resource_usage_early
         .execute(&usage_id, &requested_by)
         .await;
 

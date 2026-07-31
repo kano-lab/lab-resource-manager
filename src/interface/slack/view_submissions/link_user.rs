@@ -91,7 +91,8 @@ where
     // ユーザーをリンク
     let link_result = match &email_result {
         Ok(email) => app
-            .grant_access_usecase()
+            .usecases()
+            .grant_access
             .execute(
                 link_target.external_system.clone(),
                 link_target.external_user_id.clone(),

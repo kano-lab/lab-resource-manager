@@ -36,7 +36,7 @@ use lab_resource_manager::{
         unauthorized_usage_notifier::SlackUnauthorizedUsageNotifier,
     },
     interface::mcp::{self, server::LrmMcpServer},
-    interface::slack::SlackApp,
+    interface::slack::{SlackApp, SlackRepositories, SlackUseCases},
 };
 use slack_morphism::prelude::*;
 use std::sync::Arc;
@@ -279,16 +279,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Arc::new(SlackApp::new(
         app_config,
         resource_config,
-        identity_repo,
-        mcp_token_repo.clone(),
-        grant_access_usecase,
-        create_usecase,
-        accept_proposal_usecase,
-        update_usecase,
-        delete_usecase,
-        release_early_usecase,
-        check_availability_usecase,
-        notify_usecase,
+        SlackRepositories {
+            identity_link: identity_repo,
+            mcp_token: mcp_token_repo.clone(),
+        },
+        SlackUseCases {
+            grant_access: grant_access_usecase,
+            create_resource_usage: create_usecase,
+            accept_reservation_proposal: accept_proposal_usecase,
+            update_resource_usage: update_usecase,
+            delete_resource_usage: delete_usecase,
+            release_resource_usage_early: release_early_usecase,
+            check_resource_availability: check_availability_usecase,
+            notify_resource_usage_changes: notify_usecase,
+        },
         idle_notices,
         slack_client,
         bot_token,

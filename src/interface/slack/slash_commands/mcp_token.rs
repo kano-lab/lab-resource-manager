@@ -23,8 +23,11 @@ where
 {
     debug!(user = %event.user_id, "issuing an mcp token");
 
-    let email_str = match user_resolver::resolve_user_email(&event.user_id, app.identity_repo())
-        .await
+    let email_str = match user_resolver::resolve_user_email(
+        &event.user_id,
+        &app.repositories().identity_link,
+    )
+    .await
     {
         Ok(email) => email,
         Err(e) => {
@@ -40,7 +43,7 @@ where
 
     let email = EmailAddress::new(email_str)?;
 
-    let token = app.mcp_token_repo().issue_token(&email).await?;
+    let token = app.repositories().mcp_token.issue_token(&email).await?;
 
     info!(owner = %email.as_str(), "mcp token issued");
 

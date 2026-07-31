@@ -33,7 +33,7 @@ where
     // 依存性を取得
     let slack_client = app.slack_client();
     let bot_token = app.bot_token();
-    let identity_repo = app.identity_repo();
+    let identity_repo = &app.repositories().identity_link;
     let config = app.resource_config();
 
     let trigger_id = &block_actions.trigger_id;

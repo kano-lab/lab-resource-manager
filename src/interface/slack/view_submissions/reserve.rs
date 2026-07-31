@@ -25,8 +25,8 @@ where
     let user_id = view_submission.user.id.clone();
 
     // Get dependencies
-    let create_usage_usecase = app.create_resource_usage_usecase();
-    let identity_repo = app.identity_repo();
+    let create_usage_usecase = &app.usecases().create_resource_usage;
+    let identity_repo = &app.repositories().identity_link;
     let config = app.resource_config();
 
     // Extract form values
