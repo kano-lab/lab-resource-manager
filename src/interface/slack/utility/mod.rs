@@ -13,8 +13,10 @@
 //! - `user_resolver`: SlackユーザーIDとメールアドレスの相互解決
 //! - `datetime_parser`: 日付・時刻のパース
 //! - `conflict_message`: リソース競合エラーからのユーザー向けメッセージ構築
+//! - `reservation_summary`: 予約の対象リソースと期間の要約
 
 pub mod conflict_message;
 pub mod datetime_parser;
 pub mod extract_form_data;
+pub mod reservation_summary;
 pub mod user_resolver;

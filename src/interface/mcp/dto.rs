@@ -83,3 +83,10 @@ pub struct CancelReservationParams {
     /// 予約ID
     pub id: String,
 }
+
+/// `release_reservation_early`の引数
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReleaseReservationEarlyParams {
+    /// 予約ID
+    pub id: String,
+}

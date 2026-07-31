@@ -83,11 +83,23 @@ Notifications include the following information:
 When you register your email address with the `/register-calendar` command, you will be automatically mentioned in Slack
 for your reservations, making it easier to notice notifications.
 
+### Buttons on Notification Messages
+
+Reservation notifications carry buttons for acting on your own reservations.
+
+- **🔄 Update**: Change the time or the notes of the reservation
+- **⏹️ End now**: End a running reservation at this moment and open the remaining time to
+  others. The time you actually used stays on record
+- **❌ Cancel**: Drop the reservation entirely, leaving no record of the time used
+
+Use "⏹️ End now" when you finish earlier than planned, and "❌ Cancel" when you are not
+going to use the resource at all. You can only act on reservations you own.
+
 ## Using AI Agents via MCP (Optional)
 
 If your lab has enabled the MCP (Model Context Protocol) server, you can let agents like
-Claude Code view, create, update, and cancel reservations directly on your behalf, without
-going through Slack for every request.
+Claude Code view, create, update, end early, and cancel reservations directly on your
+behalf, without going through Slack for every request.
 
 ### Get Your Access Token
 
@@ -127,7 +139,11 @@ Ask your admin for the exact URL (host, port, and whether it's `http://` or `htt
 - Look up a reservation by ID
 - Create a new reservation (GPU server or meeting room)
 - Update the time or notes on a reservation you own
+- End a running reservation of yours early, releasing the remaining time
 - Cancel a reservation you own
 
-You can only update or cancel reservations you own yourself — the same rule that applies
-to `/reserve` in Slack.
+Ending early shortens the reservation to the current time, so the time you used stays on
+record. Cancel instead when the reservation should not have existed at all.
+
+You can only update, end early, or cancel reservations you own yourself — the same rule
+that applies to `/reserve` in Slack.
