@@ -1,6 +1,5 @@
 //! Slack DM経由の事後予約提案実装
 
-use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::repositories::IdentityLinkRepository;
@@ -9,6 +8,7 @@ use crate::domain::ports::reservation_proposal::{
 };
 use crate::infrastructure::config::ResourceStyle;
 use crate::infrastructure::notifier::formatter::format_resources_styled;
+use crate::infrastructure::slack_direct_message::SlackDirectMessenger;
 use async_trait::async_trait;
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -40,9 +40,7 @@ pub struct ProposalAcceptPayload {
 
 /// Slack DM経由で事後予約を提案する実装
 pub struct SlackReservationProposalNotifier {
-    slack_client: Arc<SlackHyperClient>,
-    bot_token: SlackApiToken,
-    identity_repo: Arc<dyn IdentityLinkRepository>,
+    messenger: SlackDirectMessenger,
 }
 
 impl SlackReservationProposalNotifier {
@@ -53,41 +51,8 @@ impl SlackReservationProposalNotifier {
         identity_repo: Arc<dyn IdentityLinkRepository>,
     ) -> Self {
         Self {
-            slack_client,
-            bot_token,
-            identity_repo,
+            messenger: SlackDirectMessenger::new(slack_client, bot_token, identity_repo),
         }
-    }
-
-    /// 提案先のSlackユーザーIDを解決する
-    async fn resolve_slack_user_id(
-        &self,
-        proposal: &ReservationProposal,
-    ) -> Result<SlackUserId, NotificationError> {
-        let identity_link = self
-            .identity_repo
-            .find_by_email(proposal.owner_email())
-            .await
-            .map_err(|e| {
-                NotificationError::RepositoryError(format!("IdentityLink取得失敗: {}", e))
-            })?
-            .ok_or_else(|| {
-                NotificationError::SendFailure(format!(
-                    "IdentityLink未登録のためDMを送信できません: {}",
-                    proposal.owner_email().as_str()
-                ))
-            })?;
-
-        let slack_identity = identity_link
-            .get_identity_for_system(&ExternalSystem::Slack)
-            .ok_or_else(|| {
-                NotificationError::SendFailure(format!(
-                    "Slackアカウント未リンクのためDMを送信できません: {}",
-                    proposal.owner_email().as_str()
-                ))
-            })?;
-
-        Ok(SlackUserId::new(slack_identity.user_id().to_string()))
     }
 }
 
@@ -96,36 +61,16 @@ impl ReservationProposalNotifier for SlackReservationProposalNotifier {
     async fn propose(&self, proposal: ReservationProposal) -> Result<(), NotificationError> {
         let gpus = collect_gpus(&proposal)?;
 
-        let slack_user_id = self.resolve_slack_user_id(&proposal).await?;
-
-        let session = self.slack_client.open_session(&self.bot_token);
-
-        let open_resp = session
-            .conversations_open(
-                &SlackApiConversationsOpenRequest::new().with_users(vec![slack_user_id]),
-            )
-            .await
-            .map_err(|e| {
-                NotificationError::SendFailure(format!("DMチャンネルのオープンに失敗: {}", e))
-            })?;
-
         let text = format!(
             "⏱️ 予約なしでリソースを使用しています\n\n💻 使用中のリソース\n{}\n\nこのまま事後予約を作成しますか？",
             format_resources_styled(proposal.resources(), ResourceStyle::Full)
         );
         let blocks = build_proposal_blocks(&proposal, &gpus, &text);
 
-        let post_req = SlackApiChatPostMessageRequest::new(
-            open_resp.channel.id,
-            SlackMessageContent::new()
-                .with_text(text)
-                .with_blocks(blocks),
-        );
-
-        let sent = session
-            .chat_post_message(&post_req)
-            .await
-            .map_err(|e| NotificationError::SendFailure(format!("Slack DM送信失敗: {}", e)))?;
+        let sent = self
+            .messenger
+            .send(proposal.owner_email(), text, blocks)
+            .await?;
 
         tracing::info!(
             channel = %sent.channel,
@@ -242,7 +187,9 @@ fn format_duration_label(duration: Duration) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::identity_link::value_objects::ExternalIdentity;
+    use crate::domain::aggregates::identity_link::value_objects::{
+        ExternalIdentity, ExternalSystem,
+    };
     use crate::domain::aggregates::resource_usage::value_objects::Gpu;
     use crate::domain::common::EmailAddress;
     use chrono::Utc;

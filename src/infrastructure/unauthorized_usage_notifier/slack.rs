@@ -1,6 +1,5 @@
 //! Slack DM経由の無断使用検知通知実装
 
-use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::NotificationError;
@@ -8,15 +7,14 @@ use crate::domain::ports::repositories::IdentityLinkRepository;
 use crate::domain::ports::unauthorized_usage_notifier::UnauthorizedUsageNotifier;
 use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
 use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
+use crate::infrastructure::slack_direct_message::SlackDirectMessenger;
 use async_trait::async_trait;
 use slack_morphism::prelude::*;
 use std::sync::Arc;
 
 /// Slack DM経由で無断使用検知を本人へ通知する実装
 pub struct SlackUnauthorizedUsageNotifier {
-    slack_client: Arc<SlackHyperClient>,
-    bot_token: SlackApiToken,
-    identity_repo: Arc<dyn IdentityLinkRepository>,
+    messenger: SlackDirectMessenger,
 }
 
 impl SlackUnauthorizedUsageNotifier {
@@ -27,41 +25,8 @@ impl SlackUnauthorizedUsageNotifier {
         identity_repo: Arc<dyn IdentityLinkRepository>,
     ) -> Self {
         Self {
-            slack_client,
-            bot_token,
-            identity_repo,
+            messenger: SlackDirectMessenger::new(slack_client, bot_token, identity_repo),
         }
-    }
-
-    /// 通知先（実際の利用者）のSlackユーザーIDを解決する
-    async fn resolve_slack_user_id(
-        &self,
-        actual_user_email: &EmailAddress,
-    ) -> Result<SlackUserId, NotificationError> {
-        let identity_link = self
-            .identity_repo
-            .find_by_email(actual_user_email)
-            .await
-            .map_err(|e| {
-                NotificationError::RepositoryError(format!("IdentityLink取得失敗: {}", e))
-            })?
-            .ok_or_else(|| {
-                NotificationError::SendFailure(format!(
-                    "IdentityLink未登録のためDMを送信できません: {}",
-                    actual_user_email.as_str()
-                ))
-            })?;
-
-        let slack_identity = identity_link
-            .get_identity_for_system(&ExternalSystem::Slack)
-            .ok_or_else(|| {
-                NotificationError::SendFailure(format!(
-                    "Slackアカウント未リンクのためDMを送信できません: {}",
-                    actual_user_email.as_str()
-                ))
-            })?;
-
-        Ok(SlackUserId::new(slack_identity.user_id().to_string()))
     }
 }
 
@@ -72,30 +37,12 @@ impl UnauthorizedUsageNotifier for SlackUnauthorizedUsageNotifier {
         reserved_usage: &ResourceUsage,
         actual_user_email: &EmailAddress,
     ) -> Result<(), NotificationError> {
-        let slack_user_id = self.resolve_slack_user_id(actual_user_email).await?;
-
-        let session = self.slack_client.open_session(&self.bot_token);
-
-        let open_resp = session
-            .conversations_open(
-                &SlackApiConversationsOpenRequest::new().with_users(vec![slack_user_id]),
-            )
-            .await
-            .map_err(|e| {
-                NotificationError::SendFailure(format!("DMチャンネルのオープンに失敗: {}", e))
-            })?;
-
         let text = build_unauthorized_message(reserved_usage);
 
-        let post_req = SlackApiChatPostMessageRequest::new(
-            open_resp.channel.id,
-            SlackMessageContent::new().with_text(text),
-        );
-
-        let sent = session
-            .chat_post_message(&post_req)
-            .await
-            .map_err(|e| NotificationError::SendFailure(format!("Slack DM送信失敗: {}", e)))?;
+        let sent = self
+            .messenger
+            .send(actual_user_email, text, Vec::new())
+            .await?;
 
         tracing::info!(
             channel = %sent.channel,

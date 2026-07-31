@@ -18,4 +18,5 @@ pub mod repositories;
 pub mod reservation_proposal;
 pub mod resource_collection_access;
 pub mod resource_usage_observer;
+pub mod slack_direct_message;
 pub mod unauthorized_usage_notifier;
