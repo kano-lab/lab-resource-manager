@@ -48,7 +48,7 @@ where
 
     let free_count = availabilities
         .iter()
-        .filter(|availability| matches!(availability.state_at(now), AvailabilityState::Free { .. }))
+        .filter(|availability| availability.is_free_at(now))
         .count();
     info!(
         slack_user = %event.user_id,

@@ -114,13 +114,8 @@ fn count_free(
     availabilities
         .iter()
         .filter(|availability| matches_kind(availability.resource()))
-        .filter(|availability| is_free_at(availability, now))
+        .filter(|availability| availability.is_free_at(now))
         .count()
-}
-
-/// 指定時刻に空いているか
-fn is_free_at(availability: &ResourceAvailability, now: DateTime<Utc>) -> bool {
-    matches!(availability.state_at(now), AvailabilityState::Free { .. })
 }
 
 /// ひとつも空いていないとき、最も早く空くものを伝える
@@ -133,7 +128,7 @@ fn earliest_free_line(
 ) -> Option<String> {
     if availabilities
         .iter()
-        .any(|availability| is_free_at(availability, now))
+        .any(|availability| availability.is_free_at(now))
     {
         return None;
     }
@@ -164,7 +159,7 @@ fn servers_of(availabilities: &[ResourceAvailability], now: DateTime<Utc>) -> Ve
         };
         let device = grid::Device {
             number: gpu.device_number(),
-            is_free: is_free_at(availability, now),
+            is_free: availability.is_free_at(now),
         };
 
         match servers
