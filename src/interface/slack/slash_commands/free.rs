@@ -1,5 +1,6 @@
 //! /free コマンドハンドラ
 
+use crate::domain::aggregates::resource_usage::value_objects::TimePeriod;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{IdentityLinkRepository, ResourceUsageRepository};
@@ -9,8 +10,8 @@ use crate::domain::services::resource_usage::availability::{
 use crate::infrastructure::config::ResourceConfig;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::utility::user_resolver;
-use crate::interface::slack::views::messages::availability;
-use chrono::{Duration, Utc};
+use crate::interface::slack::views::messages::availability as availability_message;
+use chrono::{DateTime, Duration, Utc};
 use slack_morphism::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -37,10 +38,7 @@ where
     debug!(user = %event.user_id, "checking resource availability");
 
     let now = Utc::now();
-    let window = crate::domain::aggregates::resource_usage::value_objects::TimePeriod::new(
-        now,
-        now + Duration::days(LOOKAHEAD_DAYS),
-    )?;
+    let window = TimePeriod::new(now, now + Duration::days(LOOKAHEAD_DAYS))?;
 
     let resources = app.resource_config().all_resources();
     let availabilities = app
@@ -62,7 +60,8 @@ where
     let owner_displays = resolve_owner_displays(&availabilities, now, app.identity_repo()).await;
     let timezone = display_timezone(app.resource_config());
 
-    let content = availability::build(&availabilities, now, timezone.as_deref(), &owner_displays);
+    let content =
+        availability_message::build(&availabilities, now, timezone.as_deref(), &owner_displays);
 
     Ok(SlackCommandEventResponse::new(content))
 }
@@ -72,7 +71,7 @@ where
 /// 解決できなかった予約者は結果に含めない（ビューがメールアドレスで表示する）。
 async fn resolve_owner_displays(
     availabilities: &[ResourceAvailability],
-    now: chrono::DateTime<Utc>,
+    now: DateTime<Utc>,
     identity_repo: &Arc<dyn IdentityLinkRepository>,
 ) -> HashMap<EmailAddress, String> {
     let mut owners: Vec<EmailAddress> = Vec::new();

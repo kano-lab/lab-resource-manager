@@ -382,4 +382,3 @@ fn a_lab_with_no_resources_configured_says_so() {
         "空の表を見せても、設定が抜けていることは伝わらない"
     );
 }
-

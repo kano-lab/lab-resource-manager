@@ -14,7 +14,7 @@
 
 pub mod grid;
 
-use crate::domain::aggregates::resource_usage::value_objects::Resource;
+use crate::domain::aggregates::resource_usage::value_objects::{Resource, UsageId};
 use crate::domain::common::EmailAddress;
 use crate::domain::services::resource_usage::availability::{
     AvailabilityState, ResourceAvailability,
@@ -251,6 +251,7 @@ fn ongoing_gpu_lines(
 
 /// 内訳に並べる、いま動いている予約
 struct OngoingReservation {
+    usage_id: UsageId,
     owner_email: EmailAddress,
     resources: Vec<Resource>,
     ends_at: DateTime<Utc>,
@@ -264,7 +265,7 @@ fn ongoing_gpu_reservations(
     availabilities: &[ResourceAvailability],
     now: DateTime<Utc>,
 ) -> Vec<OngoingReservation> {
-    let mut reservations: Vec<(String, OngoingReservation)> = Vec::new();
+    let mut reservations: Vec<OngoingReservation> = Vec::new();
 
     for availability in availabilities {
         if !matches!(availability.resource(), Resource::Gpu(_)) {
@@ -274,24 +275,21 @@ fn ongoing_gpu_reservations(
             continue;
         };
 
-        let usage_id = busy.usage_id().as_str().to_string();
-        match reservations.iter_mut().find(|(id, _)| *id == usage_id) {
-            Some((_, reservation)) => reservation.resources.push(availability.resource().clone()),
-            None => reservations.push((
-                usage_id,
-                OngoingReservation {
-                    owner_email: busy.owner_email().clone(),
-                    resources: vec![availability.resource().clone()],
-                    ends_at: busy.period().end(),
-                },
-            )),
+        match reservations
+            .iter_mut()
+            .find(|reservation| reservation.usage_id == *busy.usage_id())
+        {
+            Some(reservation) => reservation.resources.push(availability.resource().clone()),
+            None => reservations.push(OngoingReservation {
+                usage_id: busy.usage_id().clone(),
+                owner_email: busy.owner_email().clone(),
+                resources: vec![availability.resource().clone()],
+                ends_at: busy.period().end(),
+            }),
         }
     }
 
     reservations
-        .into_iter()
-        .map(|(_, reservation)| reservation)
-        .collect()
 }
 
 /// 予約者の表示名（解決できていなければメールアドレス）

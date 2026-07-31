@@ -90,7 +90,7 @@ fn name_width_of(servers: &[Server]) -> usize {
         .map(|server| server.name.chars().count())
         .chain(std::iter::once(HEADER_LABEL.chars().count()))
         .max()
-        .unwrap_or_else(|| HEADER_LABEL.chars().count())
+        .expect("見出しの幅を常に含めるため、最大値は必ず求まる")
         + NAME_PADDING
 }
 
