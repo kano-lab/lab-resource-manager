@@ -62,6 +62,8 @@ pub mod notify_future_resource_usage_changes;
 pub mod reconcile_observed_usages;
 #[cfg(test)]
 mod reconcile_observed_usages_tests;
+/// 進行中のリソース使用予定を今の時点で締めるユースケース
+pub mod release_resource_usage_early;
 /// リソース使用予定を更新するユースケース
 pub mod update_resource_usage;
 
@@ -74,4 +76,5 @@ pub use list_all_future_resource_usages::ListAllFutureResourceUsagesUseCase;
 pub use list_user_resource_usages::ListUserResourceUsagesUseCase;
 pub use notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase;
 pub use reconcile_observed_usages::ReconcileObservedUsagesUseCase;
+pub use release_resource_usage_early::ReleaseResourceUsageEarlyUseCase;
 pub use update_resource_usage::UpdateResourceUsageUseCase;
