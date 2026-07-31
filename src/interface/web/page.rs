@@ -8,7 +8,7 @@ use crate::infrastructure::config::ResourceConfig;
 use crate::interface::web::query::ReservationQuery;
 use crate::interface::web::timeline;
 use crate::interface::web::view::{failure, timeline_page};
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, Utc};
 use chrono_tz::Tz;
 use std::sync::Arc;
 use topcoat::{
@@ -96,18 +96,70 @@ async fn index(cx: &Cx) -> Result {
     }
 }
 
-/// 表示範囲は表示タイムゾーンでの当日0時から`days`日間
+/// 表示範囲は表示タイムゾーンでの当日の始まりから`days`日分
 ///
 /// 日の変わり目に合わせておくと目盛りが揃い、進行中の予約も視野に入る。
+/// 一定の時間を足すのではなく現地の日付で数える。夏時間で一日の長さが変わる日を
+/// またぐと、72時間が3日ぶんにならないため。
+///
+/// 実在する日には必ず始まりの時刻があるため、以下のフォールバックは
+/// タイムゾーンのデータが壊れているときの保険にすぎない。画面を落とさないことを優先し、
+/// 多少ずれた範囲を出す方を選んでいる。
 fn display_window(now: DateTime<Utc>, days: i64, tz: Tz) -> TimePeriod {
-    let local_now = now.with_timezone(&tz);
-    let midnight = local_now
-        .date_naive()
-        .and_hms_opt(0, 0, 0)
-        .and_then(|naive| tz.from_local_datetime(&naive).earliest())
-        .unwrap_or(local_now);
+    let today = now.with_timezone(&tz).date_naive();
 
-    let start = midnight.with_timezone(&Utc);
+    let start = timeline::day_start(today, tz)
+        .map(|at| at.with_timezone(&Utc))
+        .unwrap_or(now);
+
+    let end = today
+        .checked_add_signed(Duration::days(days))
+        .and_then(|date| timeline::day_start(date, tz))
+        .map(|at| at.with_timezone(&Utc))
+        .unwrap_or(start + Duration::days(days));
+
     // 日数は1以上に丸めてあるので、開始と終了が同じ時刻になることはない
-    TimePeriod::new(start, start + Duration::days(days)).expect("表示範囲の開始は終了より前になる")
+    TimePeriod::new(start, end).expect("表示範囲の開始は終了より前になる")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    /// 現地時刻の表記に直す
+    fn local(at: DateTime<Utc>, tz: Tz) -> String {
+        at.with_timezone(&tz).format("%Y-%m-%d %H:%M").to_string()
+    }
+
+    #[test]
+    fn the_window_starts_at_the_beginning_of_today() {
+        let tokyo = chrono_tz::Asia::Tokyo;
+        let now = tokyo
+            .with_ymd_and_hms(2026, 8, 3, 14, 30, 0)
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let window = display_window(now, 7, tokyo);
+
+        assert_eq!(local(window.start(), tokyo), "2026-08-03 00:00");
+        assert_eq!(local(window.end(), tokyo), "2026-08-10 00:00");
+    }
+
+    #[test]
+    fn the_window_spans_whole_local_days_across_a_clock_shift() {
+        // 夏時間の始まる日は現地の一日が23時間しかない。一定時間を足す数え方だと
+        // 「3日ぶん」が現地の3日と1時間になってしまう。
+        let berlin = chrono_tz::Europe::Berlin;
+        let now = berlin
+            .with_ymd_and_hms(2026, 3, 28, 12, 0, 0)
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let window = display_window(now, 3, berlin);
+
+        assert_eq!(local(window.start(), berlin), "2026-03-28 00:00");
+        assert_eq!(local(window.end(), berlin), "2026-03-31 00:00");
+        assert_eq!((window.end() - window.start()).num_hours(), 71);
+    }
 }

@@ -9,7 +9,7 @@
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod};
 use crate::infrastructure::config::ResourceConfig;
-use chrono::{DateTime, Duration, Timelike, Utc};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
 
 /// 行の同一性
@@ -38,7 +38,6 @@ impl RowKey {
 /// 表示範囲に収めた予約1件
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimelineBlock {
-    pub id: String,
     /// 所有者。メールアドレス全体は出さず、ローカルパートのみ
     pub owner: String,
     pub notes: Option<String>,
@@ -215,7 +214,6 @@ fn to_block(usage: &ResourceUsage, window: &TimePeriod, tz: Tz) -> TimelineBlock
     let end_offset = (period.end() - window.start()).num_seconds() as f64;
 
     TimelineBlock {
-        id: usage.id().as_str().to_string(),
         owner: local_part(usage.owner_email().as_str()),
         notes: usage.notes().cloned(),
         start: period.start().with_timezone(&tz),
@@ -236,61 +234,90 @@ fn local_part(email: &str) -> String {
 
 /// 時間軸の目盛りを作る
 ///
-/// 日の変わり目は必ず引き、表示期間が短いときだけ時刻の補助目盛りを足す。
+/// 現地の日付を軸に、各日の0時から一定の刻みで積む。一定の間隔で時刻を足していく
+/// やり方だと、夏時間の始まる日（現地の一日が23時間しかない）で刻みが日付の
+/// 変わり目からずれ、その日の見出しが消えてしまう。
 fn build_ticks(window: &TimePeriod, tz: Tz) -> Vec<Tick> {
     let span_hours = (window.end() - window.start()).num_hours();
     let step = tick_step_hours(span_hours);
 
     let mut ticks = Vec::new();
-    let mut at = first_tick_at(window.start().with_timezone(&tz), step);
+    let mut date = window.start().with_timezone(&tz).date_naive();
+    let last_date = window.end().with_timezone(&tz).date_naive();
 
-    while at < window.end().with_timezone(&tz) {
-        let is_day_boundary = at.hour() == 0;
-        let label = if is_day_boundary {
-            at.format("%-m/%-d (%a)").to_string()
-        } else {
-            at.format("%-H:%M").to_string()
-        };
-
-        if let Some(ratio) = ratio_within(at.with_timezone(&Utc), window) {
-            ticks.push(Tick {
-                label,
-                ratio,
-                is_day_boundary,
-            });
+    while date <= last_date {
+        for hour in (0..24).step_by(step) {
+            if let Some(tick) = tick_at(date, hour, window, tz) {
+                ticks.push(tick);
+            }
         }
 
-        at += Duration::hours(step);
+        let Some(next) = date.succ_opt() else { break };
+        date = next;
     }
 
     ticks
 }
 
-/// 目盛りの間隔。表示が詰まりすぎない程度に粗くする
-fn tick_step_hours(span_hours: i64) -> i64 {
+/// 現地の`date`の`hour`時に目盛りを置く
+///
+/// 表示範囲の外なら`None`。夏時間の切り替えで存在しない時刻も`None`になる。
+/// 終端ちょうどは範囲の終わりであって内側ではない。ここに翌日の見出しを置くと、
+/// 表示していない日まで並んでいるように見える。
+fn tick_at(date: NaiveDate, hour: u32, window: &TimePeriod, tz: Tz) -> Option<Tick> {
+    let is_day_boundary = hour == 0;
+
+    // 日の見出しはその日が始まる瞬間に置く。真夜中に夏時間が切り替わる地域では
+    // 0時が存在しない日があり、そこでは日の始まりが1時になる。
+    let at = if is_day_boundary {
+        day_start(date, tz)?
+    } else {
+        local_time(date, hour, tz)?
+    };
+
+    let at_utc = at.with_timezone(&Utc);
+    if at_utc >= window.end() {
+        return None;
+    }
+
+    let ratio = ratio_within(at_utc, window)?;
+
+    Some(Tick {
+        label: if is_day_boundary {
+            at.format("%-m/%-d (%a)").to_string()
+        } else {
+            at.format("%-H:%M").to_string()
+        },
+        ratio,
+        is_day_boundary,
+    })
+}
+
+/// 現地の`date`が始まる瞬間
+///
+/// 通常は0時。真夜中に夏時間が切り替わる地域では0時が飛ぶ日があるので、
+/// その日で最初に存在する時刻を採る。
+pub(crate) fn day_start(date: NaiveDate, tz: Tz) -> Option<DateTime<Tz>> {
+    (0..24).find_map(|hour| local_time(date, hour, tz))
+}
+
+/// 現地の`date`の`hour`時。夏時間で存在しない時刻なら`None`
+///
+/// 秋に時計が巻き戻る日は同じ時刻が二度訪れる。目盛りは一度きりでよいので早い方を採る。
+fn local_time(date: NaiveDate, hour: u32, tz: Tz) -> Option<DateTime<Tz>> {
+    date.and_hms_opt(hour, 0, 0)
+        .and_then(|naive| tz.from_local_datetime(&naive).earliest())
+}
+
+/// 目盛りの間隔（時間）。表示が詰まりすぎない程度に粗くする
+///
+/// 24を割り切る値だけを返す。日の変わり目に必ず目盛りが来るようにするため。
+fn tick_step_hours(span_hours: i64) -> usize {
     match span_hours {
         ..=24 => 3,
         25..=72 => 6,
         73..=240 => 12,
         _ => 24,
-    }
-}
-
-/// 表示開始以降で最初に目盛りが来る時刻へ切り上げる
-fn first_tick_at(start: DateTime<Tz>, step_hours: i64) -> DateTime<Tz> {
-    let truncated = start
-        .with_minute(0)
-        .and_then(|at| at.with_second(0))
-        .and_then(|at| at.with_nanosecond(0))
-        .unwrap_or(start);
-
-    let remainder = truncated.hour() as i64 % step_hours;
-    let aligned = truncated - Duration::hours(remainder);
-
-    if aligned < start {
-        aligned + Duration::hours(step_hours)
-    } else {
-        aligned
     }
 }
 

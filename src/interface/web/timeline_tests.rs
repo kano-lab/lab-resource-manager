@@ -2,7 +2,7 @@ use super::*;
 use crate::domain::aggregates::resource_usage::value_objects::{Gpu, UsageId};
 use crate::domain::common::EmailAddress;
 use crate::infrastructure::config::{DeviceConfig, RoomConfig, ServerConfig};
-use chrono::TimeZone;
+use chrono::Duration;
 
 fn config() -> ResourceConfig {
     ResourceConfig {
@@ -326,4 +326,97 @@ fn the_ticks_include_the_day_boundaries() {
             .iter()
             .all(|tick| (0.0..=1.0).contains(&tick.ratio))
     );
+}
+
+#[test]
+fn every_day_gets_its_boundary_even_across_a_clock_shift() {
+    // 夏時間の始まる日は現地の一日が23時間しかない。時間を一定間隔で足していくと
+    // 刻みが日付の変わり目からずれ、その日の見出しが消える。
+    let berlin = chrono_tz::Europe::Berlin;
+    let start = berlin
+        .with_ymd_and_hms(2026, 3, 28, 0, 0, 0)
+        .unwrap()
+        .with_timezone(&Utc);
+    let end = start + Duration::days(3);
+
+    let timeline = build(&config(), &[], &window(start, end), start, berlin);
+
+    let boundaries: Vec<&str> = timeline
+        .ticks
+        .iter()
+        .filter(|tick| tick.is_day_boundary)
+        .map(|tick| tick.label.as_str())
+        .collect();
+
+    // 72時間ぶんを表示する。夏時間の始まる日は現地の一日が23時間しかないので、
+    // 現地では3日と1時間にまたがり、4つの日付が視野に入る。
+    assert_eq!(
+        boundaries,
+        vec!["3/28 (Sat)", "3/29 (Sun)", "3/30 (Mon)", "3/31 (Tue)"]
+    );
+}
+
+#[test]
+fn the_far_end_of_the_window_does_not_get_a_tick() {
+    // 終端は表示範囲の終わりであって内側ではない。ここに見出しを置くと、
+    // 表示していない日まで並んでいるように見える。
+    let timeline = build(
+        &config(),
+        &[],
+        &window(at(1, 0), at(4, 0)),
+        at(1, 0),
+        tokyo(),
+    );
+
+    let labels: Vec<&str> = timeline
+        .ticks
+        .iter()
+        .filter(|tick| tick.is_day_boundary)
+        .map(|tick| tick.label.as_str())
+        .collect();
+
+    // 8/1 0:00 から3日間なら、見出しは8/1・8/2・8/3の3つ。8/4は出ない
+    assert_eq!(labels.len(), 3, "見出しが{:?}", labels);
+}
+
+#[test]
+fn a_day_without_a_midnight_still_gets_its_heading() {
+    // ベイルートの夏時間は真夜中に始まる。2026-03-29の0時は存在せず、
+    // その日は1時から始まる。0時ちょうどだけを見ていると見出しを落とす。
+    let beirut = chrono_tz::Asia::Beirut;
+    let start = beirut
+        .with_ymd_and_hms(2026, 3, 28, 0, 0, 0)
+        .unwrap()
+        .with_timezone(&Utc);
+
+    let timeline = build(
+        &config(),
+        &[],
+        &window(start, start + Duration::days(3)),
+        start,
+        beirut,
+    );
+
+    let boundaries: Vec<&str> = timeline
+        .ticks
+        .iter()
+        .filter(|tick| tick.is_day_boundary)
+        .map(|tick| tick.label.as_str())
+        .collect();
+
+    assert!(
+        boundaries.contains(&"3/29 (Sun)"),
+        "0時のない日の見出しが落ちている: {:?}",
+        boundaries
+    );
+}
+
+#[test]
+fn the_start_of_a_day_falls_back_to_the_first_hour_that_exists() {
+    let beirut = chrono_tz::Asia::Beirut;
+    let date = chrono::NaiveDate::from_ymd_opt(2026, 3, 29).unwrap();
+
+    let at = day_start(date, beirut).expect("その日に存在する時刻があるはず");
+
+    assert_eq!(at.format("%Y-%m-%d %H:%M").to_string(), "2026-03-29 01:00");
 }
