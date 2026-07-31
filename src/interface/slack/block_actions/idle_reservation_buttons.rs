@@ -3,17 +3,17 @@
 //! 予約者に示す3つの答え（今で終了する・まだ使う・予約を取り消す）を扱う。
 //! いずれも押したあとはメッセージを結果で置き換え、ボタンを残さない。
 
-use crate::application::error::ApplicationError;
 use crate::domain::aggregates::resource_usage::value_objects::UsageId;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::{RepositoryError, ResourceUsageRepository};
+use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
-use crate::interface::slack::block_actions::release_early_button;
 use crate::interface::slack::constants::{
     ACTION_IDLE_CANCEL, ACTION_IDLE_KEEP, ACTION_IDLE_RELEASE,
 };
-use crate::interface::slack::utility::{interaction_reply, reservation_summary, user_resolver};
+use crate::interface::slack::utility::{
+    interaction_reply, reservation_failure, reservation_summary, user_resolver,
+};
 use slack_morphism::prelude::*;
 use tracing::{error, info, warn};
 
@@ -113,7 +113,7 @@ where
                 origin = "slack",
                 "releasing the idle reservation was refused"
             );
-            release_early_button::build_failure_message(&failure)
+            reservation_failure::release_message(&failure)
         }
     }
 }
@@ -148,19 +148,8 @@ where
                 origin = "slack",
                 "cancelling the idle reservation was refused"
             );
-            build_cancel_failure_message(&failure)
+            reservation_failure::cancel_message(&failure)
         }
-    }
-}
-
-/// 取り消せなかった理由を利用者に伝える文面を組み立てる（純粋関数、ユニットテスト対象）
-fn build_cancel_failure_message(failure: &ApplicationError) -> String {
-    match failure {
-        ApplicationError::Repository(RepositoryError::NotFound) => {
-            "ℹ️ この予約はすでに取り消されています。".to_string()
-        }
-        ApplicationError::Unauthorized(_) => "❌ 自分の予約だけを取り消せます。".to_string(),
-        other => format!("❌ 予約を取り消せませんでした: {}", other),
     }
 }
 
@@ -205,29 +194,5 @@ async fn reply<R, N>(
     );
     if let Err(e) = session.chat_post_message(&post_req).await {
         error!(error = %e, "sending the outcome message failed");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_reservation_that_is_already_gone_is_reported_as_such() {
-        let message =
-            build_cancel_failure_message(&ApplicationError::Repository(RepositoryError::NotFound));
-
-        assert!(message.contains("すでに取り消されています"), "{message}");
-    }
-
-    #[test]
-    fn someone_elses_reservation_is_refused_in_plain_words() {
-        let message =
-            build_cancel_failure_message(&ApplicationError::Unauthorized("forbidden".to_string()));
-
-        assert!(
-            !message.contains("forbidden"),
-            "内部のエラー文字列をそのまま見せない: {message}"
-        );
     }
 }

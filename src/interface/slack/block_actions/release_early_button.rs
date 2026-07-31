@@ -1,13 +1,14 @@
 //! 予約を今の時点で終了するボタンハンドラ
 
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::resource_usage::errors::ResourceUsageError;
 use crate::domain::aggregates::resource_usage::value_objects::UsageId;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::{RepositoryError, ResourceUsageRepository};
+use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
-use crate::interface::slack::utility::{interaction_reply, reservation_summary, user_resolver};
+use crate::interface::slack::utility::{
+    interaction_reply, reservation_failure, reservation_summary, user_resolver,
+};
 use slack_morphism::prelude::*;
 use tracing::{error, info, warn};
 
@@ -67,7 +68,7 @@ where
         }
         Err(failure) => {
             log_failure(&usage_id, failure);
-            build_failure_message(failure)
+            reservation_failure::release_message(failure)
         }
     };
 
@@ -105,69 +106,5 @@ fn log_failure(usage_id: &UsageId, failure: &ApplicationError) {
             origin = "slack",
             "releasing the reservation early failed"
         ),
-    }
-}
-
-/// 終了できなかった理由を利用者に伝える文面を組み立てる（純粋関数、ユニットテスト対象）
-///
-/// 未使用予約のお知らせDMからの終了でも同じ理由が返るため、そちらとも共有する。
-pub(super) fn build_failure_message(failure: &ApplicationError) -> String {
-    match failure {
-        ApplicationError::ResourceUsage(ResourceUsageError::NotYetStarted { .. }) => {
-            "ℹ️ この予約はまだ始まっていません。使わないのであれば「❌ キャンセル」で取り消してください。"
-                .to_string()
-        }
-        ApplicationError::ResourceUsage(ResourceUsageError::AlreadyEnded { .. }) => {
-            "ℹ️ この予約はすでに終わっています。".to_string()
-        }
-        ApplicationError::Repository(RepositoryError::NotFound) => {
-            "❌ この予約は見つかりませんでした。すでに取り消されている可能性があります。".to_string()
-        }
-        ApplicationError::Unauthorized(_) => "❌ 自分の予約だけを終了できます。".to_string(),
-        other => format!("❌ 予約を終了できませんでした: {}", other),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::Utc;
-
-    #[test]
-    fn a_reservation_that_has_not_started_points_at_cancelling() {
-        let message = build_failure_message(&ApplicationError::ResourceUsage(
-            ResourceUsageError::NotYetStarted {
-                start: Utc::now(),
-                at: Utc::now(),
-            },
-        ));
-
-        assert!(
-            message.contains("キャンセル"),
-            "取り消しが正しい操作であることを伝えるべき: {message}"
-        );
-    }
-
-    #[test]
-    fn a_reservation_that_has_ended_is_reported_as_settled() {
-        let message = build_failure_message(&ApplicationError::ResourceUsage(
-            ResourceUsageError::AlreadyEnded {
-                end: Utc::now(),
-                at: Utc::now(),
-            },
-        ));
-
-        assert!(message.contains("すでに終わっています"), "{message}");
-    }
-
-    #[test]
-    fn someone_elses_reservation_is_refused_in_plain_words() {
-        let message =
-            build_failure_message(&ApplicationError::Unauthorized("forbidden".to_string()));
-
-        assert!(
-            !message.contains("forbidden"),
-            "内部のエラー文字列をそのまま見せない: {message}"
-        );
     }
 }
