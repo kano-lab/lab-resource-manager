@@ -163,6 +163,9 @@ where
         let sessions = Self::group_into_sessions(unreserved);
         let session_count = sessions.len();
 
+        self.forget_opportunities_that_ended(&sessions).await;
+        self.forget_reservations_that_ended(&current_usages).await;
+
         for session in sessions {
             if let Err(e) = self.propose_for_session(&session).await {
                 failures += 1;
@@ -182,6 +185,44 @@ where
         );
 
         Ok(())
+    }
+
+    /// 観測から消えた機会についての「提案済み」を忘れる
+    ///
+    /// 使い終わった機会に提案することはもうない。記録を持ち続けても増えていくだけで、
+    /// 同じ機会が戻ってくることもない（使い直せば開始時刻が変わり、別の機会になる）。
+    async fn forget_opportunities_that_ended(&self, sessions: &[Vec<ObservedUsage>]) {
+        let still_running: HashSet<ProposedSessionKey> = sessions
+            .iter()
+            .filter_map(|session| {
+                let first = session.first()?;
+                let resources: Vec<Resource> = session
+                    .iter()
+                    .map(|usage| usage.resource().clone())
+                    .collect();
+                Some(Self::session_key(first, &resources))
+            })
+            .collect();
+
+        self.proposed_keys
+            .lock()
+            .await
+            .retain(|key| still_running.contains(key));
+    }
+
+    /// 終わった予約についての「通知済み」を忘れる
+    ///
+    /// 予約が終われば、その予約を巡って知らせることはもうない。
+    async fn forget_reservations_that_ended(&self, in_progress: &[ResourceUsage]) {
+        let still_running: HashSet<&str> = in_progress
+            .iter()
+            .map(|reservation| reservation.id().as_str())
+            .collect();
+
+        self.notified_unauthorized_keys
+            .lock()
+            .await
+            .retain(|(_, usage_id, _)| still_running.contains(usage_id.as_str()));
     }
 
     /// 未予約の利用を「同じ機会に使い始めた一群」へ分ける
