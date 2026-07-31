@@ -61,9 +61,41 @@ fn no_displays() -> HashMap<EmailAddress, String> {
     HashMap::new()
 }
 
-/// メッセージ全体を1つの文字列にして、載っているかどうかを見る
+/// メッセージに載っている文言を、ブロックの並び順につないで取り出す
 fn rendered(content: &SlackMessageContent) -> String {
-    format!("{:?}", content)
+    content
+        .blocks
+        .iter()
+        .flatten()
+        .filter_map(|block| match block {
+            SlackBlock::Section(section) => section.text.as_ref().map(block_text),
+            SlackBlock::Context(context) => Some(
+                context
+                    .elements
+                    .iter()
+                    .map(context_element_text)
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            ),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn block_text(text: &SlackBlockText) -> String {
+    match text {
+        SlackBlockText::MarkDown(markdown) => markdown.text.clone(),
+        SlackBlockText::Plain(plain) => plain.text.clone(),
+    }
+}
+
+fn context_element_text(element: &SlackContextBlockElement) -> String {
+    match element {
+        SlackContextBlockElement::MarkDown(markdown) => markdown.text.clone(),
+        SlackContextBlockElement::Plain(plain) => plain.text.clone(),
+        SlackContextBlockElement::Image(_) => String::new(),
+    }
 }
 
 #[test]

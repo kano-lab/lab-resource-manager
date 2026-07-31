@@ -12,7 +12,7 @@
 //!
 //! - `grid`: GPUの埋まり具合を表す記号の表
 
-pub mod grid;
+mod grid;
 
 use crate::domain::aggregates::resource_usage::value_objects::{Resource, UsageId};
 use crate::domain::common::EmailAddress;
