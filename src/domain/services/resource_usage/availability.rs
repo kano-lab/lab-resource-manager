@@ -115,19 +115,15 @@ impl ResourceAvailability {
 
     /// 指定時刻以降で最も早く空く時刻
     ///
+    /// 指定時刻がすでに空き区間の中にあれば、その時刻自体を返す。
     /// 対象期間の終わりまで埋まっていれば`None`。
     pub fn next_free_at(&self, instant: DateTime<Utc>) -> Option<DateTime<Utc>> {
+        // 空き区間は開始順で互いに重ならないため、指定時刻より後に終わる最初の区間が
+        // 指定時刻以降に使える最初の空きになる
         self.free_periods
             .iter()
-            .map(TimePeriod::start)
-            .find(|start| *start >= instant)
-            .or_else(|| {
-                // 指定時刻が空き区間の途中にあれば、その時刻自体が答えになる
-                self.free_periods
-                    .iter()
-                    .find(|period| period.start() <= instant && instant < period.end())
-                    .map(|_| instant)
-            })
+            .find(|period| period.end() > instant)
+            .map(|period| period.start().max(instant))
     }
 }
 
@@ -458,6 +454,36 @@ mod tests {
             availability.next_free_at(at(10)),
             Some(at(10)),
             "いま空いているなら、待つ必要はない"
+        );
+    }
+
+    #[test]
+    fn a_resource_free_between_two_reservations_is_usable_right_now() {
+        let usages = vec![
+            reservation("a@example.com", vec![gpu(0)], 13, 15),
+            reservation("b@example.com", vec![gpu(0)], 17, 19),
+        ];
+        let availability = availability_of(&gpu(0), &usages);
+
+        assert_eq!(
+            availability.next_free_at(at(10)),
+            Some(at(10)),
+            "先に予約が控えていても、いま空いているなら待つ必要はない"
+        );
+    }
+
+    #[test]
+    fn a_busy_resource_reports_the_first_gap_not_a_later_one() {
+        let usages = vec![
+            reservation("a@example.com", vec![gpu(0)], 9, 13),
+            reservation("b@example.com", vec![gpu(0)], 15, 17),
+        ];
+        let availability = availability_of(&gpu(0), &usages);
+
+        assert_eq!(
+            availability.next_free_at(at(10)),
+            Some(at(13)),
+            "予約の合間も使える時間なので、その後の空きを答えてはいけない"
         );
     }
 
