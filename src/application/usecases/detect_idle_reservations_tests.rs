@@ -2,9 +2,8 @@
 //!
 //! 予約者本人に使われていない予約の見分け方と、知らせる/知らせない条件を検証する。
 
-use crate::application::usecases::detect_idle_reservations::{
-    DetectIdleReservationsUseCase, IdleNoticeLog,
-};
+use crate::application::idle_notice_log::IdleNoticeLog;
+use crate::application::usecases::detect_idle_reservations::DetectIdleReservationsUseCase;
 use crate::application::usecases::test_support::InMemoryIdentityLinkRepository;
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
