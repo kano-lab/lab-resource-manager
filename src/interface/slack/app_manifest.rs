@@ -80,7 +80,7 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
         usage_hint: None,
     },
     SlashCommandSpec {
-        command: "/status",
+        command: "/lrm-status",
         description_en: "Report whether usage monitoring is working (admin)",
         description_ja: "実利用の監視の稼働状況を表示する（管理者用）",
         usage_hint: None,
@@ -348,6 +348,48 @@ mod tests {
                     .any(|spec| spec.command == format!("/{}", command)),
                 "/{} を受け取っているが、マニフェストに宣言がない（Slackに登録されず届かない）",
                 command
+            );
+        }
+    }
+
+    /// Slackがビルトインとして持ち、アプリには使わせないコマンド
+    ///
+    /// 公式に完全な一覧は公開されていないため、これは踏んだものと広く知られたものに限る。
+    /// ここに無いからといって登録できるとは限らない。確実なのは`/lrm-`のように
+    /// アプリが分かる接頭辞を付けることで、他アプリとの衝突も同時に避けられる。
+    const KNOWN_RESERVED_COMMANDS: &[&str] = &[
+        "/apps",
+        "/away",
+        "/call",
+        "/collapse",
+        "/dm",
+        "/expand",
+        "/feed",
+        "/invite",
+        "/join",
+        "/leave",
+        "/me",
+        "/msg",
+        "/mute",
+        "/open",
+        "/prefs",
+        "/remind",
+        "/rename",
+        "/search",
+        "/shrug",
+        "/status",
+        "/topic",
+        "/who",
+        "/whois",
+    ];
+
+    #[test]
+    fn no_command_collides_with_a_slack_builtin() {
+        for spec in SLASH_COMMANDS {
+            assert!(
+                !KNOWN_RESERVED_COMMANDS.contains(&spec.command),
+                "{} はSlackが自前で持つコマンドで、アプリには登録できない",
+                spec.command
             );
         }
     }

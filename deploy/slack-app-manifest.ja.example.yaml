@@ -23,7 +23,7 @@ features:
     - command: "/mcp-token"
       description: "MCPアクセストークンを発行する"
       should_escape: false
-    - command: "/status"
+    - command: "/lrm-status"
       description: "実利用の監視の稼働状況を表示する（管理者用）"
       should_escape: false
 oauth_config:

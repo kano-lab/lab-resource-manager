@@ -452,7 +452,7 @@ sudo systemctl enable lab-resource-manager
 実利用の監視がいま効いているかは、Slackから確認できます:
 
 ```text
-/status
+/lrm-status
 ```
 
 動いているlab-resource-managerのバージョンと起動からの経過時間、サーバーごとのレポートの
@@ -480,7 +480,7 @@ sudo systemctl enable lab-resource-manager
 監視が止まっていても、未予約利用の提案と未使用予約のお知らせが黙るだけで、誰にも通知は
 届きません。定期的に確認してください。
 
-このコマンドを使うには、Slackアプリの設定画面でスラッシュコマンド`/status`を登録する必要が
+このコマンドを使うには、Slackアプリの設定画面でスラッシュコマンド`/lrm-status`を登録する必要が
 あります（[api.slack.com/apps](https://api.slack.com/apps) → 対象アプリ → Slash Commands）。
 
 ### ログ

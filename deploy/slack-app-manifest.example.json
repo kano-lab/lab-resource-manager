@@ -37,7 +37,7 @@
         "should_escape": false
       },
       {
-        "command": "/status",
+        "command": "/lrm-status",
         "description": "Report whether usage monitoring is working (admin)",
         "should_escape": false
       }

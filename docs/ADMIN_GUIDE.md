@@ -467,7 +467,7 @@ This opens a modal where a radio button switches between two link targets:
 Whether usage monitoring is currently working can be checked from Slack:
 
 ```text
-/status
+/lrm-status
 ```
 
 The reply — visible only to you — states the running version of
@@ -494,7 +494,7 @@ arriving.
 When monitoring stops, the post-hoc reservation proposals and the idle-reservation
 notices simply go quiet — nobody is told. Check this periodically.
 
-Using the command requires registering the `/status` slash command in your Slack
+Using the command requires registering the `/lrm-status` slash command in your Slack
 app settings ([api.slack.com/apps](https://api.slack.com/apps) → your app → Slash
 Commands).
 

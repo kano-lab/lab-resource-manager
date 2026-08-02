@@ -47,7 +47,9 @@ where
             "/mcp-token" => {
                 crate::interface::slack::slash_commands::mcp_token::handle(self, event).await
             }
-            "/status" => crate::interface::slack::slash_commands::status::handle(self, event).await,
+            "/lrm-status" => {
+                crate::interface::slack::slash_commands::lrm_status::handle(self, event).await
+            }
             "/free" => crate::interface::slack::slash_commands::free::handle(self, event).await,
             _ => Ok(SlackCommandEventResponse::new(
                 SlackMessageContent::new().with_text(format!("不明なコマンド: {}", command)),

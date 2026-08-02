@@ -23,7 +23,7 @@ features:
     - command: "/mcp-token"
       description: "Issue an MCP access token"
       should_escape: false
-    - command: "/status"
+    - command: "/lrm-status"
       description: "Report whether usage monitoring is working (admin)"
       should_escape: false
 oauth_config:
