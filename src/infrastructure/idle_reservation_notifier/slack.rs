@@ -1,13 +1,12 @@
 //! Slack DM経由の未使用予約の通知実装
 
-use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-use crate::domain::common::EmailAddress;
 use crate::domain::ports::idle_reservation_notifier::{IdleReservation, IdleReservationNotifier};
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::repositories::IdentityLinkRepository;
 use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
 use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
+use crate::infrastructure::slack_direct_message::SlackDirectMessenger;
 use async_trait::async_trait;
 use chrono::{DateTime, Local, Utc};
 use slack_morphism::prelude::*;
@@ -20,9 +19,7 @@ use crate::interface::slack::constants::{
 
 /// Slack DM経由で未使用の予約を予約者へ知らせる実装
 pub struct SlackIdleReservationNotifier {
-    slack_client: Arc<SlackHyperClient>,
-    bot_token: SlackApiToken,
-    identity_repo: Arc<dyn IdentityLinkRepository>,
+    messenger: SlackDirectMessenger,
 }
 
 impl SlackIdleReservationNotifier {
@@ -33,41 +30,8 @@ impl SlackIdleReservationNotifier {
         identity_repo: Arc<dyn IdentityLinkRepository>,
     ) -> Self {
         Self {
-            slack_client,
-            bot_token,
-            identity_repo,
+            messenger: SlackDirectMessenger::new(slack_client, bot_token, identity_repo),
         }
-    }
-
-    /// 予約者のSlackユーザーIDを解決する
-    async fn resolve_slack_user_id(
-        &self,
-        owner_email: &EmailAddress,
-    ) -> Result<SlackUserId, NotificationError> {
-        let identity_link = self
-            .identity_repo
-            .find_by_email(owner_email)
-            .await
-            .map_err(|e| {
-                NotificationError::RepositoryError(format!("IdentityLink取得失敗: {}", e))
-            })?
-            .ok_or_else(|| {
-                NotificationError::SendFailure(format!(
-                    "IdentityLink未登録のためDMを送信できません: {}",
-                    owner_email.as_str()
-                ))
-            })?;
-
-        let slack_identity = identity_link
-            .get_identity_for_system(&ExternalSystem::Slack)
-            .ok_or_else(|| {
-                NotificationError::SendFailure(format!(
-                    "Slackアカウント未リンクのためDMを送信できません: {}",
-                    owner_email.as_str()
-                ))
-            })?;
-
-        Ok(SlackUserId::new(slack_identity.user_id().to_string()))
     }
 }
 
@@ -75,35 +39,13 @@ impl SlackIdleReservationNotifier {
 impl IdleReservationNotifier for SlackIdleReservationNotifier {
     async fn notify_idle(&self, idle: IdleReservation) -> Result<(), NotificationError> {
         let reservation = idle.reservation();
-        let slack_user_id = self
-            .resolve_slack_user_id(reservation.owner_email())
-            .await?;
-
-        let session = self.slack_client.open_session(&self.bot_token);
-
-        let open_resp = session
-            .conversations_open(
-                &SlackApiConversationsOpenRequest::new().with_users(vec![slack_user_id]),
-            )
-            .await
-            .map_err(|e| {
-                NotificationError::SendFailure(format!("DMチャンネルのオープンに失敗: {}", e))
-            })?;
-
         let text = build_idle_message(reservation, idle.idle_since());
         let blocks = build_idle_blocks(reservation, &text);
 
-        let post_req = SlackApiChatPostMessageRequest::new(
-            open_resp.channel.id,
-            SlackMessageContent::new()
-                .with_text(text)
-                .with_blocks(blocks),
-        );
-
-        let sent = session
-            .chat_post_message(&post_req)
-            .await
-            .map_err(|e| NotificationError::SendFailure(format!("Slack DM送信失敗: {}", e)))?;
+        let sent = self
+            .messenger
+            .send(reservation.owner_email(), text, blocks)
+            .await?;
 
         tracing::info!(
             channel = %sent.channel,
@@ -194,6 +136,7 @@ fn build_idle_blocks(reservation: &ResourceUsage, text: &str) -> Vec<SlackBlock>
 mod tests {
     use super::*;
     use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod};
+    use crate::domain::common::EmailAddress;
     use chrono::Duration;
 
     fn sample_reservation() -> ResourceUsage {
