@@ -1,8 +1,9 @@
 use crate::domain::aggregates::resource_usage::value_objects::Resource;
 use crate::domain::ports::resource_usage_observer::{
-    ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver,
+    ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver, ServerObservation,
 };
 use async_trait::async_trait;
+use chrono::Utc;
 use std::sync::{Arc, Mutex};
 
 /// テスト/開発用のインメモリ観測実装
@@ -25,7 +26,12 @@ impl MockResourceUsageObserver {
     /// 「観測できたが誰も使っていないサーバー」や「観測できなかったサーバー」を
     /// 模擬したい場合は`set_snapshot`を使う。
     pub fn set_active_usages(&self, usages: Vec<ObservedUsage>) {
-        let servers = usages.iter().filter_map(server_of).collect();
+        let now = Utc::now();
+        let servers = usages
+            .iter()
+            .filter_map(server_of)
+            .map(|server| (server, ServerObservation::Observed { generated_at: now }))
+            .collect();
         *self.snapshot.lock().unwrap() = ObservationSnapshot::new(usages, servers);
     }
 

@@ -10,12 +10,12 @@ use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::ResourceUsageRepository;
-use crate::domain::ports::{ObservationSnapshot, ObservedUsage};
+use crate::domain::ports::{ObservationSnapshot, ObservedUsage, ServerObservation};
 use crate::infrastructure::idle_reservation_notifier::MockIdleReservationNotifier;
 use crate::infrastructure::repositories::resource_usage::mock::MockUsageRepository;
 use crate::infrastructure::resource_usage_observer::MockResourceUsageObserver;
 use chrono::{DateTime, Duration, Utc};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 const SERVER: &str = "Thalys";
@@ -97,7 +97,15 @@ fn observed_by(user_id: &str, resource: Resource, active_since: DateTime<Utc>) -
 
 /// 誰の利用も観測されなかったが、サーバーの状態は把握できている観測結果
 fn nobody_is_working() -> ObservationSnapshot {
-    ObservationSnapshot::new(Vec::new(), HashSet::from([SERVER.to_string()]))
+    ObservationSnapshot::new(
+        Vec::new(),
+        HashMap::from([(
+            SERVER.to_string(),
+            ServerObservation::Observed {
+                generated_at: Utc::now(),
+            },
+        )]),
+    )
 }
 
 #[tokio::test]
@@ -176,9 +184,11 @@ async fn a_server_that_cannot_be_observed_says_nothing_about_its_reservations() 
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
 
-    // レポートが届かない（cron停止・鮮度切れ）サーバー
-    f.observer
-        .set_snapshot(ObservationSnapshot::new(Vec::new(), HashSet::new()));
+    // レポートが届かない（cron停止）サーバー
+    f.observer.set_snapshot(ObservationSnapshot::new(
+        Vec::new(),
+        HashMap::from([(SERVER.to_string(), ServerObservation::Missing)]),
+    ));
 
     f.usecase.poll_once().await.unwrap();
 

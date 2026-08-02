@@ -43,6 +43,6 @@ pub use resource_collection_access::{
     ResourceCollectionAccessError, ResourceCollectionAccessService,
 };
 pub use resource_usage_observer::{
-    ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver,
+    ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver, ServerObservation,
 };
 pub use unauthorized_usage_notifier::UnauthorizedUsageNotifier;

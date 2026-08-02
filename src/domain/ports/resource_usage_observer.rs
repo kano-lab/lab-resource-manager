@@ -4,7 +4,7 @@ use crate::domain::errors::DomainError;
 use crate::domain::ports::error::PortError;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fmt;
 
 /// 実サーバー上で観測されたリソース利用の事実
@@ -49,6 +49,35 @@ impl ObservedUsage {
     }
 }
 
+/// 1サーバーの利用状況をいま把握できているか
+///
+/// 把握できていないときは、その理由まで持つ。理由は運用者が手を打つ手がかりになる
+/// （届いていない＝収集そのものが止まっている、古い＝収集が滞っている）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServerObservation {
+    /// 把握できている
+    Observed {
+        /// もとになったレポートが作られた時刻
+        generated_at: DateTime<Utc>,
+    },
+    /// レポートが届いていない
+    Missing,
+    /// レポートが古く、いまの利用状況としては使えない
+    Stale {
+        /// 使えないと判断したレポートが作られた時刻
+        generated_at: DateTime<Utc>,
+    },
+    /// レポートを読めない、または解釈できない
+    Unreadable,
+}
+
+impl ServerObservation {
+    /// このサーバーの利用状況を今このとき把握できているか
+    pub fn is_current(&self) -> bool {
+        matches!(self, Self::Observed { .. })
+    }
+}
+
 /// 一度の観測で分かったことのまとまり
 ///
 /// 「利用が観測されなかった」ことと「そのサーバーを観測できなかった」ことは異なる。
@@ -58,7 +87,7 @@ impl ObservedUsage {
 #[derive(Debug, Clone, Default)]
 pub struct ObservationSnapshot {
     usages: Vec<ObservedUsage>,
-    observed_servers: HashSet<String>,
+    servers: HashMap<String, ServerObservation>,
 }
 
 impl ObservationSnapshot {
@@ -66,12 +95,9 @@ impl ObservationSnapshot {
     ///
     /// # Arguments
     /// * `usages` - 観測された利用の一覧
-    /// * `observed_servers` - 利用の有無を把握できたサーバー名の集合
-    pub fn new(usages: Vec<ObservedUsage>, observed_servers: HashSet<String>) -> Self {
-        Self {
-            usages,
-            observed_servers,
-        }
+    /// * `servers` - サーバーごとの観測状態
+    pub fn new(usages: Vec<ObservedUsage>, servers: HashMap<String, ServerObservation>) -> Self {
+        Self { usages, servers }
     }
 
     /// 観測された利用の一覧を取得
@@ -84,12 +110,31 @@ impl ObservationSnapshot {
     /// `false`のサーバーについては、利用の一覧に現れないことが
     /// 「使われていない」ことを意味しない。
     pub fn covers(&self, server: &str) -> bool {
-        self.observed_servers.contains(server)
+        self.servers
+            .get(server)
+            .is_some_and(ServerObservation::is_current)
+    }
+
+    /// サーバーごとの観測状態をサーバー名順に取得
+    ///
+    /// 監視が動いているかを人に見せるための入り口。並び順を決めておくことで、
+    /// 表示のたびにサーバーが入れ替わって読みにくくなるのを防ぐ。
+    pub fn servers(&self) -> Vec<(&str, &ServerObservation)> {
+        let mut servers: Vec<(&str, &ServerObservation)> = self
+            .servers
+            .iter()
+            .map(|(name, observation)| (name.as_str(), observation))
+            .collect();
+        servers.sort_by_key(|(name, _)| *name);
+        servers
     }
 
     /// 利用の有無を把握できたサーバーの数
     pub fn observed_server_count(&self) -> usize {
-        self.observed_servers.len()
+        self.servers
+            .values()
+            .filter(|observation| observation.is_current())
+            .count()
     }
 }
 
