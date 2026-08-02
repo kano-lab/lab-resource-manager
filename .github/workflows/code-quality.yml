@@ -68,6 +68,30 @@ jobs:
       - name: Clippy Check
         run: cargo clippy --workspace --all-targets --all-features -- -Dwarnings
 
+  app-manifest:
+    name: App manifest is current
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fetch Repository
+        uses: actions/checkout@v5
+
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      # コマンドやスコープを足してマニフェストを作り直し忘れると、Slackに登録される
+      # 内容とコードが食い違う。差分が出たらここで止める。
+      - name: Regenerate and compare
+        run: |
+          for lang in en ja; do
+            suffix=""
+            [ "$lang" = "ja" ] && suffix=".ja"
+            for fmt in yaml json; do
+              cargo run --quiet --bin slack-app-manifest -- --format "$fmt" --lang "$lang" > "/tmp/manifest.$lang.$fmt"
+              diff -u "deploy/slack-app-manifest${suffix}.example.${fmt}" "/tmp/manifest.$lang.$fmt"
+            done
+          done
+
   cargo-doc:
     name: Cargo doc
     runs-on: ubuntu-latest

@@ -33,6 +33,7 @@
 //! | Block Kit | `views/` |
 
 pub mod app;
+pub mod app_manifest;
 pub mod async_execution;
 pub mod block_actions;
 pub mod constants;

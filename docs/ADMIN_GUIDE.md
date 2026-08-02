@@ -31,21 +31,41 @@ For development, you can set these as shell environment variables.
 
 **Note**: Notification settings are configured in `config/resources.toml` per resource.
 
-### 2. Register the Slash Commands
+### 2. Configure the Slack App (App Manifest)
 
-In your Slack app settings ([api.slack.com/apps](https://api.slack.com/apps) → your app → Slash Commands),
-register the commands below. A command that is not registered here will not appear in Slack even
-while the bot is running.
+The slash commands and scopes the bot needs are collected in
+`deploy/slack-app-manifest.example.yaml` (or `.json`). A version whose wording is in
+Japanese is available as `deploy/slack-app-manifest.ja.example.yaml`. A command that is not registered
+there will not appear in Slack even while the bot is running.
 
-| Command | Description |
-|---------|-------------|
-| `/free` | List the resources that are free right now |
-| `/reserve` | Reserve a resource |
-| `/register-calendar` | Register your own email address |
-| `/link-user` | Link another person's identity (admin) |
-| `/mcp-token` | Issue an MCP access token |
+**Creating a new app**: at [api.slack.com/apps](https://api.slack.com/apps), choose Create
+New App → From an app manifest, and paste the file's contents.
 
-The bot runs in Socket Mode, so no Request URL is needed.
+**Updating an existing app**: open your app → App Manifest and apply the difference. When a
+command is added, it does not reach Slack until you do this.
+
+The name, description, and color are examples — change them to suit your lab. The slash
+commands and the scopes are what the bot needs in order to work; changing them breaks it.
+
+The manifest is generated from the code. To rebuild it locally:
+
+```bash
+cargo run --bin slack-app-manifest -- --format yaml
+cargo run --bin slack-app-manifest -- --format json
+```
+
+`--lang` switches only the wording; the commands and scopes are the same either way.
+
+Three bot token scopes are required.
+
+| Scope | What it is for |
+|-------|----------------|
+| `commands` | Receiving slash commands |
+| `chat:write` | Posting reservation notifications, replying to actions, rewriting sent messages |
+| `im:write` | Opening the DM channel used to reach someone directly |
+
+The bot runs in Socket Mode, so no Request URL is needed. The app-level token (`xapp-`)
+needs `connections:write`, which is issued from Basic Information rather than the manifest.
 
 ### 3. Repository Implementation Setup (Default: Google Calendar)
 
