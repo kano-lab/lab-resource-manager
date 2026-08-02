@@ -54,7 +54,13 @@ where
 
     // Create and open reservation modal
     let initial_server = config.servers.first().map(|s| s.name.as_str());
-    let modal = reserve::create_reserve_modal(config, None, initial_server, None, None, None, None);
+    let modal = reserve::create_reserve_modal(
+        config,
+        &reserve::ReserveModalParams {
+            selected_server: initial_server,
+            ..Default::default()
+        },
+    );
 
     modals::open(slack_client, bot_token, trigger_id, modal).await?;
 

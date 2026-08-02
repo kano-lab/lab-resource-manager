@@ -95,12 +95,11 @@ where
 
     reserve::create_reserve_modal(
         config,
-        new_resource_type,
-        new_selected_server,
-        None, // No usage_id for modal updates
-        None, // Use default callback_id
-        None, // Use default title
-        None, // Use default submit_text
+        &reserve::ReserveModalParams {
+            resource_type: new_resource_type,
+            selected_server: new_selected_server,
+            ..Default::default()
+        },
     )
 }
 
