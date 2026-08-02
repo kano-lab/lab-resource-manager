@@ -18,7 +18,7 @@ use chrono_tz::Tz;
 /// 設定ファイルの表記と永続化層から復元された表記が食い違うと同じGPUが別行に割れてしまう。
 /// 行を決めるのはサーバー名とデバイス番号であって、モデル名は表示のための情報でしかない。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum RowKey {
+pub(crate) enum RowKey {
     Gpu { server: String, device: u32 },
     Room { name: String },
 }
@@ -37,37 +37,37 @@ impl RowKey {
 
 /// 表示範囲に収めた予約1件
 #[derive(Debug, Clone, PartialEq)]
-pub struct TimelineBlock {
+pub(crate) struct TimelineBlock {
     /// 所有者。メールアドレス全体は出さず、ローカルパートのみ
-    pub owner: String,
-    pub notes: Option<String>,
+    pub(crate) owner: String,
+    pub(crate) notes: Option<String>,
     /// 表示タイムゾーンでの開始・終了（ツールチップ用の実際の時刻）
-    pub start: DateTime<Tz>,
-    pub end: DateTime<Tz>,
+    pub(crate) start: DateTime<Tz>,
+    pub(crate) end: DateTime<Tz>,
     /// 表示範囲に対する位置（0.0〜1.0）
-    pub start_ratio: f64,
-    pub end_ratio: f64,
+    pub(crate) start_ratio: f64,
+    pub(crate) end_ratio: f64,
     /// 表示範囲の外から続いている／外へ続いていく
-    pub clipped_start: bool,
-    pub clipped_end: bool,
+    pub(crate) clipped_start: bool,
+    pub(crate) clipped_end: bool,
 }
 
 impl TimelineBlock {
-    pub fn width_ratio(&self) -> f64 {
+    pub(crate) fn width_ratio(&self) -> f64 {
         self.end_ratio - self.start_ratio
     }
 }
 
 /// タイムラインの1行（1リソース）
 #[derive(Debug, Clone, PartialEq)]
-pub struct TimelineRow {
-    pub key: RowKey,
+pub(crate) struct TimelineRow {
+    pub(crate) key: RowKey,
     /// 行の見出し（例: "GPU#0 (A100)"）
-    pub label: String,
+    pub(crate) label: String,
     /// 行のまとまり（例: サーバー名）。連続する同じ値はまとめて表示できる
-    pub group: String,
+    pub(crate) group: String,
     /// 時間が重なる予約は別レーンへ分ける。潰して隠さない
-    pub lanes: Vec<Vec<TimelineBlock>>,
+    pub(crate) lanes: Vec<Vec<TimelineBlock>>,
 }
 
 impl TimelineRow {
@@ -79,35 +79,31 @@ impl TimelineRow {
             lanes: Vec::new(),
         }
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.lanes.iter().all(|lane| lane.is_empty())
-    }
 }
 
 /// 時間軸の目盛り
 #[derive(Debug, Clone, PartialEq)]
-pub struct Tick {
-    pub label: String,
-    pub ratio: f64,
+pub(crate) struct Tick {
+    pub(crate) label: String,
+    pub(crate) ratio: f64,
     /// 日の変わり目。補助目盛りより強く描く
-    pub is_day_boundary: bool,
+    pub(crate) is_day_boundary: bool,
 }
 
 /// 画面に渡す表示モデル一式
 #[derive(Debug, Clone, PartialEq)]
-pub struct Timeline {
-    pub rows: Vec<TimelineRow>,
-    pub ticks: Vec<Tick>,
+pub(crate) struct Timeline {
+    pub(crate) rows: Vec<TimelineRow>,
+    pub(crate) ticks: Vec<Tick>,
     /// 表示範囲の開始・終了（表示タイムゾーン）
-    pub start: DateTime<Tz>,
-    pub end: DateTime<Tz>,
+    pub(crate) start: DateTime<Tz>,
+    pub(crate) end: DateTime<Tz>,
     /// 現在時刻の位置。表示範囲の外なら`None`
-    pub now_ratio: Option<f64>,
+    pub(crate) now_ratio: Option<f64>,
 }
 
 /// 予約と設定からタイムラインを組み立てる
-pub fn build(
+pub(crate) fn build(
     config: &ResourceConfig,
     usages: &[ResourceUsage],
     window: &TimePeriod,

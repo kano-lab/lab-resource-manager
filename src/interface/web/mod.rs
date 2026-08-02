@@ -11,10 +11,13 @@
 //! 運用に依存している。閲覧専用で書き込みの経路がないこと、所有者はメールアドレスの
 //! ローカルパートしか表示しないことで、露出する情報を抑えている。
 
-pub mod page;
+// 外へ出すのは配線に要る[`serve`]と[`query`]だけに絞る。画面の組み立てに使う型は
+// Topcoatの型を伴い、そのTopcoatは破壊的変更を前提とした0.x系にある。晒さなければ
+// 壊れようがなく、公開APIの互換性がフレームワークの都合に引きずられずに済む。
+pub(crate) mod page;
 pub mod query;
-pub mod timeline;
-pub mod view;
+pub(crate) mod timeline;
+pub(crate) mod view;
 
 use crate::infrastructure::config::ResourceConfig;
 use chrono_tz::Tz;

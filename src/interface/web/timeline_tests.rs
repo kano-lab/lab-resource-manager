@@ -81,7 +81,7 @@ fn every_configured_resource_gets_a_row_even_without_reservations() {
 
     let labels: Vec<&str> = timeline.rows.iter().map(|row| row.label.as_str()).collect();
     assert_eq!(labels, vec!["GPU#0 (A100)", "GPU#1 (A100)", "会議室"]);
-    assert!(timeline.rows.iter().all(|row| row.is_empty()));
+    assert!(timeline.rows.iter().all(|row| row.lanes.is_empty()));
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn a_differing_model_name_still_lands_on_the_same_row() {
     );
 
     assert_eq!(row(&timeline, "GPU#0 (A100)").lanes.len(), 1);
-    assert!(row(&timeline, "GPU#1 (A100)").is_empty());
+    assert!(row(&timeline, "GPU#1 (A100)").lanes.is_empty());
 }
 
 #[test]

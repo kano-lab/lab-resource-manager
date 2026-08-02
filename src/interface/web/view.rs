@@ -36,7 +36,7 @@ fn owner_color(owner: &str) -> String {
 
 /// 予約を読み込めなかったときの表示
 #[component]
-pub async fn failure(message: &str) -> Result {
+pub(crate) async fn failure(message: &str) -> Result {
     view! {
         <div class="min-h-screen bg-slate-950 px-6 py-16 text-slate-100">
             <div class="mx-auto max-w-2xl rounded-lg border border-rose-900 bg-rose-950/40 p-6">
@@ -48,7 +48,7 @@ pub async fn failure(message: &str) -> Result {
 }
 
 #[component]
-pub async fn timeline_page(timeline: &Timeline, days: i64) -> Result {
+pub(crate) async fn timeline_page(timeline: &Timeline, days: i64) -> Result {
     view! {
         <div class="min-h-screen bg-slate-950 text-slate-100">
             header(timeline: timeline, days: days)

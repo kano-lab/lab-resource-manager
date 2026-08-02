@@ -23,7 +23,7 @@ use topcoat::{
 /// `app_context`はRustの型を鍵にして値を引くため、`Tz`をそのまま登録すると
 /// 他の用途で登録された`Tz`と衝突する。専用の型で包んで区別する。
 #[derive(Debug, Clone, Copy)]
-pub struct DisplayTimezone(pub Tz);
+pub(crate) struct DisplayTimezone(pub(crate) Tz);
 
 /// 既定の表示日数
 const DEFAULT_DAYS: i64 = 7;
