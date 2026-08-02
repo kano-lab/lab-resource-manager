@@ -10,8 +10,12 @@
 //!
 //! # モジュール
 //!
+//! - `day`: ある一日の空き時間帯メッセージ
+//! - `days`: 表示する日の選択肢
 //! - `grid`: GPUの埋まり具合を表す記号の表
 
+pub mod day;
+pub mod days;
 mod grid;
 
 use crate::domain::aggregates::resource_usage::value_objects::{Resource, UsageId};
@@ -21,9 +25,18 @@ use crate::domain::services::resource_usage::availability::{
 };
 use crate::infrastructure::config::ResourceStyle;
 use crate::infrastructure::notifier::formatter::{format_resources_styled, to_zoned};
+use crate::interface::slack::constants::{
+    ACTION_FREE_RESERVE, ACTION_FREE_SELECT_DAY, ACTION_FREE_SHOW_DAY,
+};
 use chrono::{DateTime, Utc};
+use days::DayOption;
 use slack_morphism::prelude::*;
 use std::collections::HashMap;
+
+/// 「いま」に戻るボタンが持つ値
+///
+/// 日を表す値（YYYY-MM-DD）と同じ場所に入るため、日付として解釈できない語を選ぶ。
+pub const NOW: &str = "now";
 
 /// 空き状況メッセージを組み立てる
 ///
@@ -32,11 +45,13 @@ use std::collections::HashMap;
 /// * `now` - 状態を判定する時刻
 /// * `timezone` - 時刻表示に使うタイムゾーン名。未指定ならボットのローカル時刻
 /// * `owner_displays` - 予約者の表示名。解決できなかった予約者はメールアドレスで表示する
+/// * `day_options` - 表示する日を切り替える選択肢
 pub fn build(
     availabilities: &[ResourceAvailability],
     now: DateTime<Utc>,
     timezone: Option<&str>,
     owner_displays: &HashMap<EmailAddress, String>,
+    day_options: &[DayOption],
 ) -> SlackMessageContent {
     if availabilities.is_empty() {
         return SlackMessageContent::new()
@@ -73,9 +88,81 @@ pub fn build(
         to_zoned(now, timezone).format("%-m月%-d日 %H:%M")
     )));
 
+    if availabilities
+        .iter()
+        .any(|availability| availability.is_free_at(now))
+    {
+        blocks.push(reserve_action());
+    }
+    blocks.push(day_actions(day_options));
+
     SlackMessageContent::new()
         .with_text(headline)
         .with_blocks(blocks)
+}
+
+/// 空いているものをそのまま予約するためのボタン
+///
+/// 空きがないときは押しても選ぶものがないため、呼び出し側が出し分ける。
+fn reserve_action() -> SlackBlock {
+    let button = SlackBlockButtonElement::new(
+        SlackActionId::new(ACTION_FREE_RESERVE.to_string()),
+        pt!("空いているものを予約"),
+    )
+    .with_style(SlackBlockButtonStyle::Primary);
+
+    SlackBlock::Actions(SlackActionsBlock::new(vec![
+        SlackActionBlockElement::Button(button),
+    ]))
+}
+
+/// 表示する日を切り替える操作
+///
+/// よく使う手前の数日はボタンにして1手で押せるようにし、残りはメニューに送る。
+/// 「いま」へ戻るボタンは常に置く。日を見た後に現在の状況へ帰る道が要る。
+fn day_actions(options: &[DayOption]) -> SlackBlock {
+    let mut elements = vec![SlackActionBlockElement::Button(
+        SlackBlockButtonElement::new(
+            SlackActionId::new(ACTION_FREE_SHOW_DAY.to_string()),
+            pt!("いま"),
+        )
+        .with_value(NOW.to_string()),
+    )];
+
+    for option in days::buttons(options) {
+        elements.push(SlackActionBlockElement::Button(
+            SlackBlockButtonElement::new(
+                SlackActionId::new(format!("{}_{}", ACTION_FREE_SHOW_DAY, option.date)),
+                pt!(option.label.clone()),
+            )
+            .with_value(option.date.to_string()),
+        ));
+    }
+
+    let menu_items = days::menu_items(options);
+    if !menu_items.is_empty() {
+        let choices: Vec<SlackBlockChoiceItem<SlackBlockPlainTextOnly>> = menu_items
+            .iter()
+            .map(|option| {
+                SlackBlockChoiceItem::new(pt!(option.label.clone()), option.date.to_string())
+            })
+            .collect();
+
+        elements.push(SlackActionBlockElement::StaticSelect(
+            SlackBlockStaticSelectElement::new(SlackActionId::new(
+                ACTION_FREE_SELECT_DAY.to_string(),
+            ))
+            .with_placeholder(pt!("他の日"))
+            .with_options(choices),
+        ));
+    }
+
+    SlackBlock::Actions(SlackActionsBlock::new(elements))
+}
+
+/// リソースの短い表記（例: "gpu-server-1 0,1"）
+fn format_resource(resource: &Resource) -> String {
+    format_resources_styled(std::slice::from_ref(resource), ResourceStyle::Compact)
 }
 
 /// 空いている台数を伝える見出し
@@ -144,7 +231,7 @@ fn earliest_free_line(
 
     Some(format!(
         "最も早く空くのは {}（{}）です。",
-        format_resources_styled(std::slice::from_ref(resource), ResourceStyle::Compact),
+        format_resource(resource),
         format_moment(free_at, now, timezone)
     ))
 }

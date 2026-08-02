@@ -390,6 +390,7 @@ fn the_message_answers_before_it_details() {
         now(),
         TOKYO,
         &no_displays(),
+        &[],
     );
 
     assert_eq!(
@@ -406,7 +407,7 @@ fn the_message_answers_before_it_details() {
 
 #[test]
 fn a_lab_with_no_resources_configured_says_so() {
-    let content = build(&[], now(), TOKYO, &no_displays());
+    let content = build(&[], now(), TOKYO, &no_displays(), &[]);
 
     assert_eq!(
         content.text.as_deref(),

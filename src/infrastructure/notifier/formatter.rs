@@ -204,6 +204,36 @@ pub fn to_zoned(
     instant.with_timezone(&Local).fixed_offset()
 }
 
+/// 指定タイムゾーンでの、その日の始まり
+///
+/// 夏時間の切り替えで0時が存在しない日は、その日で最も早い時刻を返す。
+///
+/// # 引数
+/// * `date` - 対象の日（指定タイムゾーンでの暦日）
+/// * `timezone_str` - タイムゾーン名。未指定ならボットのローカルタイムゾーン
+pub fn start_of_day(
+    date: chrono::NaiveDate,
+    timezone_str: Option<&str>,
+) -> Option<chrono::DateTime<Utc>> {
+    use chrono::TimeZone;
+
+    let midnight = date.and_hms_opt(0, 0, 0)?;
+
+    if let Some(tz_str) = timezone_str
+        && let Ok(tz) = tz_str.parse::<Tz>()
+    {
+        return tz
+            .from_local_datetime(&midnight)
+            .earliest()
+            .map(|zoned| zoned.with_timezone(&Utc));
+    }
+
+    Local
+        .from_local_datetime(&midnight)
+        .earliest()
+        .map(|zoned| zoned.with_timezone(&Utc))
+}
+
 /// TimePeriodを指定タイムゾーンに変換
 fn convert_to_timezone(
     period: &TimePeriod,
