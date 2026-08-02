@@ -9,11 +9,14 @@
 //!
 //! # モジュール
 //!
+//! - `availability` - 対象期間における各リソースの空きを算出
 //! - `conflict_checker` - リソースの時間的競合をチェック
 //! - `errors` - サービス層のエラー型定義
 
+pub mod availability;
 pub mod conflict_checker;
 pub mod errors;
 
+pub use availability::{AvailabilityState, BusyPeriod, ResourceAvailability};
 pub use conflict_checker::ResourceConflictChecker;
 pub use errors::ResourceConflictError;

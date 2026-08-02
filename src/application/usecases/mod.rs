@@ -45,6 +45,9 @@
 /// 事後予約提案の受諾
 pub mod accept_reservation_proposal;
 
+/// 指定期間における各リソースの空きを調べるユースケース
+pub mod check_resource_availability;
+
 pub mod create_resource_usage;
 /// リソース使用予定を削除するユースケース
 pub mod delete_resource_usage;
@@ -74,6 +77,7 @@ pub mod test_support;
 pub mod update_resource_usage;
 
 pub use accept_reservation_proposal::AcceptReservationProposalUseCase;
+pub use check_resource_availability::CheckResourceAvailabilityUseCase;
 pub use create_resource_usage::CreateResourceUsageUseCase;
 pub use delete_resource_usage::DeleteResourceUsageUseCase;
 pub use detect_idle_reservations::DetectIdleReservationsUseCase;
