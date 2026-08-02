@@ -1,12 +1,13 @@
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
 use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
 use crate::domain::ports::resource_usage_observer::{
-    ObservationError, ObservedUsage, ResourceUsageObserver,
+    ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver,
 };
 use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::warn;
@@ -76,15 +77,20 @@ impl SharedFileResourceUsageObserver {
             .join(format!("{}.json", server_name.to_lowercase()))
     }
 
-    async fn read_server_report(&self, server_name: &str) -> Vec<ObservedUsage> {
+    /// 1サーバー分のレポートを読む
+    ///
+    /// 利用状況を把握できなかった場合は`None`を返す。読めなかったことと
+    /// 「使われていない」ことを呼び出し側が取り違えないようにするため、
+    /// 空の一覧では表さない。
+    async fn read_server_report(&self, server_name: &str) -> Option<Vec<ObservedUsage>> {
         let path = self.report_path(server_name);
 
         let content = match tokio::fs::read_to_string(&path).await {
             Ok(content) => content,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
             Err(e) => {
                 warn!(path = %path.display(), error = %e, "reading a usage report failed");
-                return Vec::new();
+                return None;
             }
         };
 
@@ -92,7 +98,7 @@ impl SharedFileResourceUsageObserver {
             Ok(report) => report,
             Err(e) => {
                 warn!(path = %path.display(), error = %e, "parsing a usage report failed");
-                return Vec::new();
+                return None;
             }
         };
 
@@ -103,10 +109,10 @@ impl SharedFileResourceUsageObserver {
                 max_staleness_secs = self.max_staleness.num_seconds(),
                 "the usage report is too old; ignoring it"
             );
-            return Vec::new();
+            return None;
         }
 
-        self.build_observed_usages(&report)
+        Some(self.build_observed_usages(&report))
     }
 
     fn build_observed_usages(&self, report: &GpuUsageReport) -> Vec<ObservedUsage> {
@@ -149,12 +155,19 @@ impl SharedFileResourceUsageObserver {
 
 #[async_trait]
 impl ResourceUsageObserver for SharedFileResourceUsageObserver {
-    async fn observe_active_usages(&self) -> Result<Vec<ObservedUsage>, ObservationError> {
+    async fn observe_active_usages(&self) -> Result<ObservationSnapshot, ObservationError> {
         let mut observed = Vec::new();
+        let mut observed_servers = HashSet::new();
+
         for server in &self.resource_config.servers {
-            observed.extend(self.read_server_report(&server.name).await);
+            let Some(usages) = self.read_server_report(&server.name).await else {
+                continue;
+            };
+            observed.extend(usages);
+            observed_servers.insert(server.name.clone());
         }
-        Ok(observed)
+
+        Ok(ObservationSnapshot::new(observed, observed_servers))
     }
 }
 
@@ -188,13 +201,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_missing_file_returns_empty() {
+    async fn a_server_without_a_report_is_not_covered() {
         let dir = temp_dir();
         let observer =
             SharedFileResourceUsageObserver::new(dir, test_resource_config(), Duration::minutes(5));
 
-        let observed = observer.observe_active_usages().await.unwrap();
-        assert!(observed.is_empty());
+        let snapshot = observer.observe_active_usages().await.unwrap();
+
+        assert!(snapshot.usages().is_empty());
+        assert!(
+            !snapshot.covers("Thalys"),
+            "レポートがないサーバーの利用状況は分からない"
+        );
     }
 
     #[tokio::test]
@@ -220,9 +238,11 @@ mod tests {
             test_resource_config(),
             Duration::minutes(5),
         );
-        let observed = observer.observe_active_usages().await.unwrap();
+        let snapshot = observer.observe_active_usages().await.unwrap();
+        let observed = snapshot.usages();
 
         assert_eq!(observed.len(), 1);
+        assert!(snapshot.covers("Thalys"));
         assert_eq!(observed[0].external_identity().user_id(), "kkawaguchi");
         assert_eq!(observed[0].active_since(), started_at);
         match observed[0].resource() {
@@ -238,7 +258,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_stale_report_is_ignored() {
+    async fn a_stale_report_leaves_the_server_uncovered() {
         let dir = temp_dir();
         let generated_at = Utc::now() - Duration::minutes(30);
         let started_at = generated_at - Duration::minutes(20);
@@ -260,9 +280,13 @@ mod tests {
             test_resource_config(),
             Duration::minutes(5),
         );
-        let observed = observer.observe_active_usages().await.unwrap();
+        let snapshot = observer.observe_active_usages().await.unwrap();
 
-        assert!(observed.is_empty());
+        assert!(snapshot.usages().is_empty());
+        assert!(
+            !snapshot.covers("Thalys"),
+            "監視が止まっている間の沈黙を「使われていない」と読ませない"
+        );
 
         tokio::fs::remove_dir_all(&dir).await.ok();
     }
@@ -289,9 +313,13 @@ mod tests {
             test_resource_config(),
             Duration::minutes(5),
         );
-        let observed = observer.observe_active_usages().await.unwrap();
+        let snapshot = observer.observe_active_usages().await.unwrap();
 
-        assert!(observed.is_empty());
+        assert!(snapshot.usages().is_empty());
+        assert!(
+            snapshot.covers("Thalys"),
+            "レポートは読めているので、そのサーバーの利用状況は把握できている"
+        );
 
         tokio::fs::remove_dir_all(&dir).await.ok();
     }
