@@ -1,4 +1,4 @@
-//! /status コマンドハンドラ
+//! /lrm-status コマンドハンドラ
 
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ResourceUsageRepository;
@@ -8,7 +8,7 @@ use chrono::Utc;
 use slack_morphism::prelude::*;
 use tracing::{debug, info};
 
-/// /status スラッシュコマンドを処理
+/// /lrm-status スラッシュコマンドを処理
 ///
 /// 実利用の監視がいま効いているかを、本人にのみ見えるメッセージで返す。
 /// 監視が止まっていても突合が黙るだけなので、確かめる手段がないと気づけない。
