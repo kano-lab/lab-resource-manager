@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.7.1...v1.8.0) (2026-08-02)
+
+
+### Features
+
+* notice a GPU that is held without computing, not just an untouched one ([#157](https://github.com/kano-lab/lab-resource-manager/issues/157)) ([d2dff03](https://github.com/kano-lab/lab-resource-manager/commit/d2dff037291d7d12ab74bc297a920d67c95a5341))
+
 ## [1.7.1](https://github.com/kano-lab/lab-resource-manager/compare/v1.7.0...v1.7.1) (2026-08-02)
 
 
