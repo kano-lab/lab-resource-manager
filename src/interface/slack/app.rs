@@ -4,6 +4,7 @@
 
 use crate::application::idle_notice_log::IdleNoticeLog;
 use crate::application::usecases::accept_reservation_proposal::AcceptReservationProposalUseCase;
+use crate::application::usecases::check_resource_availability::CheckResourceAvailabilityUseCase;
 use crate::application::usecases::create_resource_usage::CreateResourceUsageUseCase;
 use crate::application::usecases::delete_resource_usage::DeleteResourceUsageUseCase;
 use crate::application::usecases::grant_user_resource_access::GrantUserResourceAccessUseCase;
@@ -42,6 +43,7 @@ where
     update_resource_usage_usecase: Arc<UpdateResourceUsageUseCase<R>>,
     delete_usage_usecase: Arc<DeleteResourceUsageUseCase<R>>,
     release_early_usecase: Arc<ReleaseResourceUsageEarlyUseCase<R>>,
+    check_availability_usecase: Arc<CheckResourceAvailabilityUseCase<R>>,
     notify_usecase: Arc<NotifyFutureResourceUsageChangesUseCase<R, N>>,
 
     // 予約者の応答で更新される、未使用予約のお知らせの抑制記録
@@ -82,6 +84,7 @@ where
         update_resource_usage_usecase: Arc<UpdateResourceUsageUseCase<R>>,
         delete_usage_usecase: Arc<DeleteResourceUsageUseCase<R>>,
         release_early_usecase: Arc<ReleaseResourceUsageEarlyUseCase<R>>,
+        check_availability_usecase: Arc<CheckResourceAvailabilityUseCase<R>>,
         notify_usecase: Arc<NotifyFutureResourceUsageChangesUseCase<R, N>>,
         idle_notices: Arc<IdleNoticeLog>,
         slack_client: Arc<SlackHyperClient>,
@@ -98,6 +101,7 @@ where
             update_resource_usage_usecase,
             delete_usage_usecase,
             release_early_usecase,
+            check_availability_usecase,
             notify_usecase,
             idle_notices,
             slack_client,
@@ -345,6 +349,10 @@ where
 
     pub fn release_early_usecase(&self) -> &Arc<ReleaseResourceUsageEarlyUseCase<R>> {
         &self.release_early_usecase
+    }
+
+    pub fn check_availability_usecase(&self) -> &Arc<CheckResourceAvailabilityUseCase<R>> {
+        &self.check_availability_usecase
     }
 
     pub fn idle_notices(&self) -> &Arc<IdleNoticeLog> {

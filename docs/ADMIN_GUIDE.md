@@ -31,7 +31,23 @@ For development, you can set these as shell environment variables.
 
 **Note**: Notification settings are configured in `config/resources.toml` per resource.
 
-### 2. Repository Implementation Setup (Default: Google Calendar)
+### 2. Register the Slash Commands
+
+In your Slack app settings ([api.slack.com/apps](https://api.slack.com/apps) → your app → Slash Commands),
+register the commands below. A command that is not registered here will not appear in Slack even
+while the bot is running.
+
+| Command | Description |
+|---------|-------------|
+| `/free` | List the resources that are free right now |
+| `/reserve` | Reserve a resource |
+| `/register-calendar` | Register your own email address |
+| `/link-user` | Link another person's identity (admin) |
+| `/mcp-token` | Issue an MCP access token |
+
+The bot runs in Socket Mode, so no Request URL is needed.
+
+### 3. Repository Implementation Setup (Default: Google Calendar)
 
 If using the Google Calendar repository:
 
@@ -41,7 +57,7 @@ If using the Google Calendar repository:
 4. Place the key as `secrets/service-account.json`
 5. Share your calendar with the service account email
 
-### 3. Resource Configuration
+### 4. Resource Configuration
 
 Define GPU servers and rooms in `config/resources.toml`:
 
@@ -93,7 +109,7 @@ timezone (where the bot is running). When a timezone is configured, times will b
 converted to that timezone and displayed with the timezone name, making it easier to
 understand local times.
 
-### 4. Notification Message Customization (Optional)
+### 5. Notification Message Customization (Optional)
 
 You can customize notification message templates and formatting:
 
@@ -167,7 +183,7 @@ conflict is silently dropped.
 | `md` | 1/15 |
 | `md_japanese` | 1月15日 |
 
-### 5. GPU Usage Observer Adapter Setup (Optional, Experimental)
+### 6. GPU Usage Observer Adapter Setup (Optional, Experimental)
 
 The monitoring component that cross-references actual GPU usage against reservations
 (e.g., detecting unreserved usage) is pluggable via the `ResourceUsageObserver` port, so
@@ -262,7 +278,7 @@ and running `gpu-usage-reporter` against a real GPU server have not been verifie
 environment yet. The Slack app needs the `im:write` and `chat:write` scopes for the DM to
 work.
 
-### 6. MCP Server Setup (Optional)
+### 7. MCP Server Setup (Optional)
 
 Agents such as Claude Code can view, create, update, and cancel reservations through an
 embedded MCP (Model Context Protocol) server that runs inside the main

@@ -9,8 +9,10 @@
 //!
 //! ## モジュール
 //!
+//! - `availability`: 空き状況メッセージ（`/free`の応答）
 //! - `confirmation`: 成功メッセージ（予約作成/更新/削除の完了通知）
 //! - `error`: エラーメッセージ（操作失敗時の通知）
 
+pub mod availability;
 pub mod confirmation;
 pub mod error;
