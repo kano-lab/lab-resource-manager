@@ -5,7 +5,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::interface::slack::app::SlackApp;
-use crate::interface::slack::utility::user_resolver;
+use crate::interface::slack::utility::{interaction_reply, reservation_failure, user_resolver};
 use slack_morphism::prelude::*;
 use tracing::{debug, error, info};
 
@@ -31,28 +31,14 @@ where
 
     debug!(usage_id = %usage_id_str, "cancel requested");
 
-    // channel_idを取得してuser_channel_mapに登録（エフェメラルメッセージ送信用）
-    let channel_id = if let Some(channel) = &block_actions.channel {
-        // channelフィールドから取得できた場合は登録
+    // エフェメラルメッセージの宛先として、このユーザーが最後にいたチャンネルを控える
+    let channel_id = interaction_reply::channel_id(block_actions);
+    if let Some(channel_id) = &channel_id {
         app.user_channel_map()
             .write()
             .unwrap()
-            .insert(user.id.clone(), channel.id.clone());
-        Some(channel.id.clone())
-    } else if let SlackInteractionActionContainer::Message(msg) = &block_actions.container {
-        // containerから取得を試みる
-        if let Some(channel_id) = &msg.channel_id {
-            app.user_channel_map()
-                .write()
-                .unwrap()
-                .insert(user.id.clone(), channel_id.clone());
-            Some(channel_id.clone())
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+            .insert(user.id.clone(), channel_id.clone());
+    }
 
     // 依存性を取得
     let delete_usage_usecase = app.delete_usage_usecase();
@@ -83,17 +69,7 @@ where
             }
             Err(e) => {
                 error!(usage_id = %usage_id.as_str(), origin = "slack", error = %e, "cancelling the reservation failed");
-
-                // エラーの種類に応じてユーザーフレンドリーなメッセージを返す
-                let error_msg = e.to_string();
-                if error_msg.contains("見つかりません") || error_msg.contains("NotFound") {
-                    "❌ 申し訳ございません。この予約は既に削除されているか、見つかりませんでした。"
-                        .to_string()
-                } else if error_msg.contains("権限") || error_msg.contains("Unauthorized") {
-                    "❌ この予約を削除する権限がありません。".to_string()
-                } else {
-                    format!("❌ 予約の削除に失敗しました: {}", error_msg)
-                }
+                reservation_failure::cancel_message(e)
             }
         };
 
