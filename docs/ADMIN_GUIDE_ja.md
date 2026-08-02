@@ -31,20 +31,37 @@ RUST_LOG=info
 
 **注意**: 通知設定は `config/resources.toml` でリソースごとに設定します。
 
-### 2. スラッシュコマンドの登録
+### 2. Slackアプリの設定（App Manifest）
 
-Slackアプリの設定画面（[api.slack.com/apps](https://api.slack.com/apps) → 対象アプリ → Slash Commands）で、
-以下のコマンドを登録します。ここに登録されていないコマンドは、ボットが動作していてもSlackに現れません。
+必要なスラッシュコマンドとスコープは、`deploy/slack-app-manifest.example.yaml`（または `.json`）に
+まとめてあります。ここに登録されていないコマンドは、ボットが動作していてもSlackに現れません。
 
-| コマンド | 説明 |
+**新規に作る場合**: [api.slack.com/apps](https://api.slack.com/apps) → Create New App →
+From an app manifest を選び、このファイルの内容を貼り付けます。
+
+**既存のアプリを更新する場合**: 対象アプリ → App Manifest を開き、差分を反映します。
+コマンドが増えたときは、この操作をしないとSlack側に現れません。
+
+名前・説明・色は例なので、導入先に合わせて変えて構いません。スラッシュコマンドとスコープは
+ボットが動くための条件であり、変えると動作しなくなります。
+
+マニフェストはコードから生成しています。手元で作り直すには次を実行します。
+
+```bash
+cargo run --bin slack-app-manifest -- --format yaml
+cargo run --bin slack-app-manifest -- --format json
+```
+
+必要なBotトークンスコープは3つです。
+
+| スコープ | 用途 |
 |---------|------|
-| `/free` | いま空いているリソースを一覧する |
-| `/reserve` | リソースを予約する |
-| `/register-calendar` | 自分のメールアドレスを登録する |
-| `/link-user` | 他の人物の識別情報を紐付ける（管理者用） |
-| `/mcp-token` | MCPアクセストークンを発行する |
+| `commands` | スラッシュコマンドを受け取る |
+| `chat:write` | 予約通知の投稿、操作結果の返信、送信済みメッセージの書き換え |
+| `im:write` | 事後予約の提案などを本人へ届けるDMチャンネルを開く |
 
-Socket Modeで動作するため、Request URLの設定は不要です。
+Socket Modeで動作するため、Request URLの設定は不要です。App-Level Token（`xapp-`）には
+`connections:write` が必要で、これはマニフェストではなくBasic Informationから発行します。
 
 ### 3. リポジトリ実装の設定（デフォルト: Google Calendar）
 
