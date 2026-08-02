@@ -2,6 +2,7 @@
 //!
 //! 依存関係を管理し、Slackインタラクションのメインエントリポイントを提供
 
+use crate::application::idle_notice_log::IdleNoticeLog;
 use crate::application::usecases::accept_reservation_proposal::AcceptReservationProposalUseCase;
 use crate::application::usecases::create_resource_usage::CreateResourceUsageUseCase;
 use crate::application::usecases::delete_resource_usage::DeleteResourceUsageUseCase;
@@ -43,6 +44,9 @@ where
     release_early_usecase: Arc<ReleaseResourceUsageEarlyUseCase<R>>,
     notify_usecase: Arc<NotifyFutureResourceUsageChangesUseCase<R, N>>,
 
+    // 予約者の応答で更新される、未使用予約のお知らせの抑制記録
+    idle_notices: Arc<IdleNoticeLog>,
+
     // リポジトリ
     identity_repo: Arc<dyn IdentityLinkRepository>,
     mcp_token_repo: Arc<dyn McpTokenRepository>,
@@ -79,6 +83,7 @@ where
         delete_usage_usecase: Arc<DeleteResourceUsageUseCase<R>>,
         release_early_usecase: Arc<ReleaseResourceUsageEarlyUseCase<R>>,
         notify_usecase: Arc<NotifyFutureResourceUsageChangesUseCase<R, N>>,
+        idle_notices: Arc<IdleNoticeLog>,
         slack_client: Arc<SlackHyperClient>,
         bot_token: SlackApiToken,
     ) -> Self {
@@ -94,6 +99,7 @@ where
             delete_usage_usecase,
             release_early_usecase,
             notify_usecase,
+            idle_notices,
             slack_client,
             bot_token,
             user_channel_map: Arc::new(RwLock::new(HashMap::new())),
@@ -339,6 +345,10 @@ where
 
     pub fn release_early_usecase(&self) -> &Arc<ReleaseResourceUsageEarlyUseCase<R>> {
         &self.release_early_usecase
+    }
+
+    pub fn idle_notices(&self) -> &Arc<IdleNoticeLog> {
+        &self.idle_notices
     }
 
     pub fn user_channel_map(&self) -> &Arc<RwLock<HashMap<SlackUserId, SlackChannelId>>> {

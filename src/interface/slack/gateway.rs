@@ -167,6 +167,14 @@ where
                     )
                     .await?
                 }
+                ACTION_IDLE_RELEASE | ACTION_IDLE_KEEP | ACTION_IDLE_CANCEL => {
+                    crate::interface::slack::block_actions::idle_reservation_buttons::handle(
+                        self,
+                        block_actions,
+                        action,
+                    )
+                    .await?
+                }
                 // 提案ボタンはブロック内一意性のため時間候補ごとの接尾辞付きIDなので前方一致で判定
                 id if id.starts_with(ACTION_ACCEPT_RESERVATION_PROPOSAL) => {
                     crate::interface::slack::block_actions::accept_proposal_button::handle(

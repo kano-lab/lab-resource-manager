@@ -46,12 +46,13 @@ where
 
     // 受諾できたら提案メッセージのボタンを消す。押しても無駄だと分かるようにし、
     // 連打そのものを減らす（重複防止はユースケース側で担保している）
-    if let (true, Some((message_channel, message_ts))) =
-        (outcome.is_ok(), proposal_message_ref(block_actions))
-    {
+    if let (true, Some((message_channel, message_ts))) = (
+        outcome.is_ok(),
+        interaction_reply::message_ref(block_actions),
+    ) {
         let settled = SlackApiChatUpdateRequest::new(
             message_channel,
-            settled_message(feedback.clone()),
+            interaction_reply::settled_message(feedback.clone()),
             message_ts,
         );
         match session.chat_update(&settled).await {
@@ -118,18 +119,6 @@ where
     }
 }
 
-/// 受諾済みの提案メッセージの中身
-///
-/// `chat.update`は渡さなかったフィールドをそのまま残すため、`text`だけを送っても
-/// 提案時の`blocks`が生き続けてボタンが押せてしまう。結果だけを載せた`blocks`で
-/// 上書きして初めてボタンが消える。
-fn settled_message(feedback: String) -> SlackMessageContent {
-    let block = SlackSectionBlock::new().with_text(md!(feedback.clone()));
-    SlackMessageContent::new()
-        .with_text(feedback)
-        .with_blocks(slack_blocks![some_into(block)])
-}
-
 /// 競合の相手がすべて受諾者本人か
 ///
 /// 本人の予約と重なっているだけなら、その時間帯は既に確保できている。
@@ -191,21 +180,6 @@ where
     } else {
         format!("❌ 予約を作成できませんでした\n\n{}", detail)
     }
-}
-
-/// 提案メッセージ（ボタンが乗っているメッセージ）の位置
-fn proposal_message_ref(
-    block_actions: &SlackInteractionBlockActionsEvent,
-) -> Option<(SlackChannelId, SlackTs)> {
-    let SlackInteractionActionContainer::Message(msg) = &block_actions.container else {
-        return None;
-    };
-    let channel_id = msg
-        .channel_id
-        .clone()
-        .or_else(|| block_actions.channel.as_ref().map(|c| c.id.clone()))?;
-
-    Some((channel_id, msg.message_ts.clone()))
 }
 
 async fn create_reservation_from_payload<R, N>(
@@ -316,30 +290,6 @@ mod tests {
 
     fn accepter() -> EmailAddress {
         EmailAddress::new("member@example.com".to_string()).unwrap()
-    }
-
-    #[test]
-    fn the_settled_message_carries_blocks_without_any_button() {
-        // chat.updateは渡さなかったフィールドをそのまま残す。textだけを送っても
-        // 提案時のblocksが生き続け、ボタンは消えない。blocksを送り直す必要がある。
-        let content = settled_message("✅ 予約を作成しました".to_string());
-        let json = serde_json::to_value(&content).unwrap();
-
-        let blocks = json["blocks"]
-            .as_array()
-            .expect("blocksを送らないと提案時のボタンが残る");
-        assert!(
-            blocks.iter().all(|block| block["type"] != "actions"),
-            "受諾後のメッセージにボタンが残っている: {:?}",
-            blocks
-        );
-        assert!(
-            serde_json::to_string(&json)
-                .unwrap()
-                .contains("予約を作成しました"),
-            "受諾の結果が本文に出ていない: {:?}",
-            json
-        );
     }
 
     #[test]
