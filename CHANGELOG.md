@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/kano-lab/lab-resource-manager/compare/v1.7.0...v1.7.1) (2026-08-02)
+
+
+### Bug Fixes
+
+* rename /status, which Slack will not let an app register ([#155](https://github.com/kano-lab/lab-resource-manager/issues/155)) ([49e9b62](https://github.com/kano-lab/lab-resource-manager/commit/49e9b620da536421659e0c8bc2ec3624f8f30ce6))
+
 ## [1.7.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.6.2...v1.7.0) (2026-08-02)
 
 
