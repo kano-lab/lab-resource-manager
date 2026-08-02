@@ -60,3 +60,8 @@ default = []
 # 予約タイムラインのWeb画面。crates.io経由のライブラリ利用者に
 # Topcoatの依存を負わせないため、既定では無効にする。
 web = ["dep:topcoat"]
+
+# Web画面の静的なデモを書き出す。GitHub Pagesへの配信に使う
+[[example]]
+name = "demo_page"
+required-features = ["web"]
