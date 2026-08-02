@@ -1,7 +1,8 @@
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
 use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
 use crate::domain::ports::resource_usage_observer::{
-    ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver, ServerObservation,
+    GpuActivity, ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver,
+    ServerObservation,
 };
 use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;
@@ -25,6 +26,12 @@ pub struct GpuUsageReport {
     pub generated_at: DateTime<Utc>,
     /// 観測されたGPU利用プロセスの一覧
     pub processes: Vec<GpuUsageProcessEntry>,
+    /// デバイスごとの稼働状況
+    ///
+    /// 稼働率を読み出せない環境（古い`gpu-usage-reporter`、稼働率を報告しないGPU）では
+    /// 空になる。空であることは「計算していない」ではなく「計算していたかを問えない」を意味する。
+    #[serde(default)]
+    pub devices: Vec<GpuUsageDeviceEntry>,
 }
 
 /// 1つの(デバイス, 利用者)に集約された利用エントリ
@@ -36,6 +43,21 @@ pub struct GpuUsageProcessEntry {
     pub os_user: String,
     /// このデバイス・利用者の組み合わせで最も古いプロセス起動時刻
     pub started_at: DateTime<Utc>,
+    /// このデバイス・利用者の組み合わせが確保しているメモリ量の合計（MiB）
+    ///
+    /// 読み出せない環境では欠ける。欠けていることは「確保していない」ではなく
+    /// 「どれだけ確保しているかを問えない」を意味する。
+    #[serde(default)]
+    pub used_memory_mib: Option<u64>,
+}
+
+/// 1デバイスが観測の窓のあいだにどれだけ計算していたか
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuUsageDeviceEntry {
+    /// デバイス番号（`config/resources.toml`の`devices[].id`と対応）
+    pub device_number: u32,
+    /// 観測の窓のあいだに見た最も高い稼働率（%）
+    pub peak_utilization_percent: u32,
 }
 
 /// 共有ファイルシステム上に各GPUサーバーがcronで書き出すJSONレポートを読み取る観測実装
@@ -82,20 +104,17 @@ impl SharedFileResourceUsageObserver {
     /// 利用状況を把握できなかった場合、その理由まで返す。読めなかったことと
     /// 「使われていない」ことを呼び出し側が取り違えないようにするため、
     /// 空の一覧では表さない。
-    async fn read_server_report(
-        &self,
-        server_name: &str,
-    ) -> (ServerObservation, Vec<ObservedUsage>) {
+    async fn read_server_report(&self, server_name: &str) -> ServerReading {
         let path = self.report_path(server_name);
 
         let content = match tokio::fs::read_to_string(&path).await {
             Ok(content) => content,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return (ServerObservation::Missing, Vec::new());
+                return ServerReading::unavailable(ServerObservation::Missing);
             }
             Err(e) => {
                 warn!(path = %path.display(), error = %e, "reading a usage report failed");
-                return (ServerObservation::Unreadable, Vec::new());
+                return ServerReading::unavailable(ServerObservation::Unreadable);
             }
         };
 
@@ -103,7 +122,7 @@ impl SharedFileResourceUsageObserver {
             Ok(report) => report,
             Err(e) => {
                 warn!(path = %path.display(), error = %e, "parsing a usage report failed");
-                return (ServerObservation::Unreadable, Vec::new());
+                return ServerReading::unavailable(ServerObservation::Unreadable);
             }
         };
 
@@ -114,20 +133,42 @@ impl SharedFileResourceUsageObserver {
                 max_staleness_secs = self.max_staleness.num_seconds(),
                 "the usage report is too old; ignoring it"
             );
-            return (
-                ServerObservation::Stale {
-                    generated_at: report.generated_at,
-                },
-                Vec::new(),
-            );
+            return ServerReading::unavailable(ServerObservation::Stale {
+                generated_at: report.generated_at,
+            });
         }
 
-        (
-            ServerObservation::Observed {
+        ServerReading {
+            observation: ServerObservation::Observed {
                 generated_at: report.generated_at,
             },
-            self.build_observed_usages(&report),
-        )
+            usages: self.build_observed_usages(&report),
+            gpu_activities: self.build_gpu_activities(&report),
+        }
+    }
+
+    /// レポートのデバイス欄を、設定に載っているデバイスの稼働状況として読む
+    fn build_gpu_activities(&self, report: &GpuUsageReport) -> Vec<((String, u32), GpuActivity)> {
+        let Some(server_config) = self.resource_config.get_server(&report.server) else {
+            return Vec::new();
+        };
+
+        report
+            .devices
+            .iter()
+            .filter(|device| {
+                server_config
+                    .devices
+                    .iter()
+                    .any(|configured| configured.id == device.device_number)
+            })
+            .map(|device| {
+                (
+                    (report.server.clone(), device.device_number),
+                    GpuActivity::new(device.peak_utilization_percent),
+                )
+            })
+            .collect()
     }
 
     fn build_observed_usages(&self, report: &GpuUsageReport) -> Vec<ObservedUsage> {
@@ -162,9 +203,31 @@ impl SharedFileResourceUsageObserver {
                     process.os_user.clone(),
                 );
 
-                Some(ObservedUsage::new(resource, identity, process.started_at))
+                let observed = ObservedUsage::new(resource, identity, process.started_at);
+                Some(match process.used_memory_mib {
+                    Some(used_memory_mib) => observed.with_used_memory(used_memory_mib),
+                    None => observed,
+                })
             })
             .collect()
+    }
+}
+
+/// 1サーバー分のレポートから読み取れたこと
+struct ServerReading {
+    observation: ServerObservation,
+    usages: Vec<ObservedUsage>,
+    gpu_activities: Vec<((String, u32), GpuActivity)>,
+}
+
+impl ServerReading {
+    /// 利用状況を把握できなかったときの読み取り結果
+    fn unavailable(observation: ServerObservation) -> Self {
+        Self {
+            observation,
+            usages: Vec::new(),
+            gpu_activities: Vec::new(),
+        }
     }
 }
 
@@ -173,14 +236,16 @@ impl ResourceUsageObserver for SharedFileResourceUsageObserver {
     async fn observe_active_usages(&self) -> Result<ObservationSnapshot, ObservationError> {
         let mut observed = Vec::new();
         let mut servers = HashMap::new();
+        let mut gpu_activities = HashMap::new();
 
         for server in &self.resource_config.servers {
-            let (observation, usages) = self.read_server_report(&server.name).await;
-            observed.extend(usages);
-            servers.insert(server.name.clone(), observation);
+            let reading = self.read_server_report(&server.name).await;
+            observed.extend(reading.usages);
+            gpu_activities.extend(reading.gpu_activities);
+            servers.insert(server.name.clone(), reading.observation);
         }
 
-        Ok(ObservationSnapshot::new(observed, servers))
+        Ok(ObservationSnapshot::new(observed, servers).with_gpu_activities(gpu_activities))
     }
 }
 
@@ -359,6 +424,77 @@ mod tests {
         assert!(
             snapshot.covers("Thalys"),
             "レポートは読めているので、そのサーバーの利用状況は把握できている"
+        );
+
+        tokio::fs::remove_dir_all(&dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn a_report_carries_how_hard_each_device_was_working() {
+        let dir = temp_dir();
+        let generated_at = Utc::now();
+        write_report(
+            &dir,
+            "thalys.json",
+            &format!(
+                r#"{{"server": "Thalys", "generated_at": "{}", "processes": [], "devices": [
+                    {{"device_number": 0, "peak_utilization_percent": 3}}
+                ]}}"#,
+                generated_at.to_rfc3339(),
+            ),
+        )
+        .await;
+
+        let observer = SharedFileResourceUsageObserver::new(
+            dir.clone(),
+            test_resource_config(),
+            Duration::minutes(5),
+        );
+        let snapshot = observer.observe_active_usages().await.unwrap();
+
+        let gpu = Gpu::new("Thalys".to_string(), 0, "A100".to_string());
+        let activity = snapshot
+            .gpu_activity_of(&gpu)
+            .expect("レポートに載っているデバイスの稼働状況は読み取れる");
+        assert_eq!(activity.peak_utilization_percent(), 3);
+
+        tokio::fs::remove_dir_all(&dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn a_report_without_device_activity_leaves_it_unknown() {
+        let dir = temp_dir();
+        let generated_at = Utc::now();
+        // 稼働状況を報告しない`gpu-usage-reporter`が書いたレポート
+        write_report(
+            &dir,
+            "thalys.json",
+            &format!(
+                r#"{{"server": "Thalys", "generated_at": "{}", "processes": [
+                    {{"device_number": 0, "os_user": "kkawaguchi", "started_at": "{}"}}
+                ]}}"#,
+                generated_at.to_rfc3339(),
+                generated_at.to_rfc3339(),
+            ),
+        )
+        .await;
+
+        let observer = SharedFileResourceUsageObserver::new(
+            dir.clone(),
+            test_resource_config(),
+            Duration::minutes(5),
+        );
+        let snapshot = observer.observe_active_usages().await.unwrap();
+
+        let gpu = Gpu::new("Thalys".to_string(), 0, "A100".to_string());
+        assert!(
+            snapshot.gpu_activity_of(&gpu).is_none(),
+            "報告のないことを、計算していないことの証拠にしてはいけない"
+        );
+        assert_eq!(
+            snapshot.usages().len(),
+            1,
+            "稼働状況が無くても、誰が乗っているかは読み取れる"
         );
 
         tokio::fs::remove_dir_all(&dir).await.ok();
