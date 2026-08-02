@@ -26,3 +26,4 @@ pub mod link_user;
 pub mod mcp_token;
 pub mod register_calendar;
 pub mod reserve;
+pub mod status;

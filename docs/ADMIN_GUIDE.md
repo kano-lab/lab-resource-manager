@@ -442,6 +442,42 @@ This opens a modal where a radio button switches between two link targets:
   unauthorized-usage-DM features described above able to identify who is actually running a
   process — without it, an observed OS username can never be resolved to a person.
 
+### Checking That Monitoring Works
+
+Whether usage monitoring is currently working can be checked from Slack:
+
+```text
+/status
+```
+
+The reply — visible only to you — states the running version of
+lab-resource-manager, how long it has been up, and how each server's report is
+arriving.
+
+```text
+🤖 lab-resource-manager 1.7.0 ・ 起動から3日4時間
+
+🔍 実利用の監視
+✅ `Thalys` 1分前のレポート
+⚠️ `Freccia` 42分前のレポートで止まっています
+❌ `Alfa` レポートが届いていません（gpu-usage-reporter の実行を確認してください）
+
+突合は1分ごと。5分より古いレポートは使いません。30分使われていない予約は予約者に知らせます。
+```
+
+| Mark | State | Where to look |
+|------|-------|---------------|
+| ✅ | Usage is known | — |
+| ⚠️ | A report arrives, but it is old | Whether `gpu-usage-reporter` on that server is falling behind |
+| ❌ | No report, or it cannot be read | The cron entry, and write access to the shared directory |
+
+When monitoring stops, the post-hoc reservation proposals and the idle-reservation
+notices simply go quiet — nobody is told. Check this periodically.
+
+Using the command requires registering the `/status` slash command in your Slack
+app settings ([api.slack.com/apps](https://api.slack.com/apps) → your app → Slash
+Commands).
+
 ### Logs
 
 Logs go to journald as structured records. `RUST_LOG` controls the level for everything the

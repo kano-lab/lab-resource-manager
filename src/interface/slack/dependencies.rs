@@ -11,7 +11,7 @@
 
 use crate::application::usecases::{
     AcceptReservationProposalUseCase, CheckResourceAvailabilityUseCase, CreateResourceUsageUseCase,
-    DeleteResourceUsageUseCase, GrantUserResourceAccessUseCase,
+    DeleteResourceUsageUseCase, DescribeMonitoringUseCase, GrantUserResourceAccessUseCase,
     NotifyFutureResourceUsageChangesUseCase, ReleaseResourceUsageEarlyUseCase,
     UpdateResourceUsageUseCase,
 };
@@ -43,6 +43,8 @@ where
     pub check_resource_availability: Arc<CheckResourceAvailabilityUseCase<R>>,
     /// 予約の変更を監視して通知する
     pub notify_resource_usage_changes: Arc<NotifyFutureResourceUsageChangesUseCase<R, N>>,
+    /// 実利用の監視の稼働状況を答える
+    pub describe_monitoring: Arc<DescribeMonitoringUseCase>,
 }
 
 /// Slackボットが参照するリポジトリ

@@ -51,6 +51,8 @@ pub mod check_resource_availability;
 pub mod create_resource_usage;
 /// リソース使用予定を削除するユースケース
 pub mod delete_resource_usage;
+/// 実利用の監視の稼働状況を答えるユースケース
+pub mod describe_monitoring;
 /// 使われていない予約を検知して知らせるユースケース
 pub mod detect_idle_reservations;
 #[cfg(test)]
@@ -80,6 +82,7 @@ pub use accept_reservation_proposal::AcceptReservationProposalUseCase;
 pub use check_resource_availability::CheckResourceAvailabilityUseCase;
 pub use create_resource_usage::CreateResourceUsageUseCase;
 pub use delete_resource_usage::DeleteResourceUsageUseCase;
+pub use describe_monitoring::DescribeMonitoringUseCase;
 pub use detect_idle_reservations::DetectIdleReservationsUseCase;
 pub use get_resource_usage_by_id::GetResourceUsageByIdUseCase;
 pub use grant_user_resource_access::GrantUserResourceAccessUseCase;

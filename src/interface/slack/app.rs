@@ -7,6 +7,7 @@ use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::infrastructure::config::{AppConfig, ResourceConfig};
 use crate::interface::slack::dependencies::{SlackRepositories, SlackUseCases};
+use chrono::{DateTime, Utc};
 use slack_morphism::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -39,6 +40,8 @@ where
     bot_token: SlackApiToken,
 
     // 内部状態
+    /// このプロセスが動き始めた時刻（稼働時間の起点）
+    started_at: DateTime<Utc>,
     user_channel_map: Arc<RwLock<HashMap<SlackUserId, SlackChannelId>>>,
     task_tracker: TaskTracker,
     http_client: reqwest::Client,
@@ -70,6 +73,7 @@ where
             idle_notices,
             slack_client,
             bot_token,
+            started_at: Utc::now(),
             user_channel_map: Arc::new(RwLock::new(HashMap::new())),
             task_tracker: TaskTracker::new(),
             http_client: reqwest::Client::new(),
@@ -289,6 +293,10 @@ where
 
     pub fn usecases(&self) -> &SlackUseCases<R, N> {
         &self.usecases
+    }
+
+    pub fn started_at(&self) -> DateTime<Utc> {
+        self.started_at
     }
 
     pub fn idle_notices(&self) -> &Arc<IdleNoticeLog> {
