@@ -14,6 +14,9 @@
 
 /// Application層で発生するエラーの定義
 pub mod error;
+/// 使われていない予約を繰り返し知らせないための記録
+pub mod idle_notice_log;
 pub mod usecases;
 
 pub use error::ApplicationError;
+pub use idle_notice_log::IdleNoticeLog;

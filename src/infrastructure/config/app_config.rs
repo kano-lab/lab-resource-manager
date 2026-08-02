@@ -32,6 +32,10 @@ pub struct AppConfig {
     pub unreserved_usage_threshold_secs: u64,
     /// 事後予約提案で提示する利用時間の候補
     pub reservation_proposal_duration_candidates: Vec<Duration>,
+    /// 予約者本人に使われていない予約を知らせるまでの時間（秒）
+    ///
+    /// 残り時間がこれに満たない予約には知らせない（急かしても開けられる時間がないため）。
+    pub idle_reservation_threshold_secs: u64,
     /// MCPサーバーのHTTP/SSEリッスンアドレス（未設定ならMCP機能を無効化）
     pub mcp_listen_addr: Option<SocketAddr>,
     /// MCPアクセストークンファイルのパス

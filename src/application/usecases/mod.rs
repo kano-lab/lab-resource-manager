@@ -48,6 +48,10 @@ pub mod accept_reservation_proposal;
 pub mod create_resource_usage;
 /// リソース使用予定を削除するユースケース
 pub mod delete_resource_usage;
+/// 使われていない予約を検知して知らせるユースケース
+pub mod detect_idle_reservations;
+#[cfg(test)]
+mod detect_idle_reservations_tests;
 /// IDでリソース使用予定を取得するユースケース
 pub mod get_resource_usage_by_id;
 /// ユーザーにリソースアクセス権を付与するユースケース
@@ -64,12 +68,15 @@ pub mod reconcile_observed_usages;
 mod reconcile_observed_usages_tests;
 /// 進行中のリソース使用予定を今の時点で締めるユースケース
 pub mod release_resource_usage_early;
+#[cfg(test)]
+pub mod test_support;
 /// リソース使用予定を更新するユースケース
 pub mod update_resource_usage;
 
 pub use accept_reservation_proposal::AcceptReservationProposalUseCase;
 pub use create_resource_usage::CreateResourceUsageUseCase;
 pub use delete_resource_usage::DeleteResourceUsageUseCase;
+pub use detect_idle_reservations::DetectIdleReservationsUseCase;
 pub use get_resource_usage_by_id::GetResourceUsageByIdUseCase;
 pub use grant_user_resource_access::GrantUserResourceAccessUseCase;
 pub use list_all_future_resource_usages::ListAllFutureResourceUsagesUseCase;

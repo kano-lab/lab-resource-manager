@@ -233,6 +233,7 @@ cronが停止した場合に古い利用状況を「今も使用中」と誤判�
 | `GPU_USAGE_REPORTS_DIR` | (未設定=機能無効) | `SharedFileResourceUsageObserver`が読み取る共有ディレクトリ |
 | `GPU_USAGE_MAX_STALENESS_SECS` | `300` | レポートを無視し始める経過時間（秒） |
 | `UNRESERVED_USAGE_THRESHOLD_SECS` | `600` | 未予約利用を提案対象とみなす継続時間の閾値（秒） |
+| `IDLE_RESERVATION_THRESHOLD_SECS` | `1800` | 予約者本人に使われていない予約を知らせるまでの時間（秒）。残り時間がこれに満たない予約には知らせない |
 | `RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS` | `1,2,3,5,8` | Slack DMで提示する利用時間候補（時間、カンマ区切り） |
 
 有効化すると、OSアカウントが紐付け済み（`/link-user`）かつSlackアカウントも紐付け済みの利用者に、

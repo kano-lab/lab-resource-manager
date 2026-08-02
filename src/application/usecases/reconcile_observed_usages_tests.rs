@@ -3,16 +3,12 @@
 //! 実利用と予約の突合、無断使用の通知、事後予約提案のまとめ方を検証する。
 
 use crate::application::usecases::reconcile_observed_usages::ReconcileObservedUsagesUseCase;
-use crate::domain::aggregates::identity_link::{
-    entity::IdentityLink,
-    value_objects::{ExternalIdentity, ExternalSystem},
-};
+use crate::application::usecases::test_support::InMemoryIdentityLinkRepository;
+use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod};
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::{
-    IdentityLinkRepository, RepositoryError, ResourceUsageRepository,
-};
+use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::ports::{
     NotificationError, ObservedUsage, ReservationProposal, ReservationProposalNotifier,
     UnauthorizedUsageNotifier,
@@ -22,57 +18,9 @@ use crate::infrastructure::reservation_proposal::MockReservationProposalNotifier
 use crate::infrastructure::resource_usage_observer::MockResourceUsageObserver;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
-
-#[derive(Default)]
-struct InMemoryIdentityLinkRepository {
-    links: StdMutex<HashMap<String, IdentityLink>>,
-}
-
-impl InMemoryIdentityLinkRepository {
-    fn add_link(&self, email: &str, system: ExternalSystem, user_id: &str) {
-        let email_addr = EmailAddress::new(email.to_string()).unwrap();
-        let identity = ExternalIdentity::new(system, user_id.to_string());
-        let link = IdentityLink::with_external_identity(email_addr.clone(), identity);
-        self.links
-            .lock()
-            .unwrap()
-            .insert(email_addr.as_str().to_string(), link);
-    }
-}
-
-#[async_trait]
-impl IdentityLinkRepository for InMemoryIdentityLinkRepository {
-    async fn find_by_email(
-        &self,
-        email: &EmailAddress,
-    ) -> Result<Option<IdentityLink>, RepositoryError> {
-        Ok(self.links.lock().unwrap().get(email.as_str()).cloned())
-    }
-
-    async fn find_by_external_user_id(
-        &self,
-        system: &ExternalSystem,
-        user_id: &str,
-    ) -> Result<Option<IdentityLink>, RepositoryError> {
-        let links = self.links.lock().unwrap();
-        let found = links.values().find(|link| {
-            link.get_identity_for_system(system)
-                .is_some_and(|identity| identity.user_id() == user_id)
-        });
-        Ok(found.cloned())
-    }
-
-    async fn save(&self, identity_link: IdentityLink) -> Result<(), RepositoryError> {
-        self.links
-            .lock()
-            .unwrap()
-            .insert(identity_link.email().as_str().to_string(), identity_link);
-        Ok(())
-    }
-}
 
 #[derive(Clone, Default)]
 struct RecordingUnauthorizedUsageNotifier {

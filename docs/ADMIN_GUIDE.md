@@ -240,6 +240,7 @@ the same shared directory used by `gpu-usage-reporter` above to enable it:
 | `GPU_USAGE_REPORTS_DIR` | (unset = feature disabled) | Shared directory read by `SharedFileResourceUsageObserver` |
 | `GPU_USAGE_MAX_STALENESS_SECS` | `300` | How old a report can be before it's ignored |
 | `UNRESERVED_USAGE_THRESHOLD_SECS` | `600` | How long unreserved usage must continue before a proposal is sent |
+| `IDLE_RESERVATION_THRESHOLD_SECS` | `1800` | How long a reservation must go unused by its owner before the owner is told. Reservations with less time left than this are left alone |
 | `RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS` | `1,2,3,5,8` | Comma-separated hour candidates offered in the Slack DM |
 
 When enabled, a user whose OS account is linked (`/link-user`) and who also has a linked
