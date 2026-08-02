@@ -12,11 +12,13 @@
 //! - `extract_form_data`: Slackフォームデータの抽出
 //! - `user_resolver`: SlackユーザーIDとメールアドレスの相互解決
 //! - `datetime_parser`: 日付・時刻のパース
+//! - `availability_report`: 空き状況の問い合わせとメッセージ組み立て
 //! - `conflict_message`: リソース競合エラーからのユーザー向けメッセージ構築
 //! - `reservation_summary`: 予約の対象リソースと期間の要約
 //! - `interaction_reply`: ボタンを押した利用者へ結果を返す
 //! - `reservation_failure`: 予約への操作が断られた理由を伝える文面
 
+pub mod availability_report;
 pub mod conflict_message;
 pub mod datetime_parser;
 pub mod extract_form_data;

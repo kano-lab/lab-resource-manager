@@ -67,3 +67,11 @@ pub const ACTION_IDLE_CANCEL: &str = "idle_cancel_reservation";
 // アクションID - 事後予約提案DM
 /// 事後予約提案の受諾ボタンのアクション
 pub const ACTION_ACCEPT_RESERVATION_PROPOSAL: &str = "accept_reservation_proposal";
+
+// アクションID - 空き状況メッセージ
+/// 表示する日を切り替えるボタンのアクション（値は表示タイムゾーンでのYYYY-MM-DD）
+pub const ACTION_FREE_SHOW_DAY: &str = "free_show_day";
+/// 表示する日を選ぶセレクトメニューのアクション
+pub const ACTION_FREE_SELECT_DAY: &str = "free_select_day";
+/// 空いているリソースを選んだ状態で予約モーダルを開くボタンのアクション
+pub const ACTION_FREE_RESERVE: &str = "free_reserve";

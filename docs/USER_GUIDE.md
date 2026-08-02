@@ -33,7 +33,7 @@ with Google Calendar.
 
 Lists the resources you can use right now. The reply is visible only to you and is not posted to the channel.
 
-**Reading the output:**
+#### Reading the output
 
 ```text
 いま GPU 5台 が空いています
@@ -56,6 +56,32 @@ Each column of the grid corresponds to a device number, showing which numbers ar
 The list below it names the reserver and end time for whatever is taken.
 
 When everything is taken, the reply names the resource that frees up soonest and when.
+
+#### Looking further ahead
+
+Buttons under the reply switch which day you are looking at.
+
+```text
+[ いま ] [ 今日 ] [ 明日 ] [ 他の日 ▾ ]
+```
+
+"他の日" covers the coming week. You never type a date. Picking a day switches the reply to
+the free time slots for each resource on that day.
+
+```text
+8月3日（月） 明日 の空き
+✅ gpu-server-1 0 — 終日
+✅ gpu-server-1 1 — 〜13:00, 17:00〜
+この日は空きなし: gpu-server-1 2
+```
+
+`〜13:00` means from the start of the day until 13:00, and `17:00〜` means from 17:00 until the
+end of the day. Looking at today leaves out the hours that have already passed.
+
+#### Reserving straight away
+
+The "空いているものを予約" button opens the reservation modal with the server that has the most
+free devices selected, and those devices already checked. You can change the selection or submit as is.
 
 ## Resource Reservation Syntax
 

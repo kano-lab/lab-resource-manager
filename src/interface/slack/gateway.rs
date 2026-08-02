@@ -177,6 +177,30 @@ where
                     )
                     .await?
                 }
+                ACTION_FREE_RESERVE => {
+                    crate::interface::slack::block_actions::free_buttons::handle_reserve(
+                        self,
+                        block_actions,
+                    )
+                    .await?
+                }
+                ACTION_FREE_SELECT_DAY => {
+                    crate::interface::slack::block_actions::free_buttons::handle_day_change(
+                        self,
+                        block_actions,
+                        action,
+                    )
+                    .await?
+                }
+                // 日ボタンはブロック内一意性のため日付ごとの接尾辞付きIDなので前方一致で判定
+                id if id.starts_with(ACTION_FREE_SHOW_DAY) => {
+                    crate::interface::slack::block_actions::free_buttons::handle_day_change(
+                        self,
+                        block_actions,
+                        action,
+                    )
+                    .await?
+                }
                 // 提案ボタンはブロック内一意性のため時間候補ごとの接尾辞付きIDなので前方一致で判定
                 id if id.starts_with(ACTION_ACCEPT_RESERVATION_PROPOSAL) => {
                     crate::interface::slack::block_actions::accept_proposal_button::handle(
