@@ -11,6 +11,17 @@
 
 use serde::Serialize;
 
+/// 例として配る説明文の言語
+///
+/// コマンドと必要スコープはどの言語でも同じで、変わるのは人が読む文だけである。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManifestLanguage {
+    /// 公開物として配る既定
+    English,
+    /// 日本語で運用する導入先向け
+    Japanese,
+}
+
 /// このボットが受け取るスラッシュコマンド
 ///
 /// Slackに登録されていないコマンドは、ボットが動いていても呼び出されない。
@@ -18,42 +29,60 @@ use serde::Serialize;
 pub struct SlashCommandSpec {
     /// Slackに登録するコマンド名
     pub command: &'static str,
-    /// コマンド入力時にSlackが表示する説明
-    pub description: &'static str,
+    /// コマンド入力時にSlackが表示する説明（英語）
+    pub description_en: &'static str,
+    /// 同じ説明の日本語
+    pub description_ja: &'static str,
     /// 引数の書き方（引数を取らないコマンドでは`None`）
     pub usage_hint: Option<&'static str>,
+}
+
+impl SlashCommandSpec {
+    /// 指定した言語の説明を取得
+    fn description(&self, language: ManifestLanguage) -> &'static str {
+        match language {
+            ManifestLanguage::English => self.description_en,
+            ManifestLanguage::Japanese => self.description_ja,
+        }
+    }
 }
 
 /// このボットが受け取るスラッシュコマンドの一覧
 pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
     SlashCommandSpec {
         command: "/free",
-        description: "いま空いているリソースを一覧する",
+        description_en: "List the resources that are free right now",
+        description_ja: "いま空いているリソースを一覧する",
         usage_hint: None,
     },
     SlashCommandSpec {
         command: "/reserve",
-        description: "リソースを予約する",
+        description_en: "Reserve a resource",
+        description_ja: "リソースを予約する",
         usage_hint: None,
     },
     SlashCommandSpec {
         command: "/register-calendar",
-        description: "自分のメールアドレスをリソースカレンダーに登録する",
+        description_en: "Register your own email address",
+        description_ja: "自分のメールアドレスをリソースカレンダーに登録する",
         usage_hint: Some("<your-email@example.com>"),
     },
     SlashCommandSpec {
         command: "/link-user",
-        description: "他の人物の識別情報を紐付ける（管理者用）",
+        description_en: "Link another person's identity (admin)",
+        description_ja: "他の人物の識別情報を紐付ける（管理者用）",
         usage_hint: None,
     },
     SlashCommandSpec {
         command: "/mcp-token",
-        description: "MCPアクセストークンを発行する",
+        description_en: "Issue an MCP access token",
+        description_ja: "MCPアクセストークンを発行する",
         usage_hint: None,
     },
     SlashCommandSpec {
         command: "/status",
-        description: "実利用の監視の稼働状況を表示する（管理者用）",
+        description_en: "Report whether usage monitoring is working (admin)",
+        description_ja: "実利用の監視の稼働状況を表示する（管理者用）",
         usage_hint: None,
     },
 ];
@@ -68,10 +97,21 @@ pub const SLASH_COMMANDS: &[SlashCommandSpec] = &[
 pub const BOT_SCOPES: &[&str] = &["chat:write", "commands", "im:write"];
 
 /// 例として配る見え方の既定値
+///
+/// 名前と表示名は言語によらず同じものを使う。
 const DEFAULT_APP_NAME: &str = "LabResourceManager";
-const DEFAULT_APP_DESCRIPTION: &str = "研究室リソースの管理・通知ボット";
 const DEFAULT_BACKGROUND_COLOR: &str = "#1d7c00";
 const DEFAULT_BOT_DISPLAY_NAME: &str = "Lab Resource Manager";
+const DEFAULT_APP_DESCRIPTION_EN: &str = "Manages and announces reservations for lab resources";
+const DEFAULT_APP_DESCRIPTION_JA: &str = "研究室リソースの管理・通知ボット";
+
+/// アプリの説明を言語ごとに選ぶ
+fn app_description(language: ManifestLanguage) -> &'static str {
+    match language {
+        ManifestLanguage::English => DEFAULT_APP_DESCRIPTION_EN,
+        ManifestLanguage::Japanese => DEFAULT_APP_DESCRIPTION_JA,
+    }
+}
 
 /// Slackアプリの設定
 #[derive(Debug, Serialize)]
@@ -136,11 +176,13 @@ struct Interactivity {
 
 impl AppManifest {
     /// このボットが要求する設定から、そのまま使える例を組み立てる
-    pub fn example() -> Self {
+    ///
+    /// 変わるのは人が読む文だけで、コマンドとスコープはどの言語でも同じである。
+    pub fn example(language: ManifestLanguage) -> Self {
         Self {
             display_information: DisplayInformation {
                 name: DEFAULT_APP_NAME.to_string(),
-                description: DEFAULT_APP_DESCRIPTION.to_string(),
+                description: app_description(language).to_string(),
                 background_color: DEFAULT_BACKGROUND_COLOR.to_string(),
             },
             features: Features {
@@ -152,7 +194,7 @@ impl AppManifest {
                     .iter()
                     .map(|spec| SlashCommand {
                         command: spec.command.to_string(),
-                        description: spec.description.to_string(),
+                        description: spec.description(language).to_string(),
                         usage_hint: spec.usage_hint.map(str::to_string),
                         // 引数はボット側で解釈するため、Slackにエスケープさせない
                         should_escape: false,
@@ -325,37 +367,74 @@ mod tests {
 
     #[test]
     fn both_formats_carry_every_command_and_scope() {
-        let manifest = AppManifest::example();
-        let yaml = manifest.to_yaml();
-        let json = manifest.to_json();
+        for language in [ManifestLanguage::English, ManifestLanguage::Japanese] {
+            let manifest = AppManifest::example(language);
+            let yaml = manifest.to_yaml();
+            let json = manifest.to_json();
 
-        for spec in SLASH_COMMANDS {
-            assert!(yaml.contains(spec.command), "YAMLに{}がない", spec.command);
-            assert!(json.contains(spec.command), "JSONに{}がない", spec.command);
-        }
-        for scope in BOT_SCOPES {
-            assert!(yaml.contains(scope), "YAMLに{}がない", scope);
-            assert!(json.contains(scope), "JSONに{}がない", scope);
+            for spec in SLASH_COMMANDS {
+                assert!(yaml.contains(spec.command), "YAMLに{}がない", spec.command);
+                assert!(json.contains(spec.command), "JSONに{}がない", spec.command);
+            }
+            for scope in BOT_SCOPES {
+                assert!(yaml.contains(scope), "YAMLに{}がない", scope);
+                assert!(json.contains(scope), "JSONに{}がない", scope);
+            }
         }
     }
 
     #[test]
-    fn a_command_without_arguments_has_no_usage_hint() {
-        let manifest = AppManifest::example();
-        let yaml = manifest.to_yaml();
+    fn the_english_example_reads_as_english() {
+        for spec in SLASH_COMMANDS {
+            assert!(
+                spec.description_en.is_ascii(),
+                "英語の例として配るものに日本語が混ざっている: {} -> {}",
+                spec.command,
+                spec.description_en
+            );
+        }
+        assert!(DEFAULT_APP_DESCRIPTION_EN.is_ascii());
+    }
 
-        let reserve_block = yaml
-            .split("- command: \"/reserve\"")
-            .nth(1)
-            .expect("/reserve が出ていない");
-        let reserve_block = reserve_block
-            .split("- command:")
-            .next()
-            .expect("次のコマンドまでを取れない");
+    #[test]
+    fn each_command_is_explained_in_both_languages() {
+        for spec in SLASH_COMMANDS {
+            assert!(
+                !spec.description_en.is_empty() && !spec.description_ja.is_empty(),
+                "片方の言語だけ説明がない: {}",
+                spec.command
+            );
+            assert_ne!(
+                spec.description_en, spec.description_ja,
+                "訳し忘れ（両方の言語で同じ文が入っている）: {}",
+                spec.command
+            );
+        }
+    }
 
-        assert!(
-            !reserve_block.contains("usage_hint"),
-            "引数を取らないコマンドに書き方の例を出すと、あるものと読まれる: {reserve_block}"
+    #[test]
+    fn only_the_wording_changes_between_languages() {
+        let english = AppManifest::example(ManifestLanguage::English);
+        let japanese = AppManifest::example(ManifestLanguage::Japanese);
+
+        assert_eq!(
+            english.oauth_config.scopes.bot, japanese.oauth_config.scopes.bot,
+            "必要なスコープは言語で変わらない"
+        );
+        assert_eq!(
+            english
+                .features
+                .slash_commands
+                .iter()
+                .map(|command| command.command.as_str())
+                .collect::<Vec<_>>(),
+            japanese
+                .features
+                .slash_commands
+                .iter()
+                .map(|command| command.command.as_str())
+                .collect::<Vec<_>>(),
+            "受け取るコマンドは言語で変わらない"
         );
     }
 

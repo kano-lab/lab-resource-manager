@@ -34,7 +34,8 @@ For development, you can set these as shell environment variables.
 ### 2. Configure the Slack App (App Manifest)
 
 The slash commands and scopes the bot needs are collected in
-`deploy/slack-app-manifest.example.yaml` (or `.json`). A command that is not registered
+`deploy/slack-app-manifest.example.yaml` (or `.json`). A version whose wording is in
+Japanese is available as `deploy/slack-app-manifest.ja.example.yaml`. A command that is not registered
 there will not appear in Slack even while the bot is running.
 
 **Creating a new app**: at [api.slack.com/apps](https://api.slack.com/apps), choose Create
@@ -52,6 +53,8 @@ The manifest is generated from the code. To rebuild it locally:
 cargo run --bin slack-app-manifest -- --format yaml
 cargo run --bin slack-app-manifest -- --format json
 ```
+
+`--lang` switches only the wording; the commands and scopes are the same either way.
 
 Three bot token scopes are required.
 

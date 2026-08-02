@@ -1,6 +1,6 @@
 display_information:
   name: "LabResourceManager"
-  description: "Manages and announces reservations for lab resources"
+  description: "研究室リソースの管理・通知ボット"
   background_color: "#1d7c00"
 features:
   bot_user:
@@ -8,23 +8,23 @@ features:
     always_online: true
   slash_commands:
     - command: "/free"
-      description: "List the resources that are free right now"
+      description: "いま空いているリソースを一覧する"
       should_escape: false
     - command: "/reserve"
-      description: "Reserve a resource"
+      description: "リソースを予約する"
       should_escape: false
     - command: "/register-calendar"
-      description: "Register your own email address"
+      description: "自分のメールアドレスをリソースカレンダーに登録する"
       usage_hint: "<your-email@example.com>"
       should_escape: false
     - command: "/link-user"
-      description: "Link another person's identity (admin)"
+      description: "他の人物の識別情報を紐付ける（管理者用）"
       should_escape: false
     - command: "/mcp-token"
-      description: "Issue an MCP access token"
+      description: "MCPアクセストークンを発行する"
       should_escape: false
     - command: "/status"
-      description: "Report whether usage monitoring is working (admin)"
+      description: "実利用の監視の稼働状況を表示する（管理者用）"
       should_escape: false
 oauth_config:
   scopes:

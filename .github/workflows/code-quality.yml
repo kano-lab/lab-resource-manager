@@ -83,10 +83,14 @@ jobs:
       # 内容とコードが食い違う。差分が出たらここで止める。
       - name: Regenerate and compare
         run: |
-          cargo run --quiet --bin slack-app-manifest -- --format yaml > /tmp/slack-app-manifest.yaml
-          cargo run --quiet --bin slack-app-manifest -- --format json > /tmp/slack-app-manifest.json
-          diff -u deploy/slack-app-manifest.example.yaml /tmp/slack-app-manifest.yaml
-          diff -u deploy/slack-app-manifest.example.json /tmp/slack-app-manifest.json
+          for lang in en ja; do
+            suffix=""
+            [ "$lang" = "ja" ] && suffix=".ja"
+            for fmt in yaml json; do
+              cargo run --quiet --bin slack-app-manifest -- --format "$fmt" --lang "$lang" > "/tmp/manifest.$lang.$fmt"
+              diff -u "deploy/slack-app-manifest${suffix}.example.${fmt}" "/tmp/manifest.$lang.$fmt"
+            done
+          done
 
   cargo-doc:
     name: Cargo doc

@@ -7,7 +7,24 @@
 //! 一致することをCIで確かめている。
 
 use clap::{Parser, ValueEnum};
-use lab_resource_manager::interface::slack::app_manifest::AppManifest;
+use lab_resource_manager::interface::slack::app_manifest::{AppManifest, ManifestLanguage};
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum Language {
+    /// 公開物として配る既定
+    En,
+    /// 日本語で運用する導入先向け
+    Ja,
+}
+
+impl From<Language> for ManifestLanguage {
+    fn from(language: Language) -> Self {
+        match language {
+            Language::En => ManifestLanguage::English,
+            Language::Ja => ManifestLanguage::Japanese,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Format {
@@ -28,11 +45,15 @@ struct Args {
     /// 出力形式
     #[arg(long, value_enum, default_value_t = Format::Yaml)]
     format: Format,
+
+    /// 説明文の言語（コマンドとスコープは言語によらず同じ）
+    #[arg(long, value_enum, default_value_t = Language::En)]
+    lang: Language,
 }
 
 fn main() {
     let args = Args::parse();
-    let manifest = AppManifest::example();
+    let manifest = AppManifest::example(args.lang.into());
 
     let rendered = match args.format {
         Format::Yaml => manifest.to_yaml(),

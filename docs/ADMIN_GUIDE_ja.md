@@ -33,8 +33,8 @@ RUST_LOG=info
 
 ### 2. Slackアプリの設定（App Manifest）
 
-必要なスラッシュコマンドとスコープは、`deploy/slack-app-manifest.example.yaml`（または `.json`）に
-まとめてあります。ここに登録されていないコマンドは、ボットが動作していてもSlackに現れません。
+必要なスラッシュコマンドとスコープは、`deploy/slack-app-manifest.ja.example.yaml`（または `.json`）に
+まとめてあります。説明文が英語の版は `deploy/slack-app-manifest.example.yaml` です。ここに登録されていないコマンドは、ボットが動作していてもSlackに現れません。
 
 **新規に作る場合**: [api.slack.com/apps](https://api.slack.com/apps) → Create New App →
 From an app manifest を選び、このファイルの内容を貼り付けます。
@@ -48,9 +48,11 @@ From an app manifest を選び、このファイルの内容を貼り付けま�
 マニフェストはコードから生成しています。手元で作り直すには次を実行します。
 
 ```bash
-cargo run --bin slack-app-manifest -- --format yaml
-cargo run --bin slack-app-manifest -- --format json
+cargo run --bin slack-app-manifest -- --format yaml --lang ja
+cargo run --bin slack-app-manifest -- --format json --lang ja
 ```
+
+`--lang` は説明文の言語だけを切り替えます。コマンドとスコープはどちらでも同じです。
 
 必要なBotトークンスコープは3つです。
 
