@@ -394,6 +394,9 @@ is what a calendar UI is poor at, and this page fills that gap. As with the MCP 
 HTTP listener starts as an extra task inside the existing `lab-resource-manager` process —
 no separate binary or systemd service is needed.
 
+See the [live demo](https://kano-lab.github.io/lab-resource-manager/) for what it looks like
+(the data there is fictional).
+
 **This feature is experimental.** The environment variable names, the URL layout and the
 shape of the page may change in a minor release. The web framework underneath (Topcoat) is
 itself a 0.x release that expects breaking changes. Take that into account before building
