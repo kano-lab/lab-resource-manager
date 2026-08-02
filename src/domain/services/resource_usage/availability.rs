@@ -92,6 +92,13 @@ impl ResourceAvailability {
         self.busy_periods.is_empty()
     }
 
+    /// 指定時刻に空いているか
+    ///
+    /// いつまで空いているか・誰が使っているかまで要るなら`state_at`を使う。
+    pub fn is_free_at(&self, instant: DateTime<Utc>) -> bool {
+        matches!(self.state_at(instant), AvailabilityState::Free { .. })
+    }
+
     /// 指定時刻におけるリソースの状態
     ///
     /// 予約の終了時刻ちょうどは空きとして扱う（区間は終端を含まない）。
@@ -411,6 +418,19 @@ mod tests {
             Some(at(13)),
             "いつまで使えるかが分からなければ、使い始めてよいか判断できない"
         );
+    }
+
+    #[test]
+    fn whether_a_resource_is_free_follows_the_reservations() {
+        let usages = vec![reservation("owner@example.com", vec![gpu(0)], 13, 17)];
+        let availability = availability_of(&gpu(0), &usages);
+
+        assert!(availability.is_free_at(at(10)), "予約の前は空いている");
+        assert!(
+            !availability.is_free_at(at(14)),
+            "予約の最中はふさがっている"
+        );
+        assert!(availability.is_free_at(at(18)), "予約の後は空いている");
     }
 
     #[test]
