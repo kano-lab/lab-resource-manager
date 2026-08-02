@@ -690,3 +690,71 @@ async fn using_gpus_of_two_different_reservations_notifies_for_each() {
         "予約が別なら、それぞれの予約者について知らせるべき"
     );
 }
+
+#[tokio::test]
+async fn an_opportunity_that_ended_is_forgotten() {
+    let (usecase, _repo, observer, identity_repo, proposal_notifier, _notifier) = make_usecase(15);
+    identity_repo.add_link("user@example.com", os_system(), "kkawaguchi");
+
+    let active_since = Utc::now() - Duration::minutes(20);
+    let usage = ObservedUsage::new(
+        gpu_resource(),
+        ExternalIdentity::new(os_system(), "kkawaguchi".to_string()),
+        active_since,
+    );
+
+    observer.set_active_usages(vec![usage.clone()]);
+    usecase.poll_once().await.unwrap();
+    assert_eq!(proposal_notifier.sent_proposals().len(), 1);
+
+    // 使い終わって観測から消える
+    observer.set_active_usages(vec![]);
+    usecase.poll_once().await.unwrap();
+
+    // 同じ機会が観測に戻ることはないが、戻ったとしても記録は残っていない
+    observer.set_active_usages(vec![usage]);
+    usecase.poll_once().await.unwrap();
+
+    assert_eq!(
+        proposal_notifier.sent_proposals().len(),
+        2,
+        "消えた機会の記録を抱え続けない"
+    );
+}
+
+#[tokio::test]
+async fn the_unauthorized_notice_is_forgotten_once_the_reservation_ends() {
+    let (usecase, repo, observer, identity_repo, _proposal_notifier, notifier) = make_usecase(15);
+    identity_repo.add_link("other@example.com", os_system(), "kkawaguchi");
+
+    let now = Utc::now();
+    let reservation = make_reservation(
+        "owner@example.com",
+        now - Duration::hours(1),
+        now + Duration::hours(1),
+    );
+    repo.save(&reservation).await.unwrap();
+
+    observer.set_active_usages(vec![ObservedUsage::new(
+        gpu_resource(),
+        ExternalIdentity::new(os_system(), "kkawaguchi".to_string()),
+        now - Duration::minutes(30),
+    )]);
+
+    usecase.poll_once().await.unwrap();
+    assert_eq!(notifier.notified().len(), 1);
+
+    // 予約が取り消され、進行中の予約がなくなる
+    repo.delete(reservation.id()).await.unwrap();
+    usecase.poll_once().await.unwrap();
+
+    // 同じ予約が戻れば、それは改めて知らせるべき無断使用である
+    repo.save(&reservation).await.unwrap();
+    usecase.poll_once().await.unwrap();
+
+    assert_eq!(
+        notifier.notified().len(),
+        2,
+        "終わった予約の記録を抱え続けない"
+    );
+}
