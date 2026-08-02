@@ -32,7 +32,8 @@ where
 
     let registration_result = match &email_result {
         Ok(email) => app
-            .grant_access_usecase()
+            .usecases()
+            .grant_access
             .execute(ExternalSystem::Slack, user_id.to_string(), email.clone())
             .await
             .map_err(|e| e.into()),

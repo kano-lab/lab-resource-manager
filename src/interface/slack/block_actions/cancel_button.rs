@@ -41,8 +41,8 @@ where
     }
 
     // 依存性を取得
-    let delete_usage_usecase = app.delete_usage_usecase();
-    let identity_repo = app.identity_repo();
+    let delete_usage_usecase = &app.usecases().delete_resource_usage;
+    let identity_repo = &app.repositories().identity_link;
 
     // ユーザーのメールアドレスを取得
     let owner_email = user_resolver::resolve_user_email(&user.id, identity_repo).await?;

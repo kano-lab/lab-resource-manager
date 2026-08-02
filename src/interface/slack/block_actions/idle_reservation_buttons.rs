@@ -44,7 +44,8 @@ where
         ACTION_IDLE_KEEP => keep(app, &usage_id),
         ACTION_IDLE_RELEASE | ACTION_IDLE_CANCEL => {
             let requested_by = EmailAddress::new(
-                user_resolver::resolve_user_email(&user.id, app.identity_repo()).await?,
+                user_resolver::resolve_user_email(&user.id, &app.repositories().identity_link)
+                    .await?,
             )?;
 
             if action_id == ACTION_IDLE_RELEASE {
@@ -98,7 +99,8 @@ where
     );
 
     match app
-        .release_early_usecase()
+        .usecases()
+        .release_resource_usage_early
         .execute(usage_id, requested_by)
         .await
     {
@@ -136,7 +138,8 @@ where
     );
 
     match app
-        .delete_usage_usecase()
+        .usecases()
+        .delete_resource_usage
         .execute(usage_id, requested_by)
         .await
     {

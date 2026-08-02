@@ -27,7 +27,7 @@ where
     let config = app.resource_config();
     let slack_client = app.slack_client();
     let bot_token = app.bot_token();
-    let identity_repo = app.identity_repo();
+    let identity_repo = &app.repositories().identity_link;
 
     // Check if user is linked
     let is_linked = user_resolver::is_user_linked(user_id, identity_repo).await;

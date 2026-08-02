@@ -53,7 +53,8 @@ where
 
     // ユーザーのメールアドレスを取得
     let identity_link = app
-        .identity_repo()
+        .repositories()
+        .identity_link
         .find_by_external_user_id(&ExternalSystem::Slack, user_id.as_ref())
         .await?
         .ok_or("ユーザーが登録されていません。まず /register-calendar を実行してください")?;
@@ -62,7 +63,8 @@ where
 
     // 予約を更新
     let update_result = app
-        .update_resource_usage_usecase()
+        .usecases()
+        .update_resource_usage
         .execute(&usage_id, &owner_email, Some(time_period), notes)
         .await;
 
@@ -79,9 +81,12 @@ where
     let message_text = match update_result {
         Ok(_) => "✅ 予約を更新しました".to_string(),
         Err(ApplicationError::ResourceConflict { conflicts }) => {
-            let conflict_detail =
-                conflict_message::build(&conflicts, app.resource_config(), app.identity_repo())
-                    .await;
+            let conflict_detail = conflict_message::build(
+                &conflicts,
+                app.resource_config(),
+                &app.repositories().identity_link,
+            )
+            .await;
             format!("❌ 予約の更新に失敗しました\n\n{}", conflict_detail)
         }
         Err(e) => {
