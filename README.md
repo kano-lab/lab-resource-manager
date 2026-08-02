@@ -13,6 +13,8 @@ A resource reservation management system for laboratories.
 - **Resource Reservation Management**: Manage schedules for resources such as GPU servers and rooms
 - **Change Notifications**: Get notified when reservations are created, updated, or deleted
 - **Identity Linking**: Map user identities across different systems for enhanced notifications
+- **Reservation Timeline**: Browse reservations as a resource-by-time timeline
+  ([live demo](https://kano-lab.github.io/lab-resource-manager/) — all data shown there is fictional)
 
 ### Default Implementations
 
@@ -20,7 +22,7 @@ A resource reservation management system for laboratories.
 |-----------|----------------|
 | Resource Repository | Google Calendar |
 | Notifications | Slack |
-| User Interface | Slack Bot |
+| User Interface | Slack Bot, MCP server, read-only web timeline |
 | Access Control | Google Calendar ACL |
 
 ## Quick Start

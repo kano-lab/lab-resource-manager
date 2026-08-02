@@ -1,0 +1,58 @@
+name: Demo Page
+
+on:
+  push:
+    branches:
+      - main
+  # 画面には現在時刻の目印が入る。作り直さないと日付が置き去りになるため毎朝更新する
+  schedule:
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 配信は最新の1つだけでよい。進行中のデプロイは中断せず待たせる
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build demo page
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fetch Repository
+        uses: actions/checkout@v5
+
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Generate static pages
+        run: cargo run --release --features web --example demo_page -- dist
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
