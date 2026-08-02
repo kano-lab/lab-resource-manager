@@ -11,7 +11,9 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
 use crate::infrastructure::notifier::senders::sender::{NotificationContext, Sender};
 use crate::infrastructure::notifier::template_renderer::TemplateRenderer;
-use crate::interface::slack::constants::{ACTION_CANCEL_RESERVATION, ACTION_EDIT_RESERVATION};
+use crate::interface::slack::constants::{
+    ACTION_CANCEL_RESERVATION, ACTION_EDIT_RESERVATION, ACTION_RELEASE_RESERVATION_EARLY,
+};
 
 /// Slack通知設定
 pub struct SlackNotificationConfig {
@@ -156,6 +158,15 @@ impl SlackSender {
                             },
                             "style": "primary",
                             "action_id": ACTION_EDIT_RESERVATION,
+                            "value": usage_id
+                        },
+                        {
+                            "type": "button",
+                            "text": {
+                                "type": "plain_text",
+                                "text": "⏹️ 今で終了"
+                            },
+                            "action_id": ACTION_RELEASE_RESERVATION_EARLY,
                             "value": usage_id
                         },
                         {

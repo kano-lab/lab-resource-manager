@@ -7,6 +7,7 @@ use crate::application::usecases::create_resource_usage::CreateResourceUsageUseC
 use crate::application::usecases::delete_resource_usage::DeleteResourceUsageUseCase;
 use crate::application::usecases::grant_user_resource_access::GrantUserResourceAccessUseCase;
 use crate::application::usecases::notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase;
+use crate::application::usecases::release_resource_usage_early::ReleaseResourceUsageEarlyUseCase;
 use crate::application::usecases::update_resource_usage::UpdateResourceUsageUseCase;
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{
@@ -39,6 +40,7 @@ where
     accept_reservation_proposal_usecase: Arc<AcceptReservationProposalUseCase<R>>,
     update_resource_usage_usecase: Arc<UpdateResourceUsageUseCase<R>>,
     delete_usage_usecase: Arc<DeleteResourceUsageUseCase<R>>,
+    release_early_usecase: Arc<ReleaseResourceUsageEarlyUseCase<R>>,
     notify_usecase: Arc<NotifyFutureResourceUsageChangesUseCase<R, N>>,
 
     // リポジトリ
@@ -75,6 +77,7 @@ where
         accept_reservation_proposal_usecase: Arc<AcceptReservationProposalUseCase<R>>,
         update_resource_usage_usecase: Arc<UpdateResourceUsageUseCase<R>>,
         delete_usage_usecase: Arc<DeleteResourceUsageUseCase<R>>,
+        release_early_usecase: Arc<ReleaseResourceUsageEarlyUseCase<R>>,
         notify_usecase: Arc<NotifyFutureResourceUsageChangesUseCase<R, N>>,
         slack_client: Arc<SlackHyperClient>,
         bot_token: SlackApiToken,
@@ -89,6 +92,7 @@ where
             accept_reservation_proposal_usecase,
             update_resource_usage_usecase,
             delete_usage_usecase,
+            release_early_usecase,
             notify_usecase,
             slack_client,
             bot_token,
@@ -331,6 +335,10 @@ where
 
     pub fn delete_usage_usecase(&self) -> &Arc<DeleteResourceUsageUseCase<R>> {
         &self.delete_usage_usecase
+    }
+
+    pub fn release_early_usecase(&self) -> &Arc<ReleaseResourceUsageEarlyUseCase<R>> {
+        &self.release_early_usecase
     }
 
     pub fn user_channel_map(&self) -> &Arc<RwLock<HashMap<SlackUserId, SlackChannelId>>> {

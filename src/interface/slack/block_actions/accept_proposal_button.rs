@@ -8,7 +8,7 @@ use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::services::resource_usage::errors::ResourceConflictError;
 use crate::infrastructure::reservation_proposal::ProposalAcceptPayload;
 use crate::interface::slack::app::SlackApp;
-use crate::interface::slack::utility::conflict_message;
+use crate::interface::slack::utility::{conflict_message, interaction_reply};
 use chrono::Duration;
 use slack_morphism::prelude::*;
 use tracing::{error, info, warn};
@@ -28,7 +28,7 @@ where
         return Ok(());
     };
 
-    let Some(channel_id) = dm_channel_id(block_actions) else {
+    let Some(channel_id) = interaction_reply::channel_id(block_actions) else {
         error!("could not resolve the DM channel for the proposal");
         return Ok(());
     };
@@ -206,16 +206,6 @@ fn proposal_message_ref(
         .or_else(|| block_actions.channel.as_ref().map(|c| c.id.clone()))?;
 
     Some((channel_id, msg.message_ts.clone()))
-}
-
-fn dm_channel_id(block_actions: &SlackInteractionBlockActionsEvent) -> Option<SlackChannelId> {
-    if let Some(channel) = &block_actions.channel {
-        return Some(channel.id.clone());
-    }
-    if let SlackInteractionActionContainer::Message(msg) = &block_actions.container {
-        return msg.channel_id.clone();
-    }
-    None
 }
 
 async fn create_reservation_from_payload<R, N>(

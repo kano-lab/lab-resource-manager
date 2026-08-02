@@ -7,6 +7,7 @@ use crate::application::usecases::delete_resource_usage::DeleteResourceUsageUseC
 use crate::application::usecases::get_resource_usage_by_id::GetResourceUsageByIdUseCase;
 use crate::application::usecases::list_all_future_resource_usages::ListAllFutureResourceUsagesUseCase;
 use crate::application::usecases::list_user_resource_usages::ListUserResourceUsagesUseCase;
+use crate::application::usecases::release_resource_usage_early::ReleaseResourceUsageEarlyUseCase;
 use crate::application::usecases::update_resource_usage::UpdateResourceUsageUseCase;
 use crate::domain::aggregates::resource_usage::value_objects::{
     Gpu, Resource, TimePeriod, UsageId,
@@ -16,8 +17,8 @@ use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::infrastructure::config::ResourceConfig;
 use crate::interface::mcp::auth::ResolvedCaller;
 use crate::interface::mcp::dto::{
-    CancelReservationParams, CreateReservationParams, GetReservationParams, ReservationDto,
-    UpdateReservationParams,
+    CancelReservationParams, CreateReservationParams, GetReservationParams,
+    ReleaseReservationEarlyParams, ReservationDto, UpdateReservationParams,
 };
 use rmcp::ErrorData;
 use rmcp::handler::server::tool::Extension;
@@ -34,6 +35,7 @@ pub struct LrmMcpServer<R: ResourceUsageRepository> {
     create_usecase: Arc<CreateResourceUsageUseCase<R>>,
     update_usecase: Arc<UpdateResourceUsageUseCase<R>>,
     delete_usecase: Arc<DeleteResourceUsageUseCase<R>>,
+    release_early_usecase: Arc<ReleaseResourceUsageEarlyUseCase<R>>,
     list_all_usecase: Arc<ListAllFutureResourceUsagesUseCase<R>>,
     list_mine_usecase: Arc<ListUserResourceUsagesUseCase<R>>,
     get_by_id_usecase: Arc<GetResourceUsageByIdUseCase<R>>,
@@ -46,6 +48,7 @@ impl<R: ResourceUsageRepository> Clone for LrmMcpServer<R> {
             create_usecase: self.create_usecase.clone(),
             update_usecase: self.update_usecase.clone(),
             delete_usecase: self.delete_usecase.clone(),
+            release_early_usecase: self.release_early_usecase.clone(),
             list_all_usecase: self.list_all_usecase.clone(),
             list_mine_usecase: self.list_mine_usecase.clone(),
             get_by_id_usecase: self.get_by_id_usecase.clone(),
@@ -108,6 +111,7 @@ where
         create_usecase: Arc<CreateResourceUsageUseCase<R>>,
         update_usecase: Arc<UpdateResourceUsageUseCase<R>>,
         delete_usecase: Arc<DeleteResourceUsageUseCase<R>>,
+        release_early_usecase: Arc<ReleaseResourceUsageEarlyUseCase<R>>,
         list_all_usecase: Arc<ListAllFutureResourceUsagesUseCase<R>>,
         list_mine_usecase: Arc<ListUserResourceUsagesUseCase<R>>,
         get_by_id_usecase: Arc<GetResourceUsageByIdUseCase<R>>,
@@ -117,6 +121,7 @@ where
             create_usecase,
             update_usecase,
             delete_usecase,
+            release_early_usecase,
             list_all_usecase,
             list_mine_usecase,
             get_by_id_usecase,
@@ -294,6 +299,23 @@ where
         }
     }
 
+    #[tool(
+        description = "進行中の自分の予約を今の時点で終了し、残り時間を解放する。使った分は予約として残るため、予約そのものを無かったことにしたい場合はcancel_reservationを使う"
+    )]
+    async fn release_reservation_early(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<ReleaseReservationEarlyParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let caller = resolved_caller(&parts)?;
+        let id = UsageId::from_string(params.id);
+
+        match self.release_early_usecase.execute(&id, &caller).await {
+            Ok(usage) => Ok(success_json(&ReservationDto::from(&usage))),
+            Err(e) => Ok(tool_error(e)),
+        }
+    }
+
     #[tool(description = "自分が所有する予約をキャンセルする")]
     async fn cancel_reservation(
         &self,
@@ -320,7 +342,7 @@ where
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
         info.instructions = Some(
-            "lab-resource-manager の予約を閲覧・作成・更新・キャンセルするツール群。\
+            "lab-resource-manager の予約を閲覧・作成・更新・早期終了・キャンセルするツール群。\
             書き込み系ツールは呼び出し元のBearerトークンに紐づくメールアドレスを所有者として扱う。"
                 .to_string(),
         );

@@ -53,6 +53,8 @@ pub const ACTION_LINK_OS_USERNAME_INPUT: &str = "link_os_username_input";
 pub const ACTION_EDIT_RESERVATION: &str = "edit_reservation";
 /// 予約キャンセルボタンのアクション
 pub const ACTION_CANCEL_RESERVATION: &str = "cancel_reservation";
+/// 予約を今の時点で終了するボタンのアクション
+pub const ACTION_RELEASE_RESERVATION_EARLY: &str = "release_reservation_early";
 
 // アクションID - 事後予約提案DM
 /// 事後予約提案の受諾ボタンのアクション

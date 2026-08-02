@@ -16,6 +16,7 @@ use lab_resource_manager::{
         list_user_resource_usages::ListUserResourceUsagesUseCase,
         notify_future_resource_usage_changes::NotifyFutureResourceUsageChangesUseCase,
         reconcile_observed_usages::ReconcileObservedUsagesUseCase,
+        release_resource_usage_early::ReleaseResourceUsageEarlyUseCase,
         update_resource_usage::UpdateResourceUsageUseCase,
     },
     infrastructure::{
@@ -132,6 +133,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let update_usecase = Arc::new(UpdateResourceUsageUseCase::new(resource_usage_repo.clone()));
     let delete_usecase = Arc::new(DeleteResourceUsageUseCase::new(resource_usage_repo.clone()));
+    let release_early_usecase = Arc::new(ReleaseResourceUsageEarlyUseCase::new(
+        resource_usage_repo.clone(),
+    ));
     let list_all_usecase = Arc::new(ListAllFutureResourceUsagesUseCase::new(
         resource_usage_repo.clone(),
     ));
@@ -214,6 +218,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             create_usecase.clone(),
             update_usecase.clone(),
             delete_usecase.clone(),
+            release_early_usecase.clone(),
             list_all_usecase.clone(),
             list_mine_usecase.clone(),
             get_by_id_usecase.clone(),
@@ -253,6 +258,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         accept_proposal_usecase,
         update_usecase,
         delete_usecase,
+        release_early_usecase,
         notify_usecase,
         slack_client,
         bot_token,
