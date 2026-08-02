@@ -64,12 +64,14 @@ where
     let initial_server = config.servers.first().map(|s| s.name.as_str());
     let modal_view = reserve::create_reserve_modal(
         config,
-        None,
-        initial_server,
-        Some(usage_id_str),
-        Some(CALLBACK_RESERVE_UPDATE), // callback_id
-        Some("予約更新"),              // title
-        Some("更新"),                  // submit_text
+        &reserve::ReserveModalParams {
+            selected_server: initial_server,
+            usage_id: Some(usage_id_str),
+            callback_id: Some(CALLBACK_RESERVE_UPDATE),
+            title: Some("予約更新"),
+            submit_text: Some("更新"),
+            ..Default::default()
+        },
     );
 
     modals::open(slack_client, bot_token, trigger_id, modal_view).await?;

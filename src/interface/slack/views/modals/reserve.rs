@@ -5,28 +5,46 @@ use crate::interface::slack::constants::*;
 use chrono::{Local, Timelike};
 use slack_morphism::prelude::*;
 
+/// 予約モーダルの初期状態
+///
+/// 何も指定しなければ、新規予約のモーダルが既定の見出しと文言で開く。
+#[derive(Debug, Default, Clone)]
+pub struct ReserveModalParams<'a> {
+    /// 選択されたリソースタイプ ("gpu" or "room")
+    pub resource_type: Option<&'a str>,
+    /// 選択されたサーバー名（GPU選択時のみ）
+    pub selected_server: Option<&'a str>,
+    /// あらかじめ選んでおくデバイス番号（GPU選択時のみ）
+    pub selected_devices: &'a [u32],
+    /// 更新対象の予約ID（Noneの場合は新規作成）
+    pub usage_id: Option<&'a str>,
+    /// モーダルのコールバックID（デフォルト: "reserve_submit"）
+    pub callback_id: Option<&'a str>,
+    /// モーダルのタイトル（デフォルト: "リソース予約"）
+    pub title: Option<&'a str>,
+    /// 送信ボタンのテキスト（デフォルト: "予約する"）
+    pub submit_text: Option<&'a str>,
+}
+
 /// 予約作成・更新用のモーダルを作成
 ///
 /// # 引数
 /// * `config` - リソース設定
-/// * `resource_type` - 選択されたリソースタイプ ("gpu" or "room")
-/// * `selected_server` - 選択されたサーバー名（GPU選択時のみ）
-/// * `usage_id` - 更新対象の予約ID（Noneの場合は新規作成）
-/// * `callback_id` - モーダルのコールバックID（デフォルト: "reserve_submit"）
-/// * `title` - モーダルのタイトル（デフォルト: "リソース予約"）
-/// * `submit_text` - 送信ボタンのテキスト（デフォルト: "予約する"）
+/// * `params` - モーダルの初期状態
 ///
 /// # 戻り値
 /// 予約フォームのモーダルビュー
-pub fn create_reserve_modal(
-    config: &ResourceConfig,
-    resource_type: Option<&str>,
-    selected_server: Option<&str>,
-    usage_id: Option<&str>,
-    callback_id: Option<&str>,
-    title: Option<&str>,
-    submit_text: Option<&str>,
-) -> SlackView {
+pub fn create_reserve_modal(config: &ResourceConfig, params: &ReserveModalParams) -> SlackView {
+    let ReserveModalParams {
+        resource_type,
+        selected_server,
+        selected_devices,
+        usage_id,
+        callback_id,
+        title,
+        submit_text,
+    } = *params;
+
     // 現在時刻を取得してデフォルト値を設定
     let now = Local::now();
     let start_date = now.format("%Y-%m-%d").to_string();
@@ -72,7 +90,7 @@ pub fn create_reserve_modal(
 
     // リソースタイプに応じて条件分岐
     if current_resource_type == "gpu" {
-        add_gpu_blocks(&mut blocks, config, selected_server);
+        add_gpu_blocks(&mut blocks, config, selected_server, selected_devices);
     } else if current_resource_type == "room" {
         add_room_blocks(&mut blocks, config);
     }
@@ -136,6 +154,7 @@ fn add_gpu_blocks(
     blocks: &mut Vec<SlackBlock>,
     config: &ResourceConfig,
     selected_server: Option<&str>,
+    selected_devices: &[u32],
 ) {
     // サーバー設定が空の場合はエラーメッセージを表示
     if config.servers.is_empty() {
@@ -199,13 +218,30 @@ fn add_gpu_blocks(
 
     // GPU Device選択（チェックボックス）
     if !device_options.is_empty() {
+        let mut devices_element = SlackBlockCheckboxesElement::new(
+            SlackActionId::new(ACTION_RESERVE_DEVICES.to_string()),
+            device_options.clone(),
+        );
+
+        // あらかじめ選んでおくデバイスは、表示中の選択肢に含まれるものだけを選ぶ
+        // （別サーバーの番号が渡ってもSlackが選択肢と対応づけられないため）
+        let initial_devices: Vec<SlackBlockChoiceItem<SlackBlockText>> = device_options
+            .into_iter()
+            .filter(|option| {
+                selected_devices
+                    .iter()
+                    .any(|number| number.to_string() == option.value)
+            })
+            .collect();
+
+        if !initial_devices.is_empty() {
+            devices_element = devices_element.with_initial_options(initial_devices);
+        }
+
         blocks.push(SlackBlock::Input(
             SlackInputBlock::new(
                 pt!("GPU Devices"),
-                SlackInputBlockElement::Checkboxes(SlackBlockCheckboxesElement::new(
-                    SlackActionId::new(ACTION_RESERVE_DEVICES.to_string()),
-                    device_options,
-                )),
+                SlackInputBlockElement::Checkboxes(devices_element),
             )
             .with_optional(true),
         ));
@@ -296,4 +332,101 @@ fn add_datetime_blocks(
             .with_initial_time(end_time.to_string()),
         ),
     )));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::infrastructure::config::{DeviceConfig, ServerConfig};
+
+    fn config() -> ResourceConfig {
+        ResourceConfig {
+            servers: vec![
+                ServerConfig {
+                    name: "gpu-server-1".to_string(),
+                    calendar_id: "cal-1".to_string(),
+                    devices: (0..4)
+                        .map(|id| DeviceConfig {
+                            id,
+                            model: "A100 80GB PCIe".to_string(),
+                        })
+                        .collect(),
+                    notifications: vec![],
+                },
+                ServerConfig {
+                    name: "gpu-server-2".to_string(),
+                    calendar_id: "cal-2".to_string(),
+                    devices: vec![DeviceConfig {
+                        id: 0,
+                        model: "A100 80GB PCIe".to_string(),
+                    }],
+                    notifications: vec![],
+                },
+            ],
+            rooms: vec![],
+        }
+    }
+
+    /// デバイス選択チェックボックスの、あらかじめ選ばれている値を取り出す
+    fn initially_checked_devices(view: &SlackView) -> Vec<String> {
+        let SlackView::Modal(modal) = view else {
+            panic!("モーダルが返るはず");
+        };
+
+        modal
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                SlackBlock::Input(input) => match &input.element {
+                    SlackInputBlockElement::Checkboxes(checkboxes) => {
+                        Some(checkboxes.initial_options.clone().unwrap_or_default())
+                    }
+                    _ => None,
+                },
+                _ => None,
+            })
+            .unwrap_or_default()
+            .into_iter()
+            .map(|option| option.value)
+            .collect()
+    }
+
+    #[test]
+    fn nothing_is_checked_when_no_devices_are_given() {
+        let view = create_reserve_modal(&config(), &ReserveModalParams::default());
+
+        assert!(initially_checked_devices(&view).is_empty());
+    }
+
+    #[test]
+    fn the_given_devices_come_up_already_checked() {
+        let view = create_reserve_modal(
+            &config(),
+            &ReserveModalParams {
+                selected_server: Some("gpu-server-1"),
+                selected_devices: &[0, 3],
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(initially_checked_devices(&view), vec!["0", "3"]);
+    }
+
+    #[test]
+    fn a_device_the_shown_server_does_not_have_is_left_alone() {
+        let view = create_reserve_modal(
+            &config(),
+            &ReserveModalParams {
+                selected_server: Some("gpu-server-2"),
+                selected_devices: &[0, 3],
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(
+            initially_checked_devices(&view),
+            vec!["0"],
+            "表示中のサーバーにない番号を選ぼうとすると、Slackが選択肢と対応づけられない"
+        );
+    }
 }
