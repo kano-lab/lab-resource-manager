@@ -3,6 +3,7 @@
 //! このモジュールは設定値の型定義のみを担当し、
 //! デフォルト値や読み込み方法は別モジュールで定義される。
 
+use crate::application::usecases::detect_idle_reservations::NoticePolicy;
 use chrono::Duration;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -32,10 +33,18 @@ pub struct AppConfig {
     pub unreserved_usage_threshold_secs: u64,
     /// 事後予約提案で提示する利用時間の候補
     pub reservation_proposal_duration_candidates: Vec<Duration>,
-    /// 予約者本人に使われていない予約を知らせるまでの時間（秒）
+    /// 予約者本人のプロセスを観測できない予約を知らせるまでの時間（秒）
     ///
     /// 残り時間がこれに満たない予約には知らせない（急かしても開けられる時間がないため）。
     pub idle_reservation_threshold_secs: u64,
+    /// GPUを押さえたまま計算が走らない予約を知らせるまでの時間（秒）
+    pub idle_held_gpu_threshold_secs: u64,
+    /// 計算が走っているとみなす稼働率（%）
+    pub computing_gpu_utilization_percent: u32,
+    /// GPUを押さえたまま計算が走らない予約を、予約者に知らせるか様子を見るだけにするか
+    pub idle_held_gpu_notices: NoticePolicy,
+    /// 一度声をかけてから、次に声をかけるまで置く時間（秒）
+    pub idle_notice_silence_secs: u64,
     /// MCPサーバーのHTTP/SSEリッスンアドレス（未設定ならMCP機能を無効化）
     pub mcp_listen_addr: Option<SocketAddr>,
     /// MCPアクセストークンファイルのパス

@@ -36,13 +36,14 @@ pub mod resource_usage_observer;
 pub mod unauthorized_usage_notifier;
 
 pub use error::PortError;
-pub use idle_reservation_notifier::{IdleReservation, IdleReservationNotifier};
+pub use idle_reservation_notifier::{IdleEvidence, IdleReservation, IdleReservationNotifier};
 pub use notifier::{NotificationError, NotificationEvent, Notifier};
 pub use reservation_proposal::{ReservationProposal, ReservationProposalNotifier};
 pub use resource_collection_access::{
     ResourceCollectionAccessError, ResourceCollectionAccessService,
 };
 pub use resource_usage_observer::{
-    ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver, ServerObservation,
+    GpuActivity, ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver,
+    ServerObservation,
 };
 pub use unauthorized_usage_notifier::UnauthorizedUsageNotifier;

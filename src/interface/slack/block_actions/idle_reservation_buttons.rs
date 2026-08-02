@@ -14,6 +14,7 @@ use crate::interface::slack::constants::{
 use crate::interface::slack::utility::{
     interaction_reply, reservation_failure, reservation_summary, user_resolver,
 };
+use chrono::Utc;
 use slack_morphism::prelude::*;
 use tracing::{error, info, warn};
 
@@ -66,19 +67,19 @@ where
 
 /// 「まだ使う」に答える
 ///
-/// 予約は使われる見込みなので、この予約についてはもう声をかけない。
+/// 予約は使われる見込みなので、しばらくこの予約について声をかけない。
 fn keep<R, N>(app: &SlackApp<R, N>, usage_id: &UsageId) -> String
 where
     R: ResourceUsageRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
-    app.idle_notices().silence(usage_id);
+    app.idle_notices().silence(usage_id, Utc::now());
     info!(
         usage_id = %usage_id.as_str(),
         origin = "slack",
         "the owner intends to keep using the reservation"
     );
-    "👍 わかりました。この予約についてはもう知らせません。".to_string()
+    "👍 わかりました。しばらくこの予約については知らせません。".to_string()
 }
 
 /// 「今で終了する」に答える

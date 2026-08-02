@@ -92,10 +92,11 @@ fn describe_observation(
 /// 状態を読むための尺度を添える
 fn build_settings(settings: &MonitoringSettings) -> String {
     format!(
-        "突合は{}ごと。{}より古いレポートは使いません。{}使われていない予約は予約者に知らせます。",
+        "突合は{}ごと。{}より古いレポートは使いません。{}使われていない予約と、{}計算が走らないGPUは予約者に知らせます。",
         format_elapsed(settings.polling_interval),
         format_elapsed(settings.max_staleness),
-        format_elapsed(settings.idle_threshold)
+        format_elapsed(settings.idle_threshold),
+        format_elapsed(settings.held_gpu_threshold)
     )
 }
 
@@ -136,6 +137,7 @@ mod tests {
         MonitoringSettings {
             polling_interval: Duration::seconds(60),
             idle_threshold: Duration::minutes(30),
+            held_gpu_threshold: Duration::hours(1),
             max_staleness: Duration::minutes(5),
         }
     }

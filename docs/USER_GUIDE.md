@@ -155,16 +155,31 @@ going to use the resource at all. You can only act on reservations you own.
 
 ## When a Reservation Goes Unused
 
-In labs where GPU usage monitoring is enabled, the bot sends you a direct message when
-none of your processes have been running on a GPU you reserved for a while.
+In labs where GPU usage monitoring is enabled, the bot sends you a direct message when a
+GPU you reserved has gone unused for a while. There are two cases:
+
+- **None of your processes are there**: nothing of yours is running on the GPU you reserved
+- **Held without computing**: your processes are running and GPU memory is allocated, but no
+  computation has run for a while — an inference server left resident, a notebook left open,
+  a training job that stalled
+
+The second kind of notice names which GPUs, how much memory you have allocated on them, and
+the peak utilization seen over that stretch, so you can weigh it against what you know you
+are doing. It waits longer than the first kind before reaching you.
+
+GPUs are judged one at a time. Reserve eight and run one, and you hear about the other seven.
+If you are still using the rest, leave things as they are; if you are done with all of them,
+you can end the reservation and take out a smaller one.
 
 - **⏹️ End now**: End the reservation at that moment and open the remaining time to others
   (the time you used stays on record)
-- **✅ Still using it**: You are about to use it — you won't be told about this reservation again
+- **✅ Still using it**: You are about to use it — you won't be told about this reservation for a while
 - **❌ Cancel**: Drop the reservation entirely
 
 This is not meant to rush you. It exists so a reservation you held and forgot about doesn't
-keep others waiting. If you still intend to use it, press "✅ Still using it" and carry on.
+keep others waiting. If you still intend to use it, press "✅ Still using it" and carry on —
+though the quiet lasts a while rather than forever. If it still goes unused after that, you
+will hear about it again.
 
 Some reservations are never reported:
 

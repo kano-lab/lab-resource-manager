@@ -83,7 +83,7 @@ pub use check_resource_availability::CheckResourceAvailabilityUseCase;
 pub use create_resource_usage::CreateResourceUsageUseCase;
 pub use delete_resource_usage::DeleteResourceUsageUseCase;
 pub use describe_monitoring::DescribeMonitoringUseCase;
-pub use detect_idle_reservations::DetectIdleReservationsUseCase;
+pub use detect_idle_reservations::{DetectIdleReservationsUseCase, IdleCriteria};
 pub use get_resource_usage_by_id::GetResourceUsageByIdUseCase;
 pub use grant_user_resource_access::GrantUserResourceAccessUseCase;
 pub use list_all_future_resource_usages::ListAllFutureResourceUsagesUseCase;

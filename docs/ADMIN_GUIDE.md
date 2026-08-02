@@ -258,13 +258,37 @@ individually**, including the one that runs the LRM binary itself, each with its
   "server": "gpu-server-1",
   "generated_at": "2026-07-24T12:00:00+00:00",
   "processes": [
-    {"device_number": 0, "os_user": "alice", "started_at": "2026-07-24T10:00:00+00:00"}
+    {
+      "device_number": 0,
+      "os_user": "alice",
+      "started_at": "2026-07-24T10:00:00+00:00",
+      "used_memory_mib": 38000
+    }
+  ],
+  "devices": [
+    {"device_number": 0, "peak_utilization_percent": 87}
   ]
 }
 ```
 
 Files older than a configured staleness threshold (5 minutes by default) are ignored, so a
 stopped cron job doesn't cause stale usage data to be mistaken for still-active usage.
+
+`devices` says how hard each GPU was working during that run. `gpu-usage-reporter` reads
+utilization once a second for `--sample-seconds` (30 by default) and reports the **peak**.
+The utilization `nvidia-smi` returns is an instantaneous value over a very short window, so
+a single reading misses computation that comes in bursts. Keep the value below the run
+interval (about 30 seconds for a one-minute cron); the longer the window, the less is missed.
+Each run takes that long to finish.
+
+`processes[].used_memory_mib` is what that user has allocated on that device — a per-user
+total rather than the device's, so nobody else's processes are counted into it.
+
+Where utilization cannot be read — GPUs that return `[N/A]` for `utilization.gpu`, or an
+older `gpu-usage-reporter` that writes no `devices` — the field stays empty. Empty means
+"whether it was computing cannot be asked", not "it was not computing", and those GPUs are
+judged the way they always were: by whether the owner has processes on them. A missing
+`used_memory_mib` works the same way: the amount goes unmentioned, the judgement still runs.
 
 **Enabling the feature on the main binary side:** the reconciliation loop (comparing
 observed usage against reservations, proposing a post-hoc reservation via Slack DM, and
@@ -276,8 +300,39 @@ the same shared directory used by `gpu-usage-reporter` above to enable it:
 | `GPU_USAGE_REPORTS_DIR` | (unset = feature disabled) | Shared directory read by `SharedFileResourceUsageObserver` |
 | `GPU_USAGE_MAX_STALENESS_SECS` | `300` | How old a report can be before it's ignored |
 | `UNRESERVED_USAGE_THRESHOLD_SECS` | `600` | How long unreserved usage must continue before a proposal is sent |
-| `IDLE_RESERVATION_THRESHOLD_SECS` | `1800` | How long a reservation must go unused by its owner before the owner is told. Reservations with less time left than this are left alone |
+| `IDLE_RESERVATION_THRESHOLD_SECS` | `1800` | How long a reservation must go without any process from its owner before the owner is told. Reservations with less time left than this are left alone |
+| `IDLE_HELD_GPU_THRESHOLD_SECS` | `3600` | How long a GPU must be held without computation before the owner is told |
+| `COMPUTING_GPU_UTILIZATION_PERCENT` | `5` | The utilization at or above which a GPU counts as computing. Setting it to `0` effectively turns off the held-without-computing check |
+| `IDLE_HELD_GPU_NOTICES` | `observe` | Whether a GPU held without computation is reported to its owner (`notify`) or only counted in the logs (`observe`) |
+| `IDLE_NOTICE_SILENCE_SECS` | `14400` | How long to stay quiet about a reservation after speaking up about it once |
 | `RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS` | `1,2,3,5,8` | Comma-separated hour candidates offered in the Slack DM |
+
+**On reservations held without computation:** a process sitting on a GPU is not the same as
+computation running on it. Where memory is allocated and then left waiting — a resident
+inference server, an open notebook, a stalled training job — the GPU is unavailable to
+everyone else while nothing moves forward. If a GPU carrying the owner's processes does not
+reach `COMPUTING_GPU_UTILIZATION_PERCENT` for `IDLE_HELD_GPU_THRESHOLD_SECS`, the owner gets
+a DM.
+
+GPUs are judged one at a time. One of eight cards computing says nothing about the other
+seven. Where only some are at rest, the notice names which ones.
+
+That grace period is longer than the one for a reservation with no processes at all
+(`IDLE_RESERVATION_THRESHOLD_SECS`), because the ways of working where waiting is the point
+are slow to start back up, and holding them to the same measure would interrupt work that is
+going fine. The DM does not force anything: it offers "end it now / keep it / cancel it".
+
+Choosing "keep it" stays quiet for `IDLE_NOTICE_SILENCE_SECS`, not forever. It is a statement
+of intent to use the reservation, not a pass for the rest of it. The record also clears the
+moment computation actually starts, so the next time work stops, counting starts over.
+
+**Watch before telling:** `IDLE_HELD_GPU_NOTICES` defaults to `observe`, so this way of
+judging sends no DMs at all. Nobody should be hurried by a threshold that has not been
+checked against how the lab actually works. Each minute the log carries `held` (every
+observed GPU at rest), `held_partially` (only some), and `withheld` (a notice that was due
+but not sent). Watch for a while, and switch to `IDLE_HELD_GPU_NOTICES=notify` once the
+numbers look right. Notices for a reservation with no processes at all — the behaviour that
+has been there since 1.7 — are sent regardless of this setting.
 
 When enabled, a user whose OS account is linked (`/link-user`) and who also has a linked
 Slack account will receive a DM with buttons for each duration candidate; clicking one
@@ -292,11 +347,26 @@ to anyone, the event is skipped entirely (whether it's unauthorized use is undec
 without knowing who it is), so linking every server user via `/link-user` is required for
 this detection to work.
 
-**Current limitation**: this wiring has been verified with unit/integration tests using
-mock adapters, but sending an actual Slack DM (via `conversations.open`/`chat.postMessage`)
-and running `gpu-usage-reporter` against a real GPU server have not been verified in a live
-environment yet. The Slack app needs the `im:write` and `chat:write` scopes for the DM to
-work.
+**Current limitation**: this wiring has been verified with unit/integration tests using mock
+adapters, and `gpu-usage-reporter` has been run against a real GPU server (NVIDIA driver
+580.x). Sending an actual Slack DM (via `conversations.open`/`chat.postMessage`) has not been
+verified in a live environment yet. The Slack app needs the `im:write` and `chat:write`
+scopes for the DM to work.
+
+**Checking that DMs arrive, without involving anyone else:** one reservation of your own is
+enough to walk the whole path.
+
+1. Link your own OS username with `/link-user`.
+2. Reserve one GPU in your own name for a couple of hours (one nobody else is using).
+3. Start with `IDLE_RESERVATION_THRESHOLD_SECS=60`, `IDLE_HELD_GPU_THRESHOLD_SECS=60`, and
+   `IDLE_HELD_GPU_NOTICES=notify`.
+4. Leave the GPU untouched for a few minutes — the no-processes DM arrives.
+5. Press "✅ Still using it", then start a process that allocates memory without computing
+   (e.g. `python -c "import torch; torch.zeros(1, device='cuda:0'); input()"`).
+6. After `IDLE_NOTICE_SILENCE_SECS` passes, the held-without-computing DM arrives.
+
+Put the thresholds back afterwards and return `IDLE_HELD_GPU_NOTICES` to `observe`. While the
+thresholds are short, other people's reservations get DMs too — keep that window brief.
 
 ### 7. MCP Server Setup (Optional)
 
@@ -482,7 +552,7 @@ arriving.
 ⚠️ `Freccia` 42分前のレポートで止まっています
 ❌ `Alfa` レポートが届いていません（gpu-usage-reporter の実行を確認してください）
 
-突合は1分ごと。5分より古いレポートは使いません。30分使われていない予約は予約者に知らせます。
+突合は1分ごと。5分より古いレポートは使いません。30分使われていない予約と、1時間計算が走らないGPUは予約者に知らせます。
 ```
 
 | Mark | State | Where to look |
