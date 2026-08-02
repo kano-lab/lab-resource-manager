@@ -1,13 +1,13 @@
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
 use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
 use crate::domain::ports::resource_usage_observer::{
-    ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver,
+    ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver, ServerObservation,
 };
 use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::warn;
@@ -79,18 +79,23 @@ impl SharedFileResourceUsageObserver {
 
     /// 1サーバー分のレポートを読む
     ///
-    /// 利用状況を把握できなかった場合は`None`を返す。読めなかったことと
+    /// 利用状況を把握できなかった場合、その理由まで返す。読めなかったことと
     /// 「使われていない」ことを呼び出し側が取り違えないようにするため、
     /// 空の一覧では表さない。
-    async fn read_server_report(&self, server_name: &str) -> Option<Vec<ObservedUsage>> {
+    async fn read_server_report(
+        &self,
+        server_name: &str,
+    ) -> (ServerObservation, Vec<ObservedUsage>) {
         let path = self.report_path(server_name);
 
         let content = match tokio::fs::read_to_string(&path).await {
             Ok(content) => content,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return (ServerObservation::Missing, Vec::new());
+            }
             Err(e) => {
                 warn!(path = %path.display(), error = %e, "reading a usage report failed");
-                return None;
+                return (ServerObservation::Unreadable, Vec::new());
             }
         };
 
@@ -98,7 +103,7 @@ impl SharedFileResourceUsageObserver {
             Ok(report) => report,
             Err(e) => {
                 warn!(path = %path.display(), error = %e, "parsing a usage report failed");
-                return None;
+                return (ServerObservation::Unreadable, Vec::new());
             }
         };
 
@@ -109,10 +114,20 @@ impl SharedFileResourceUsageObserver {
                 max_staleness_secs = self.max_staleness.num_seconds(),
                 "the usage report is too old; ignoring it"
             );
-            return None;
+            return (
+                ServerObservation::Stale {
+                    generated_at: report.generated_at,
+                },
+                Vec::new(),
+            );
         }
 
-        Some(self.build_observed_usages(&report))
+        (
+            ServerObservation::Observed {
+                generated_at: report.generated_at,
+            },
+            self.build_observed_usages(&report),
+        )
     }
 
     fn build_observed_usages(&self, report: &GpuUsageReport) -> Vec<ObservedUsage> {
@@ -157,17 +172,15 @@ impl SharedFileResourceUsageObserver {
 impl ResourceUsageObserver for SharedFileResourceUsageObserver {
     async fn observe_active_usages(&self) -> Result<ObservationSnapshot, ObservationError> {
         let mut observed = Vec::new();
-        let mut observed_servers = HashSet::new();
+        let mut servers = HashMap::new();
 
         for server in &self.resource_config.servers {
-            let Some(usages) = self.read_server_report(&server.name).await else {
-                continue;
-            };
+            let (observation, usages) = self.read_server_report(&server.name).await;
             observed.extend(usages);
-            observed_servers.insert(server.name.clone());
+            servers.insert(server.name.clone(), observation);
         }
 
-        Ok(ObservationSnapshot::new(observed, observed_servers))
+        Ok(ObservationSnapshot::new(observed, servers))
     }
 }
 
@@ -213,12 +226,18 @@ mod tests {
             !snapshot.covers("Thalys"),
             "レポートがないサーバーの利用状況は分からない"
         );
+        assert_eq!(
+            snapshot.servers(),
+            vec![("Thalys", &ServerObservation::Missing)],
+            "届いていないことが理由として分かる"
+        );
     }
 
     #[tokio::test]
     async fn test_valid_report_is_parsed() {
         let dir = temp_dir();
-        let generated_at = Utc::now();
+        let report_generated_at = Utc::now();
+        let generated_at = report_generated_at;
         let started_at = generated_at - Duration::minutes(20);
         write_report(
             &dir,
@@ -243,6 +262,16 @@ mod tests {
 
         assert_eq!(observed.len(), 1);
         assert!(snapshot.covers("Thalys"));
+        assert_eq!(
+            snapshot.servers(),
+            vec![(
+                "Thalys",
+                &ServerObservation::Observed {
+                    generated_at: report_generated_at
+                }
+            )],
+            "いつ時点の状況なのかが分かる"
+        );
         assert_eq!(observed[0].external_identity().user_id(), "kkawaguchi");
         assert_eq!(observed[0].active_since(), started_at);
         match observed[0].resource() {
@@ -260,7 +289,8 @@ mod tests {
     #[tokio::test]
     async fn a_stale_report_leaves_the_server_uncovered() {
         let dir = temp_dir();
-        let generated_at = Utc::now() - Duration::minutes(30);
+        let stale_generated_at = Utc::now() - Duration::minutes(30);
+        let generated_at = stale_generated_at;
         let started_at = generated_at - Duration::minutes(20);
         write_report(
             &dir,
@@ -286,6 +316,16 @@ mod tests {
         assert!(
             !snapshot.covers("Thalys"),
             "監視が止まっている間の沈黙を「使われていない」と読ませない"
+        );
+        assert_eq!(
+            snapshot.servers(),
+            vec![(
+                "Thalys",
+                &ServerObservation::Stale {
+                    generated_at: stale_generated_at
+                }
+            )],
+            "届いてはいるが古い、と区別できる"
         );
 
         tokio::fs::remove_dir_all(&dir).await.ok();
@@ -319,6 +359,28 @@ mod tests {
         assert!(
             snapshot.covers("Thalys"),
             "レポートは読めているので、そのサーバーの利用状況は把握できている"
+        );
+
+        tokio::fs::remove_dir_all(&dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn a_report_that_cannot_be_parsed_is_reported_as_unreadable() {
+        let dir = temp_dir();
+        write_report(&dir, "thalys.json", "{ this is not json").await;
+
+        let observer = SharedFileResourceUsageObserver::new(
+            dir.clone(),
+            test_resource_config(),
+            Duration::minutes(5),
+        );
+        let snapshot = observer.observe_active_usages().await.unwrap();
+
+        assert!(!snapshot.covers("Thalys"));
+        assert_eq!(
+            snapshot.servers(),
+            vec![("Thalys", &ServerObservation::Unreadable)],
+            "壊れたレポートは、届いていないこととは別の手当てが要る"
         );
 
         tokio::fs::remove_dir_all(&dir).await.ok();
