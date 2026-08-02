@@ -13,6 +13,23 @@ pub enum ResourceUsageError {
     },
     /// リソース項目が空
     NoResourceItems,
+    /// まだ始まっていない予約を早期終了しようとした
+    ///
+    /// 使い始める前の予約には使った時間が存在しない。残すべき実績がないため、
+    /// この場合に取れる操作は取り消しである。
+    NotYetStarted {
+        /// 予約の開始時刻
+        start: DateTime<Utc>,
+        /// 早期終了しようとした時刻
+        at: DateTime<Utc>,
+    },
+    /// すでに終わった予約を早期終了しようとした
+    AlreadyEnded {
+        /// 予約の終了時刻
+        end: DateTime<Utc>,
+        /// 早期終了しようとした時刻
+        at: DateTime<Utc>,
+    },
     /// リソース使用の競合
     UsageConflict {
         /// 競合しているリソース名
@@ -35,6 +52,22 @@ impl fmt::Display for ResourceUsageError {
             }
             ResourceUsageError::NoResourceItems => {
                 write!(f, "資源項目エラー: 少なくとも1つの資源項目が必要です")
+            }
+            ResourceUsageError::NotYetStarted { start, at } => {
+                write!(
+                    f,
+                    "まだ始まっていない予約です（開始時刻: {}、指定時刻: {}）。早期終了ではなく取り消してください。",
+                    start.format("%Y-%m-%d %H:%M:%S"),
+                    at.format("%Y-%m-%d %H:%M:%S")
+                )
+            }
+            ResourceUsageError::AlreadyEnded { end, at } => {
+                write!(
+                    f,
+                    "すでに終わっている予約です（終了時刻: {}、指定時刻: {}）。",
+                    end.format("%Y-%m-%d %H:%M:%S"),
+                    at.format("%Y-%m-%d %H:%M:%S")
+                )
             }
             ResourceUsageError::UsageConflict {
                 resource,
