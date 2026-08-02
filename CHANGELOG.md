@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.7.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.6.2...v1.7.0) (2026-08-02)
+
+
+### Features
+
+* ask the owner what to do with a reservation nobody is using ([#138](https://github.com/kano-lab/lab-resource-manager/issues/138)) ([c2d28d3](https://github.com/kano-lab/lab-resource-manager/commit/c2d28d3d126ae9c7eaa7c7347f26e03abe035a0e))
+* end a running reservation now instead of deleting it ([#134](https://github.com/kano-lab/lab-resource-manager/issues/134)) ([9f8d431](https://github.com/kano-lab/lab-resource-manager/commit/9f8d431a0f9500c785709b6c60f5eadaea56dc13))
+* generate the Slack app manifest from the code ([#154](https://github.com/kano-lab/lab-resource-manager/issues/154)) ([6c793e0](https://github.com/kano-lab/lab-resource-manager/commit/6c793e093bc7d38142a56512da1f5792d8a8cbce))
+* let people end a reservation from Slack and MCP ([#135](https://github.com/kano-lab/lab-resource-manager/issues/135)) ([37df3f4](https://github.com/kano-lab/lab-resource-manager/commit/37df3f4118cc3387df3b387a796af978fec1256c))
+* look ahead to another day, and reserve from what is free ([#152](https://github.com/kano-lab/lab-resource-manager/issues/152)) ([43da699](https://github.com/kano-lab/lab-resource-manager/commit/43da69960dacdaeffde8e3d946b2e48061912b18))
+* notice when a reservation is going unused ([#137](https://github.com/kano-lab/lab-resource-manager/issues/137)) ([7409e8e](https://github.com/kano-lab/lab-resource-manager/commit/7409e8e8371b52679f622e3142e2f9707cc11c68))
+* open the reservation modal with devices already chosen ([#151](https://github.com/kano-lab/lab-resource-manager/issues/151)) ([dad4f7c](https://github.com/kano-lab/lab-resource-manager/commit/dad4f7c62fffcd86c54271d8bf80737abbfbb3a0))
+* report from Slack whether monitoring is working ([#153](https://github.com/kano-lab/lab-resource-manager/issues/153)) ([4a36888](https://github.com/kano-lab/lab-resource-manager/commit/4a368888cc4b531d250e3a2cf27ed663451dcba6))
+* say why a server's usage cannot be observed ([#150](https://github.com/kano-lab/lab-resource-manager/issues/150)) ([e7d6c4e](https://github.com/kano-lab/lab-resource-manager/commit/e7d6c4e427693d2509d18c8058d5df9d9cf6852c))
+* show what is free right now from Slack ([#142](https://github.com/kano-lab/lab-resource-manager/issues/142)) ([860e684](https://github.com/kano-lab/lab-resource-manager/commit/860e6845cd25f0417eff1908b0c6824115431afb))
+* work out when each resource is free ([#141](https://github.com/kano-lab/lab-resource-manager/issues/141)) ([e7464df](https://github.com/kano-lab/lab-resource-manager/commit/e7464dfeb6f7a8d23fa084ca2d6ea0c5acad7744))
+
+
+### Bug Fixes
+
+* forget the anti-spam records once they can no longer apply ([#147](https://github.com/kano-lab/lab-resource-manager/issues/147)) ([9b7a2a0](https://github.com/kano-lab/lab-resource-manager/commit/9b7a2a088fe89983f6d9d1bd93157b0f5b768a1c))
+* tell cancel failures apart by type instead of by message text ([#145](https://github.com/kano-lab/lab-resource-manager/issues/145)) ([9965545](https://github.com/kano-lab/lab-resource-manager/commit/9965545b9dbdb63facf46498c677db4dfc8cb366))
+
 ## [1.6.2](https://github.com/kano-lab/lab-resource-manager/compare/v1.6.1...v1.6.2) (2026-07-28)
 
 
