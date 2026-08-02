@@ -387,12 +387,18 @@ exercising `/mcp-token` against a real Slack workspace, and confirming that a re
 client (e.g. Claude Code) actually trusts a CA registered on a shared machine, have not
 been verified — the development Docker sandbox cannot exercise any of these.
 
-### 7. Web Timeline Setup (Optional)
+### 7. Web Timeline Setup (Optional, Experimental)
 
 Browse reservations as a resource-by-time timeline. Comparing GPU availability side by side
 is what a calendar UI is poor at, and this page fills that gap. As with the MCP server, an
 HTTP listener starts as an extra task inside the existing `lab-resource-manager` process —
 no separate binary or systemd service is needed.
+
+**This feature is experimental.** The environment variable names, the URL layout and the
+shape of the page may change in a minor release. The web framework underneath (Topcoat) is
+itself a 0.x release that expects breaking changes. Take that into account before building
+it into an operational procedure. The library's public API is unaffected — only `serve` and
+the `ReservationQuery` port are exposed, and neither names a framework type.
 
 **It is read-only.** Creating, updating and cancelling reservations stay with Slack and MCP.
 
