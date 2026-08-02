@@ -1,5 +1,5 @@
 use crate::domain::aggregates::identity_link::value_objects::ExternalIdentity;
-use crate::domain::aggregates::resource_usage::value_objects::Resource;
+use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
 use crate::domain::errors::DomainError;
 use crate::domain::ports::error::PortError;
 use async_trait::async_trait;
@@ -17,6 +17,7 @@ pub struct ObservedUsage {
     resource: Resource,
     external_identity: ExternalIdentity,
     active_since: DateTime<Utc>,
+    used_memory_mib: Option<u64>,
 }
 
 impl ObservedUsage {
@@ -30,7 +31,25 @@ impl ObservedUsage {
             resource,
             external_identity,
             active_since,
+            used_memory_mib: None,
         }
+    }
+
+    /// この利用が確保しているメモリ量を添える
+    ///
+    /// 報告できる観測手段とそうでない観測手段があるため、別に足せるようにしている。
+    pub fn with_used_memory(self, used_memory_mib: u64) -> Self {
+        Self {
+            used_memory_mib: Some(used_memory_mib),
+            ..self
+        }
+    }
+
+    /// この利用が確保しているメモリ量（MiB）
+    ///
+    /// `None`は「確保していない」ではなく「どれだけ確保しているかを問えない」を意味する。
+    pub fn used_memory_mib(&self) -> Option<u64> {
+        self.used_memory_mib
     }
 
     /// 観測対象のリソースを取得
@@ -46,6 +65,36 @@ impl ObservedUsage {
     /// 利用開始時刻を取得
     pub fn active_since(&self) -> DateTime<Utc> {
         self.active_since
+    }
+}
+
+/// GPU1台が観測の窓のあいだにどれだけ計算していたか
+///
+/// プロセスが乗っていることと、計算が走っていることは別である。メモリだけを確保して
+/// 待機する使い方（常駐させた推論サーバー、開いたままのノートブック、止まったジョブ）では、
+/// プロセスの有無からは計算しているかどうかが分からない。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuActivity {
+    peak_utilization_percent: u32,
+}
+
+impl GpuActivity {
+    /// 新しい観測結果を作成
+    ///
+    /// # Arguments
+    /// * `peak_utilization_percent` - 観測の窓のあいだに見た最も高い稼働率
+    pub fn new(peak_utilization_percent: u32) -> Self {
+        Self {
+            peak_utilization_percent,
+        }
+    }
+
+    /// 観測の窓のあいだに見た最も高い稼働率
+    ///
+    /// 平均ではなく最大を持つ。稼働が途切れがちな使い方（対話的な作業）を
+    /// 平均で均すと、実際には使われている予約を使われていないと読んでしまう。
+    pub fn peak_utilization_percent(&self) -> u32 {
+        self.peak_utilization_percent
     }
 }
 
@@ -88,6 +137,7 @@ impl ServerObservation {
 pub struct ObservationSnapshot {
     usages: Vec<ObservedUsage>,
     servers: HashMap<String, ServerObservation>,
+    gpu_activities: HashMap<(String, u32), GpuActivity>,
 }
 
 impl ObservationSnapshot {
@@ -97,12 +147,37 @@ impl ObservationSnapshot {
     /// * `usages` - 観測された利用の一覧
     /// * `servers` - サーバーごとの観測状態
     pub fn new(usages: Vec<ObservedUsage>, servers: HashMap<String, ServerObservation>) -> Self {
-        Self { usages, servers }
+        Self {
+            usages,
+            servers,
+            gpu_activities: HashMap::new(),
+        }
+    }
+
+    /// GPUごとの稼働状況を添えた観測結果を返す
+    ///
+    /// 稼働状況を報告できる観測手段とそうでない観測手段があるため、利用の一覧とは
+    /// 別に足せるようにしている。添えられていないGPUについては、計算しているか
+    /// どうかを問えない。
+    pub fn with_gpu_activities(self, gpu_activities: HashMap<(String, u32), GpuActivity>) -> Self {
+        Self {
+            gpu_activities,
+            ..self
+        }
     }
 
     /// 観測された利用の一覧を取得
     pub fn usages(&self) -> &[ObservedUsage] {
         &self.usages
+    }
+
+    /// このGPUが観測の窓のあいだにどれだけ計算していたか
+    ///
+    /// `None`は「計算していない」ではなく「計算していたかを問えない」を意味する。
+    /// 稼働状況を報告しない観測手段や、稼働率を読み出せないGPUがある。
+    pub fn gpu_activity_of(&self, gpu: &Gpu) -> Option<&GpuActivity> {
+        self.gpu_activities
+            .get(&(gpu.server().to_string(), gpu.device_number()))
     }
 
     /// そのサーバーの利用状況を今このとき把握できているか

@@ -39,10 +39,11 @@ impl IdleReservationNotifier for MockIdleReservationNotifier {
         }
 
         println!(
-            "📤 [MockIdleReservationNotifier] {} の予約 {} が {} から使われていない",
+            "📤 [MockIdleReservationNotifier] {} の予約 {} が {} から使われていない（{:?}）",
             idle.reservation().owner_email().as_str(),
             idle.reservation().id().as_str(),
-            idle.idle_since()
+            idle.idle_since(),
+            idle.evidence()
         );
         self.notices.lock().unwrap().push(idle);
         Ok(())

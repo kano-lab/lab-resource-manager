@@ -13,7 +13,7 @@ use lab_resource_manager::{
         create_resource_usage::CreateResourceUsageUseCase,
         delete_resource_usage::DeleteResourceUsageUseCase,
         describe_monitoring::{DescribeMonitoringUseCase, MonitoringSettings},
-        detect_idle_reservations::DetectIdleReservationsUseCase,
+        detect_idle_reservations::{DetectIdleReservationsUseCase, IdleCriteria},
         get_resource_usage_by_id::GetResourceUsageByIdUseCase,
         grant_user_resource_access::GrantUserResourceAccessUseCase,
         list_all_future_resource_usages::ListAllFutureResourceUsagesUseCase,
@@ -175,7 +175,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ===========================================
 
     // 予約者が「まだ使う」と答えたことを観測側に伝えるため、Slackと観測で同じ記録を共有する
-    let idle_notices = Arc::new(IdleNoticeLog::default());
+    let idle_notices = Arc::new(IdleNoticeLog::new(ChronoDuration::seconds(
+        app_config.idle_notice_silence_secs as i64,
+    )));
 
     let max_staleness = ChronoDuration::seconds(app_config.gpu_usage_max_staleness_secs as i64);
     let observer = app_config.gpu_usage_reports_dir.clone().map(|dir| {
@@ -194,6 +196,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             polling_interval: ChronoDuration::seconds(app_config.polling_interval_secs as i64),
             idle_threshold: ChronoDuration::seconds(
                 app_config.idle_reservation_threshold_secs as i64,
+            ),
+            held_gpu_threshold: ChronoDuration::seconds(
+                app_config.idle_held_gpu_threshold_secs as i64,
             ),
             max_staleness,
         },
@@ -231,7 +236,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             observer,
             identity_repo.clone(),
             idle_notifier,
-            ChronoDuration::seconds(app_config.idle_reservation_threshold_secs as i64),
+            IdleCriteria {
+                absent_threshold: ChronoDuration::seconds(
+                    app_config.idle_reservation_threshold_secs as i64,
+                ),
+                held_threshold: ChronoDuration::seconds(
+                    app_config.idle_held_gpu_threshold_secs as i64,
+                ),
+                computing_utilization_percent: app_config.computing_gpu_utilization_percent,
+                held_notices: app_config.idle_held_gpu_notices,
+                observation_gap_tolerance: max_staleness,
+            },
             idle_notices.clone(),
         ));
 

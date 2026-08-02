@@ -24,8 +24,28 @@ pub const GPU_USAGE_MAX_STALENESS_SECS: u64 = 300;
 /// 未予約利用を提案対象とみなす継続時間の閾値のデフォルト値（秒）
 pub const UNRESERVED_USAGE_THRESHOLD_SECS: u64 = 600;
 
-/// 予約が使われていないと知らせるまでの時間のデフォルト値（秒）
+/// 予約者のプロセスを観測できないまま知らせるまでの時間のデフォルト値（秒）
 pub const IDLE_RESERVATION_THRESHOLD_SECS: u64 = 1800;
+
+/// GPUを押さえたまま計算が走らない状態を知らせるまでの時間のデフォルト値（秒）
+///
+/// プロセスすら立っていない場合より長く待つ。メモリを確保して待機させる使い方は
+/// 立ち上げ直しに時間がかかることが多く、同じ物差しで急かすと手を止めさせてしまう。
+pub const IDLE_HELD_GPU_THRESHOLD_SECS: u64 = 3600;
+
+/// 計算が走っているとみなす稼働率のデフォルト値（%）
+///
+/// 0にすると、押さえたまま計算していない予約を知らせる仕組みが実質的に止まる。
+pub const COMPUTING_GPU_UTILIZATION_PERCENT: u32 = 5;
+
+/// 押さえたまま計算していない予約を予約者に知らせるかのデフォルト値
+///
+/// 見分け方が実態に合っているかを確かめる前に人を急かさないよう、まずは数えるだけにする。
+/// ログの`held`・`held_partially`・`withheld`を見て納得できたら`notify`へ切り替える。
+pub const IDLE_HELD_GPU_NOTICES: &str = "observe";
+
+/// 一度声をかけてから、次に声をかけるまで置く時間のデフォルト値（秒）
+pub const IDLE_NOTICE_SILENCE_SECS: u64 = 14400;
 
 /// 事後予約提案で提示する利用時間候補のデフォルト値（時間、カンマ区切り）
 pub const RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS: &str = "1,2,3,5,8";

@@ -11,8 +11,10 @@ use std::sync::Arc;
 pub struct MonitoringSettings {
     /// 実利用と予約を突き合わせる間隔
     pub polling_interval: Duration,
-    /// 使われていない予約を予約者へ知らせるまでの時間
+    /// 予約者のプロセスを観測できない予約を予約者へ知らせるまでの時間
     pub idle_threshold: Duration,
+    /// GPUを押さえたまま計算が走らない予約を予約者へ知らせるまでの時間
+    pub held_gpu_threshold: Duration,
     /// レポートを鮮度切れとみなす経過時間
     pub max_staleness: Duration,
 }
@@ -91,6 +93,7 @@ mod tests {
         MonitoringSettings {
             polling_interval: Duration::seconds(60),
             idle_threshold: Duration::minutes(30),
+            held_gpu_threshold: Duration::hours(1),
             max_staleness: Duration::minutes(5),
         }
     }

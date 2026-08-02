@@ -5,6 +5,7 @@
 
 use super::app_config::AppConfig;
 use super::defaults;
+use crate::application::usecases::detect_idle_reservations::NoticePolicy;
 use chrono::Duration;
 use std::env;
 use std::net::SocketAddr;
@@ -46,55 +47,51 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(defaults::CALENDAR_MAPPINGS_FILE));
 
-    let polling_interval_secs = env::var("POLLING_INTERVAL")
-        .ok()
-        .map(|s| {
-            s.parse::<u64>()
-                .map_err(|_| ConfigLoadError::InvalidEnvVar {
-                    name: "POLLING_INTERVAL",
-                    reason: "正の整数である必要があります".to_string(),
-                })
-        })
-        .transpose()?
-        .unwrap_or(defaults::POLLING_INTERVAL_SECS);
+    let polling_interval_secs =
+        parse_number_env("POLLING_INTERVAL", defaults::POLLING_INTERVAL_SECS)?;
 
     let gpu_usage_reports_dir = env::var("GPU_USAGE_REPORTS_DIR").ok().map(PathBuf::from);
 
-    let gpu_usage_max_staleness_secs = env::var("GPU_USAGE_MAX_STALENESS_SECS")
-        .ok()
-        .map(|s| {
-            s.parse::<u64>()
-                .map_err(|_| ConfigLoadError::InvalidEnvVar {
-                    name: "GPU_USAGE_MAX_STALENESS_SECS",
-                    reason: "正の整数である必要があります".to_string(),
-                })
-        })
-        .transpose()?
-        .unwrap_or(defaults::GPU_USAGE_MAX_STALENESS_SECS);
+    let gpu_usage_max_staleness_secs = parse_number_env(
+        "GPU_USAGE_MAX_STALENESS_SECS",
+        defaults::GPU_USAGE_MAX_STALENESS_SECS,
+    )?;
 
-    let unreserved_usage_threshold_secs = env::var("UNRESERVED_USAGE_THRESHOLD_SECS")
-        .ok()
-        .map(|s| {
-            s.parse::<u64>()
-                .map_err(|_| ConfigLoadError::InvalidEnvVar {
-                    name: "UNRESERVED_USAGE_THRESHOLD_SECS",
-                    reason: "正の整数である必要があります".to_string(),
-                })
-        })
-        .transpose()?
-        .unwrap_or(defaults::UNRESERVED_USAGE_THRESHOLD_SECS);
+    let unreserved_usage_threshold_secs = parse_number_env(
+        "UNRESERVED_USAGE_THRESHOLD_SECS",
+        defaults::UNRESERVED_USAGE_THRESHOLD_SECS,
+    )?;
 
-    let idle_reservation_threshold_secs = env::var("IDLE_RESERVATION_THRESHOLD_SECS")
-        .ok()
-        .map(|s| {
-            s.parse::<u64>()
-                .map_err(|_| ConfigLoadError::InvalidEnvVar {
-                    name: "IDLE_RESERVATION_THRESHOLD_SECS",
-                    reason: "正の整数である必要があります".to_string(),
-                })
-        })
-        .transpose()?
-        .unwrap_or(defaults::IDLE_RESERVATION_THRESHOLD_SECS);
+    let idle_reservation_threshold_secs = parse_number_env(
+        "IDLE_RESERVATION_THRESHOLD_SECS",
+        defaults::IDLE_RESERVATION_THRESHOLD_SECS,
+    )?;
+
+    let idle_held_gpu_threshold_secs = parse_number_env(
+        "IDLE_HELD_GPU_THRESHOLD_SECS",
+        defaults::IDLE_HELD_GPU_THRESHOLD_SECS,
+    )?;
+
+    let computing_gpu_utilization_percent = validate_percentage(
+        "COMPUTING_GPU_UTILIZATION_PERCENT",
+        parse_number_env(
+            "COMPUTING_GPU_UTILIZATION_PERCENT",
+            defaults::COMPUTING_GPU_UTILIZATION_PERCENT,
+        )?,
+    )?;
+
+    let idle_held_gpu_notices = parse_notice_policy(
+        "IDLE_HELD_GPU_NOTICES",
+        env::var("IDLE_HELD_GPU_NOTICES")
+            .ok()
+            .as_deref()
+            .unwrap_or(defaults::IDLE_HELD_GPU_NOTICES),
+    )?;
+
+    let idle_notice_silence_secs = parse_number_env(
+        "IDLE_NOTICE_SILENCE_SECS",
+        defaults::IDLE_NOTICE_SILENCE_SECS,
+    )?;
 
     let reservation_proposal_duration_candidates =
         env::var("RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS")
@@ -147,12 +144,58 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
         unreserved_usage_threshold_secs,
         reservation_proposal_duration_candidates,
         idle_reservation_threshold_secs,
+        idle_held_gpu_threshold_secs,
+        computing_gpu_utilization_percent,
+        idle_held_gpu_notices,
+        idle_notice_silence_secs,
         mcp_listen_addr,
         mcp_tokens_file,
         mcp_allowed_hosts,
         mcp_tls_cert_file,
         mcp_tls_key_file,
     })
+}
+
+/// 環境変数を数値として読む（未設定ならデフォルト値）
+fn parse_number_env<T>(name: &'static str, default: T) -> Result<T, ConfigLoadError>
+where
+    T: std::str::FromStr,
+{
+    env::var(name)
+        .ok()
+        .map(|raw| {
+            raw.trim()
+                .parse::<T>()
+                .map_err(|_| ConfigLoadError::InvalidEnvVar {
+                    name,
+                    reason: "正の整数である必要があります".to_string(),
+                })
+        })
+        .transpose()
+        .map(|parsed| parsed.unwrap_or(default))
+}
+
+/// 知らせるか様子を見るかの指定を読む
+fn parse_notice_policy(name: &'static str, raw: &str) -> Result<NoticePolicy, ConfigLoadError> {
+    match raw.trim() {
+        "observe" => Ok(NoticePolicy::Observe),
+        "notify" => Ok(NoticePolicy::Notify),
+        other => Err(ConfigLoadError::InvalidEnvVar {
+            name,
+            reason: format!("'{other}'ではなく、observeかnotifyを指定してください"),
+        }),
+    }
+}
+
+/// 百分率として意味を持つ範囲に収まっていることを確かめる
+fn validate_percentage(name: &'static str, value: u32) -> Result<u32, ConfigLoadError> {
+    if value > 100 {
+        return Err(ConfigLoadError::InvalidEnvVar {
+            name,
+            reason: "0から100までの値である必要があります".to_string(),
+        });
+    }
+    Ok(value)
 }
 
 /// カンマ区切りの時間数文字列を`Duration`のリストにパースする
@@ -276,6 +319,36 @@ mod tests {
             defaults::RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS,
         );
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn a_notice_policy_is_read_by_name() {
+        assert_eq!(
+            parse_notice_policy("IDLE_HELD_GPU_NOTICES", "observe").unwrap(),
+            NoticePolicy::Observe
+        );
+        assert_eq!(
+            parse_notice_policy("IDLE_HELD_GPU_NOTICES", " notify ").unwrap(),
+            NoticePolicy::Notify
+        );
+    }
+
+    #[test]
+    fn an_unknown_notice_policy_is_refused_rather_than_guessed() {
+        assert!(parse_notice_policy("IDLE_HELD_GPU_NOTICES", "quiet").is_err());
+    }
+
+    #[test]
+    fn the_default_notice_policy_is_readable() {
+        assert!(
+            parse_notice_policy("IDLE_HELD_GPU_NOTICES", defaults::IDLE_HELD_GPU_NOTICES).is_ok()
+        );
+    }
+
+    #[test]
+    fn a_percentage_beyond_a_hundred_is_rejected() {
+        assert!(validate_percentage("COMPUTING_GPU_UTILIZATION_PERCENT", 101).is_err());
+        assert!(validate_percentage("COMPUTING_GPU_UTILIZATION_PERCENT", 100).is_ok());
     }
 
     fn dummy_addr() -> SocketAddr {
