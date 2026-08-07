@@ -7,6 +7,7 @@ use super::app_config::AppConfig;
 use super::defaults;
 use crate::application::usecases::detect_idle_reservations::NoticePolicy;
 use chrono::Duration;
+use chrono_tz::Tz;
 use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -131,6 +132,32 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
     let mcp_tls_key_file = env::var("MCP_TLS_KEY_FILE").ok().map(PathBuf::from);
     validate_mcp_tls_paths(&mcp_tls_cert_file, &mcp_tls_key_file)?;
 
+    let web_listen_addr = env::var("WEB_LISTEN_ADDR")
+        .ok()
+        .map(|s| {
+            s.parse::<SocketAddr>()
+                .map_err(|_| ConfigLoadError::InvalidEnvVar {
+                    name: "WEB_LISTEN_ADDR",
+                    reason: "\"host:port\"形式である必要があります".to_string(),
+                })
+        })
+        .transpose()?;
+
+    let web_timezone = env::var("WEB_TIMEZONE")
+        .ok()
+        .map(|s| {
+            s.parse::<Tz>().map_err(|_| ConfigLoadError::InvalidEnvVar {
+                name: "WEB_TIMEZONE",
+                reason: format!("'{}'はIANAタイムゾーン名として解釈できません", s),
+            })
+        })
+        .transpose()?
+        .unwrap_or_else(|| {
+            defaults::WEB_TIMEZONE
+                .parse::<Tz>()
+                .expect("デフォルト値は常にパース可能")
+        });
+
     Ok(AppConfig {
         google_service_account_key_path,
         slack_bot_token,
@@ -153,6 +180,8 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
         mcp_allowed_hosts,
         mcp_tls_cert_file,
         mcp_tls_key_file,
+        web_listen_addr,
+        web_timezone,
     })
 }
 

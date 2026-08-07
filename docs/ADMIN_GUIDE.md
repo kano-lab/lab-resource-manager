@@ -494,6 +494,59 @@ exercising `/mcp-token` against a real Slack workspace, and confirming that a re
 client (e.g. Claude Code) actually trusts a CA registered on a shared machine, have not
 been verified — the development Docker sandbox cannot exercise any of these.
 
+### 7. Web Timeline Setup (Optional, Experimental)
+
+Browse reservations as a resource-by-time timeline. Comparing GPU availability side by side
+is what a calendar UI is poor at, and this page fills that gap. As with the MCP server, an
+HTTP listener starts as an extra task inside the existing `lab-resource-manager` process —
+no separate binary or systemd service is needed.
+
+**This feature is experimental.** The environment variable names, the URL layout and the
+shape of the page may change in a minor release. The web framework underneath (Topcoat) is
+itself a 0.x release that expects breaking changes. Take that into account before building
+it into an operational procedure. The library's public API is unaffected — only `serve` and
+the `ReservationQuery` port are exposed, and neither names a framework type.
+
+**It is read-only.** Creating, updating and cancelling reservations stay with Slack and MCP.
+
+**There is no authentication.** Anyone who can reach the URL can see everyone's
+reservations. The same assumptions as MCP apply: lab servers and members' machines share a
+LAN, and exposure to the internet is out of scope. Bind `WEB_LISTEN_ADDR` to an address
+reachable only from the LAN. To limit what is exposed, owners are shown by the local part of
+their email address (the part before `@`) only. Reservation notes, however, are shown
+verbatim, so members should keep anything sensitive out of them.
+
+**Requires the `web` feature at build time:**
+
+```bash
+cargo build --release --features web --bin lab-resource-manager
+```
+
+It is off by default so that people using this crate as a library from crates.io don't take
+on a web framework dependency. The binaries attached to GitHub releases have it enabled.
+
+**Environment variables:**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `WEB_LISTEN_ADDR` | (unset = feature disabled) | Listen address for the web page (e.g. `0.0.0.0:8080`) |
+| `WEB_TIMEZONE` | `Asia/Tokyo` | Timezone used to display times (IANA timezone name) |
+
+Topcoat's router cannot be nested under a path prefix, so give the web page a different port
+from the MCP server.
+
+**Reading the page:**
+
+- Resources (each server's GPUs, then rooms) run down the page; time runs across it.
+  Resources with no reservations keep their row, so you can see what is free
+- The range — 1 day, 3 days, 1 week, 1 month — is selectable at the top right, or via
+  `?days=` in the URL (capped at 60). The view starts at midnight of the current day
+- Reservation blocks are coloured per owner. Hovering one shows the exact times and notes
+- The red vertical line marks the current time
+- Reservations that overlap on the same resource are stacked so both stay visible
+- Reservations for resources missing from the configuration are collected into a row at the
+  bottom — dropping them silently would make the page claim a resource is free
+
 ## Running the System
 
 ### Service Management

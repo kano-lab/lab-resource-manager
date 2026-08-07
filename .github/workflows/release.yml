@@ -50,9 +50,11 @@ jobs:
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
+      # Web画面(webフィーチャ)は既定で無効。crates.io経由のライブラリ利用者に
+      # Topcoatの依存を負わせないためで、配布バイナリでは有効にする
       - name: Build release binaries
         run: |
-          cargo build --release --target ${{ matrix.target }} \
+          cargo build --release --target ${{ matrix.target }} --features web \
             --bin lab-resource-manager --bin gpu-usage-reporter
 
       - name: Prepare artifacts

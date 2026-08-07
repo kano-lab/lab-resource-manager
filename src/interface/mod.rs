@@ -13,3 +13,5 @@
 //! Infrastructure層には直接依存しない（DIコンテナ経由で注入）。
 pub mod mcp;
 pub mod slack;
+#[cfg(feature = "web")]
+pub mod web;

@@ -5,6 +5,11 @@
 
 use axum_server::tls_rustls::RustlsConfig;
 use chrono::Duration as ChronoDuration;
+#[cfg(feature = "web")]
+use lab_resource_manager::interface::web::{
+    self,
+    query::{ReservationQuery, UseCaseReservationQuery},
+};
 use lab_resource_manager::{
     application::idle_notice_log::IdleNoticeLog,
     application::usecases::{
@@ -72,9 +77,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_config = load_from_env()?;
     let resource_config = Arc::new(load_config(&app_config.resource_config_path)?);
 
-    // 後段でapp_configがSlackAppに所有権移動するため、MCP関連の値は先に控えておく
+    // 後段でapp_configがSlackAppに所有権移動するため、MCPとWeb画面の値は先に控えておく
     let mcp_listen_addr = app_config.mcp_listen_addr;
     let mcp_allowed_hosts = app_config.mcp_allowed_hosts.clone();
+
+    #[cfg(feature = "web")]
+    let web_listen_addr = app_config.web_listen_addr;
+    #[cfg(feature = "web")]
+    let web_timezone = app_config.web_timezone;
 
     // TLS証明書は起動時に読み込む(fail-fast: 壊れた証明書に気づかずHTTPへ
     // 静かにフォールバックする方が危険なため)。両方Someか両方Noneかは
@@ -307,6 +317,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // ===========================================
+    // Web画面（オプション機能、WEB_LISTEN_ADDR未設定なら無効）
+    // ===========================================
+    #[cfg(feature = "web")]
+    let web_handle = if let Some(web_listen_addr) = web_listen_addr {
+        let reservations: Arc<dyn ReservationQuery> =
+            Arc::new(UseCaseReservationQuery::new(list_all_usecase.clone()));
+        let resource_config_for_web = resource_config.clone();
+
+        info!(listen_addr = %web_listen_addr, "web server enabled");
+        Some(tokio::spawn(async move {
+            if let Err(e) = web::serve(
+                web_listen_addr,
+                reservations,
+                resource_config_for_web,
+                web_timezone,
+            )
+            .await
+            {
+                error!(error = %e, "web server stopped with an error");
+            }
+        }))
+    } else {
+        info!("web server disabled: WEB_LISTEN_ADDR is not set");
+        None
+    };
+
+    // ===========================================
     // アプリケーションの組み立てと実行
     // ===========================================
     let app = Arc::new(SlackApp::new(
@@ -341,6 +378,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some(handle) = mcp_handle {
+        handle.abort();
+    }
+
+    #[cfg(feature = "web")]
+    if let Some(handle) = web_handle {
         handle.abort();
     }
 
