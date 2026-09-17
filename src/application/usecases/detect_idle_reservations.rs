@@ -2,6 +2,7 @@ use crate::application::error::ApplicationError;
 use crate::application::idle_notice_log::IdleNoticeLog;
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod, UsageId};
+use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::ports::{
     IdleEvidence, IdleReservation, IdleReservationNotifier, ObservationSnapshot,
@@ -86,6 +87,8 @@ enum NoticeOutcome {
     Sent,
     /// 知らせる頃合いだったが、様子を見るにとどめた
     Withheld,
+    /// 知らせる頃合いだったが、宛先が分からなかった
+    Unreachable,
     /// まだ知らせる頃合いではない
     NotDue,
 }
@@ -175,6 +178,7 @@ where
         let mut held_partially = 0_usize;
         let mut notified = 0_usize;
         let mut withheld = 0_usize;
+        let mut unreachable = 0_usize;
         let mut failures = 0_usize;
 
         for reservation in &reservations {
@@ -203,6 +207,7 @@ where
             {
                 Ok(NoticeOutcome::Sent) => notified += 1,
                 Ok(NoticeOutcome::Withheld) => withheld += 1,
+                Ok(NoticeOutcome::Unreachable) => unreachable += 1,
                 Ok(NoticeOutcome::NotDue) => {}
                 Err(e) => {
                     failures += 1;
@@ -225,6 +230,7 @@ where
             held_partially,
             notified,
             withheld,
+            unreachable,
             failures,
             elapsed_ms = (Utc::now() - started_at).num_milliseconds(),
             "idle reservation pass finished"
@@ -294,16 +300,34 @@ where
             "telling the owner about an idle reservation"
         );
 
-        self.notifier
+        match self
+            .notifier
             .notify_idle(IdleReservation::new(
                 reservation.clone(),
                 idle_since,
                 evidence,
             ))
-            .await?;
-        // 知らせられてから黙る。先に記録すると、送信に失敗したまま二度と知らせなくなる
-        self.notices.silence(reservation.id(), now);
-        Ok(NoticeOutcome::Sent)
+            .await
+        {
+            Ok(()) => {
+                // 知らせられてから黙る。先に記録すると、送信に失敗したまま二度と知らせなくなる
+                self.notices.silence(reservation.id(), now);
+                Ok(NoticeOutcome::Sent)
+            }
+            Err(NotificationError::RecipientUnknown(reason)) => {
+                info!(
+                    usage_id = %reservation.id().as_str(),
+                    owner = %reservation.owner_email().as_str(),
+                    reason = %reason,
+                    "the owner cannot be reached; leaving the reservation quiet"
+                );
+                // 宛先を知らないことは、送る手段の不調ではない。次のポーリングで
+                // 確かめ直しても届くようにはならないため、送れたときと同じだけ黙る
+                self.notices.silence(reservation.id(), now);
+                Ok(NoticeOutcome::Unreachable)
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// この予約が今の様子で使われていないと確かめられた最初の時刻（初めてなら今）

@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 pub struct MockIdleReservationNotifier {
     notices: Arc<Mutex<Vec<IdleReservation>>>,
     fails: Arc<Mutex<bool>>,
+    recipient_unknown: Arc<Mutex<bool>>,
 }
 
 impl MockIdleReservationNotifier {
@@ -27,6 +28,11 @@ impl MockIdleReservationNotifier {
     pub fn set_failing(&self, failing: bool) {
         *self.fails.lock().unwrap() = failing;
     }
+
+    /// 以降の送信を「宛先が分からない」で断るかどうかを切り替える
+    pub fn set_recipient_unknown(&self, unknown: bool) {
+        *self.recipient_unknown.lock().unwrap() = unknown;
+    }
 }
 
 #[async_trait]
@@ -35,6 +41,12 @@ impl IdleReservationNotifier for MockIdleReservationNotifier {
         if *self.fails.lock().unwrap() {
             return Err(NotificationError::SendFailure(
                 "test induced failure".to_string(),
+            ));
+        }
+
+        if *self.recipient_unknown.lock().unwrap() {
+            return Err(NotificationError::RecipientUnknown(
+                "test recipient unknown".to_string(),
             ));
         }
 

@@ -403,6 +403,30 @@ async fn a_failed_notice_is_retried_on_the_next_pass() {
 }
 
 #[tokio::test]
+async fn an_owner_who_cannot_be_reached_is_not_counted_as_a_delivery_failure() {
+    let f = fixture(0);
+    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save(&reservation).await.unwrap();
+    f.observer.set_snapshot(nobody_is_working());
+
+    // Slackアカウントが紐付いておらず、DMの宛先を解決できない予約者
+    f.notifier.set_recipient_unknown(true);
+    f.usecase
+        .poll_once()
+        .await
+        .expect("宛先を知らないことは、ポーリングを失敗させる不調ではない");
+    assert!(f.notifier.sent_notices().is_empty());
+
+    // 次のポーリングで確かめ直しても届くようにはならないため、しばらく黙る
+    f.notifier.set_recipient_unknown(false);
+    f.usecase.poll_once().await.unwrap();
+    assert!(
+        f.notifier.sent_notices().is_empty(),
+        "宛先の分からない予約を毎回問い直さない"
+    );
+}
+
+#[tokio::test]
 async fn a_silenced_reservation_stays_quiet() {
     let f = fixture(0);
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
