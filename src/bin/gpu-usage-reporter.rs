@@ -16,7 +16,9 @@
 
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use lab_resource_manager::prelude::{GpuUsageDeviceEntry, GpuUsageProcessEntry, GpuUsageReport};
+use lab_resource_manager::prelude::{
+    GpuUsageDeviceEntry, GpuUsageProcessEntry, GpuUsageReport, UnattributedUsageEntry,
+};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -44,10 +46,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 稼働率の窓を先に取り、プロセスの一覧はその直後の姿を書く
     let devices = sample_device_activity(args.sample_seconds);
+    let entries = collect_entries()?;
     let report = GpuUsageReport {
         server: args.server_name.clone(),
         generated_at: Utc::now(),
-        processes: collect_entries()?,
+        processes: entries.processes,
+        unattributed: entries.unattributed,
         devices,
     };
 
@@ -67,36 +71,77 @@ struct GroupedUsage {
     used_memory_mib: Option<u64>,
 }
 
-/// (デバイス番号, OSユーザー名)ごとに、最も古い起動時刻とメモリの合計へ集約する
-fn collect_entries() -> Result<Vec<GpuUsageProcessEntry>, Box<dyn std::error::Error>> {
+/// 集められた利用エントリ（持ち主が分かったものと、分からなかったもの）
+struct CollectedEntries {
+    processes: Vec<GpuUsageProcessEntry>,
+    unattributed: Vec<UnattributedUsageEntry>,
+}
+
+/// 観測されたプロセスを、持ち主の分かるものは(デバイス番号, OSユーザー名)ごとに、
+/// 分からないものは(デバイス番号, UID)ごとに、最も古い起動時刻とメモリの合計へ集約する
+///
+/// UIDをユーザー名に解決できないプロセス（コンテナ内のUID等）も捨てずに報告する。
+/// 落とすと、そのプロセスが確保しているGPUが誰もいない空きに見えてしまう。
+fn collect_entries() -> Result<CollectedEntries, Box<dyn std::error::Error>> {
     let uuid_to_index = gpu_uuid_to_index()?;
     let clk_tck = clk_tck();
-    let mut grouped: HashMap<(u32, String), GroupedUsage> = HashMap::new();
+    let mut attributed: HashMap<(u32, String), GroupedUsage> = HashMap::new();
+    let mut unattributed: HashMap<(u32, u32), GroupedUsage> = HashMap::new();
 
     for process in compute_processes()? {
         let Some(&device_number) = uuid_to_index.get(&process.gpu_uuid) else {
             continue;
         };
-        let Some(owner) = process_owner(process.pid) else {
+        let Some(uid) = process_uid(process.pid) else {
             continue;
         };
         let Some(started_at) = process_start_time(process.pid, clk_tck) else {
             continue;
         };
 
-        grouped
-            .entry((device_number, owner))
-            .and_modify(|existing| {
-                existing.started_at = existing.started_at.min(started_at);
-                existing.used_memory_mib =
-                    add_memory(existing.used_memory_mib, process.used_memory_mib);
-            })
-            .or_insert(GroupedUsage {
+        match resolve_username(uid) {
+            Some(owner) => merge_usage(
+                &mut attributed,
+                (device_number, owner),
                 started_at,
-                used_memory_mib: process.used_memory_mib,
-            });
+                process.used_memory_mib,
+            ),
+            None => merge_usage(
+                &mut unattributed,
+                (device_number, uid),
+                started_at,
+                process.used_memory_mib,
+            ),
+        }
     }
 
+    Ok(CollectedEntries {
+        processes: attributed_entries(attributed),
+        unattributed: unattributed_entries(unattributed),
+    })
+}
+
+/// 同じ集約キーの利用へ、1プロセス分の観測を足し込む
+fn merge_usage<K: std::hash::Hash + Eq>(
+    grouped: &mut HashMap<K, GroupedUsage>,
+    key: K,
+    started_at: DateTime<Utc>,
+    used_memory_mib: Option<u64>,
+) {
+    grouped
+        .entry(key)
+        .and_modify(|existing| {
+            existing.started_at = existing.started_at.min(started_at);
+            existing.used_memory_mib = add_memory(existing.used_memory_mib, used_memory_mib);
+        })
+        .or_insert(GroupedUsage {
+            started_at,
+            used_memory_mib,
+        });
+}
+
+/// 持ち主の分かった集約を、レポートのエントリへ並べ替える
+fn attributed_entries(grouped: HashMap<(u32, String), GroupedUsage>) -> Vec<GpuUsageProcessEntry> {
     let mut entries: Vec<GpuUsageProcessEntry> = grouped
         .into_iter()
         .map(|((device_number, os_user), usage)| GpuUsageProcessEntry {
@@ -112,7 +157,23 @@ fn collect_entries() -> Result<Vec<GpuUsageProcessEntry>, Box<dyn std::error::Er
             .then_with(|| a.os_user.cmp(&b.os_user))
     });
 
-    Ok(entries)
+    entries
+}
+
+/// 持ち主の分からなかった集約を、レポートのエントリへ並べ替える
+fn unattributed_entries(grouped: HashMap<(u32, u32), GroupedUsage>) -> Vec<UnattributedUsageEntry> {
+    let mut entries: Vec<UnattributedUsageEntry> = grouped
+        .into_iter()
+        .map(|((device_number, uid), usage)| UnattributedUsageEntry {
+            device_number,
+            uid,
+            started_at: usage.started_at,
+            used_memory_mib: usage.used_memory_mib,
+        })
+        .collect();
+    entries.sort_by_key(|entry| (entry.device_number, entry.uid));
+
+    entries
 }
 
 /// 同じ利用者の別プロセスが確保している分を足し合わせる
@@ -296,13 +357,22 @@ fn process_start_time(pid: u32, clk_tck: f64) -> Option<DateTime<Utc>> {
     DateTime::from_timestamp(started as i64, 0)
 }
 
-/// プロセスのUIDからOSユーザー名を解決
-fn process_owner(pid: u32) -> Option<String> {
+/// プロセスの実UIDを読む
+fn process_uid(pid: u32) -> Option<u32> {
     let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
     let uid_line = status.lines().find(|l| l.starts_with("Uid:"))?;
-    let uid = uid_line.split_whitespace().nth(1)?; // real uid
+    uid_line.split_whitespace().nth(1)?.parse().ok() // real uid
+}
 
-    let output = Command::new("getent").args(["passwd", uid]).output().ok()?;
+/// UIDをこのホストのOSユーザー名に解決する
+///
+/// コンテナ内のUIDやuser namespaceでずらされたUIDは、このホストのアカウントに
+/// 対応せず解決できない。それは利用がないことではなく、持ち主が分からないことを意味する。
+fn resolve_username(uid: u32) -> Option<String> {
+    let output = Command::new("getent")
+        .args(["passwd", &uid.to_string()])
+        .output()
+        .ok()?;
     if !output.status.success() {
         return None;
     }
