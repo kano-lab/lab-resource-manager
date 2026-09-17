@@ -13,4 +13,5 @@ pub mod shared_file;
 pub use mock::MockResourceUsageObserver;
 pub use shared_file::{
     GpuUsageDeviceEntry, GpuUsageProcessEntry, GpuUsageReport, SharedFileResourceUsageObserver,
+    UnattributedUsageEntry,
 };
