@@ -1,12 +1,11 @@
 //! `DetectIdleReservationsUseCase`のテスト
 //!
-//! 予約者本人に使われていない予約の見分け方と、知らせる/知らせない条件を検証する。
+//! 使われていない予約の見分け方と、知らせる/知らせない条件を検証する。
 
 use crate::application::idle_notice_log::IdleNoticeLog;
 use crate::application::usecases::detect_idle_reservations::{
     DetectIdleReservationsUseCase, IdleCriteria, NoticePolicy,
 };
-use crate::application::usecases::test_support::InMemoryIdentityLinkRepository;
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod};
@@ -14,6 +13,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::ports::{
     GpuActivity, IdleEvidence, ObservationSnapshot, ObservedUsage, ServerObservation,
+    UnattributedUsage,
 };
 use crate::infrastructure::idle_reservation_notifier::MockIdleReservationNotifier;
 use crate::infrastructure::repositories::resource_usage::mock::MockUsageRepository;
@@ -29,7 +29,6 @@ const COMPUTING: u32 = 5;
 type TestUseCase = DetectIdleReservationsUseCase<
     MockUsageRepository,
     MockResourceUsageObserver,
-    InMemoryIdentityLinkRepository,
     MockIdleReservationNotifier,
 >;
 
@@ -37,7 +36,6 @@ struct Fixture {
     usecase: TestUseCase,
     repository: Arc<MockUsageRepository>,
     observer: Arc<MockResourceUsageObserver>,
-    identity_repo: Arc<InMemoryIdentityLinkRepository>,
     notifier: MockIdleReservationNotifier,
     notices: Arc<IdleNoticeLog>,
 }
@@ -61,14 +59,12 @@ fn criteria(threshold_minutes: i64) -> IdleCriteria {
 fn fixture_with(criteria: IdleCriteria) -> Fixture {
     let repository = Arc::new(MockUsageRepository::new());
     let observer = Arc::new(MockResourceUsageObserver::new());
-    let identity_repo = Arc::new(InMemoryIdentityLinkRepository::default());
     let notifier = MockIdleReservationNotifier::new();
     let notices = Arc::new(IdleNoticeLog::new(Duration::hours(4)));
 
     let usecase = DetectIdleReservationsUseCase::new(
         repository.clone(),
         observer.clone(),
-        identity_repo.clone(),
         notifier.clone(),
         criteria,
         notices.clone(),
@@ -78,7 +74,6 @@ fn fixture_with(criteria: IdleCriteria) -> Fixture {
         usecase,
         repository,
         observer,
-        identity_repo,
         notifier,
         notices,
     }
@@ -168,11 +163,22 @@ fn working_on(user_id: &str, devices: Vec<(u32, u32)>) -> ObservationSnapshot {
     )
 }
 
+/// 誰のものか分からないプロセスがGPU 0番に乗っている観測結果（コンテナ実行等）
+fn unattributed_working_at(peak_utilization_percent: u32) -> ObservationSnapshot {
+    nobody_is_working()
+        .with_unattributed_usages(vec![
+            UnattributedUsage::new(gpu(0), 100_000, Utc::now() - Duration::hours(1))
+                .with_used_memory(38_000),
+        ])
+        .with_gpu_activities(HashMap::from([(
+            (SERVER.to_string(), 0),
+            GpuActivity::new(peak_utilization_percent),
+        )]))
+}
+
 #[tokio::test]
 async fn a_reservation_its_owner_is_using_is_left_alone() {
     let f = fixture(30);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
 
@@ -190,8 +196,6 @@ async fn a_reservation_its_owner_is_using_is_left_alone() {
 #[tokio::test]
 async fn an_unused_reservation_is_reported_once_the_threshold_passes() {
     let f = fixture(0);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
@@ -206,8 +210,6 @@ async fn an_unused_reservation_is_reported_once_the_threshold_passes() {
 #[tokio::test]
 async fn the_owner_is_not_told_twice_about_the_same_reservation() {
     let f = fixture(0);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
@@ -222,8 +224,6 @@ async fn the_owner_is_not_told_twice_about_the_same_reservation() {
 #[tokio::test]
 async fn nothing_is_said_before_the_reservation_has_been_idle_long_enough() {
     let f = fixture(30);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
@@ -239,8 +239,6 @@ async fn nothing_is_said_before_the_reservation_has_been_idle_long_enough() {
 #[tokio::test]
 async fn a_server_that_cannot_be_observed_says_nothing_about_its_reservations() {
     let f = fixture(0);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
 
@@ -259,53 +257,83 @@ async fn a_server_that_cannot_be_observed_says_nothing_about_its_reservations() 
 }
 
 #[tokio::test]
-async fn an_owner_without_a_linked_os_username_is_left_alone() {
+async fn an_owner_without_a_linked_os_username_is_still_told() {
+    // OSユーザー名の紐付けは帰属の証拠であって、空き予約を見過ごす理由ではない
     let f = fixture(0);
-    // Slackは紐付いているが、このサーバーのOSユーザー名は分からない
-    f.identity_repo
-        .add_link("owner@example.com", ExternalSystem::Slack, "U123");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
 
     f.usecase.poll_once().await.unwrap();
 
-    assert!(
-        f.notifier.sent_notices().is_empty(),
-        "本人の利用を本人のものと見分けられないなら判定できない"
+    assert_eq!(
+        f.notifier.sent_notices().len(),
+        1,
+        "誰も使っていないことは、名義の紐付けがなくても分かる"
     );
 }
 
 #[tokio::test]
-async fn someone_else_working_on_the_gpu_does_not_count_as_the_owner_using_it() {
+async fn someone_computing_on_the_reserved_gpu_keeps_it_quiet_whoever_they_are() {
     let f = fixture(0);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
-    f.identity_repo
-        .add_link("guest@example.com", os_system(), "guest-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
 
-    f.observer.set_active_usages(vec![observed_by(
-        "guest-os",
-        gpu(0),
-        Utc::now() - Duration::hours(1),
-    )]);
+    // 予約者に辿れない名義（コンテナ実行の予約者本人かもしれないし、他人かもしれない）
+    f.observer.set_snapshot(working_at("guest-os", 90));
 
     f.usecase.poll_once().await.unwrap();
 
+    assert!(
+        f.notifier.sent_notices().is_empty(),
+        "計算が走っているGPUは解放できる状態にない。名義の照合は無断使用の検出の仕事"
+    );
+}
+
+#[tokio::test]
+async fn an_unattributed_workload_computing_on_the_gpu_keeps_the_reservation_quiet() {
+    // Docker等のコンテナ実行では、プロセスの実UIDから人を辿れない
+    let f = fixture(0);
+    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save(&reservation).await.unwrap();
+
+    f.observer.set_snapshot(unattributed_working_at(92));
+
+    f.usecase.poll_once().await.unwrap();
+
+    assert!(
+        f.notifier.sent_notices().is_empty(),
+        "帰属できないことを、使われていないことの証拠にしてはいけない"
+    );
+}
+
+#[tokio::test]
+async fn an_unattributed_allocation_without_computation_is_reported_as_held() {
+    let f = fixture(0);
+    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save(&reservation).await.unwrap();
+
+    f.observer.set_snapshot(unattributed_working_at(1));
+
+    f.usecase.poll_once().await.unwrap();
+
+    let notices = f.notifier.sent_notices();
+    assert_eq!(notices.len(), 1);
     assert_eq!(
-        f.notifier.sent_notices().len(),
-        1,
-        "予約者本人が使っていない以上、予約は使われていない"
+        notices[0].evidence(),
+        &IdleEvidence::HeldWithoutComputing {
+            at_rest: vec![Gpu::new(SERVER.to_string(), 0, "A100".to_string())],
+            observed_count: 1,
+            peak_utilization_percent: 1,
+            used_memory_mib: Some(38_000),
+        },
+        "帰属不明の確保も、押さえられたまま計算していない状態として伝わる"
     );
 }
 
 #[tokio::test]
 async fn a_room_reservation_is_out_of_scope() {
     let f = fixture(0);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of(
         "owner@example.com",
         vec![Resource::Room {
@@ -327,8 +355,6 @@ async fn a_room_reservation_is_out_of_scope() {
 #[tokio::test]
 async fn a_reservation_that_is_used_again_can_be_reported_again() {
     let f = fixture(0);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
 
@@ -358,8 +384,6 @@ async fn a_reservation_that_is_used_again_can_be_reported_again() {
 #[tokio::test]
 async fn a_failed_notice_is_retried_on_the_next_pass() {
     let f = fixture(0);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
@@ -381,8 +405,6 @@ async fn a_failed_notice_is_retried_on_the_next_pass() {
 #[tokio::test]
 async fn a_silenced_reservation_stays_quiet() {
     let f = fixture(0);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
@@ -398,8 +420,6 @@ async fn a_silenced_reservation_stays_quiet() {
 #[tokio::test]
 async fn a_gpu_held_with_memory_but_no_computation_is_reported() {
     let f = fixture(0);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
 
@@ -429,8 +449,6 @@ async fn a_gpu_held_with_memory_but_no_computation_is_reported() {
 #[tokio::test]
 async fn a_gpu_left_at_rest_is_reported_even_while_another_one_is_computing() {
     let f = fixture(0);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of(
         "owner@example.com",
         vec![gpu(0), gpu(1)],
@@ -462,8 +480,6 @@ async fn a_watched_criteria_counts_without_telling_the_owner() {
         held_notices: NoticePolicy::Observe,
         ..criteria(0)
     });
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
     f.observer.set_snapshot(working_at("owner-os", 1));
@@ -482,8 +498,6 @@ async fn a_watched_criteria_still_tells_the_owner_when_no_process_is_there() {
         held_notices: NoticePolicy::Observe,
         ..criteria(0)
     });
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
@@ -500,8 +514,6 @@ async fn a_watched_criteria_still_tells_the_owner_when_no_process_is_there() {
 #[tokio::test]
 async fn a_gpu_that_is_actually_computing_is_left_alone() {
     let f = fixture(0);
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
 
@@ -519,8 +531,6 @@ async fn a_gpu_taken_up_after_a_silent_stretch_is_given_its_own_grace_period() {
         held_threshold: Duration::minutes(30),
         ..criteria(0)
     });
-    f.identity_repo
-        .add_link("owner@example.com", os_system(), "owner-os");
     let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save(&reservation).await.unwrap();
 

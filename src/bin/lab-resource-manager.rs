@@ -234,7 +234,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let detect_idle_usecase = Arc::new(DetectIdleReservationsUseCase::new(
             resource_usage_repo.clone(),
             observer,
-            identity_repo.clone(),
             idle_notifier,
             IdleCriteria {
                 absent_threshold: ChronoDuration::seconds(

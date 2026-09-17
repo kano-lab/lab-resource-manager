@@ -10,7 +10,7 @@ use chrono::{DateTime, Duration, Utc};
 /// 心当たりのない指摘を受け取った人は、確かめようがないまま放置するほかない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdleEvidence {
-    /// 予約者本人のプロセスがひとつも観測できない
+    /// 押さえているGPUのどれにも利用が観測できない
     NoProcesses,
     /// プロセスは乗っているが、計算が走っていない
     HeldWithoutComputing {
@@ -20,7 +20,7 @@ pub enum IdleEvidence {
         observed_count: usize,
         /// 休んでいるGPUのうち、最も高かった稼働率
         peak_utilization_percent: u32,
-        /// 休んでいるGPUで予約者が確保しているメモリ量の合計（MiB、問えなければ`None`）
+        /// 休んでいるGPUで確保されているメモリ量の合計（MiB、問えなければ`None`）
         used_memory_mib: Option<u64>,
     },
 }
