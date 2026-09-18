@@ -153,7 +153,7 @@ pub mod prelude {
         reservation_proposal::MockReservationProposalNotifier,
         resource_usage_observer::{
             GpuUsageDeviceEntry, GpuUsageProcessEntry, GpuUsageReport, MockResourceUsageObserver,
-            SharedFileResourceUsageObserver,
+            SharedFileResourceUsageObserver, UnattributedUsageEntry,
         },
     };
 }

@@ -100,7 +100,7 @@ impl SlackDirectMessenger {
                 NotificationError::RepositoryError(format!("IdentityLink取得失敗: {}", e))
             })?
             .ok_or_else(|| {
-                NotificationError::SendFailure(format!(
+                NotificationError::RecipientUnknown(format!(
                     "IdentityLink未登録のためDMを送信できません: {}",
                     to.as_str()
                 ))
@@ -109,7 +109,7 @@ impl SlackDirectMessenger {
         let slack_identity = identity_link
             .get_identity_for_system(&ExternalSystem::Slack)
             .ok_or_else(|| {
-                NotificationError::SendFailure(format!(
+                NotificationError::RecipientUnknown(format!(
                     "Slackアカウント未リンクのためDMを送信できません: {}",
                     to.as_str()
                 ))

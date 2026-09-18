@@ -44,6 +44,6 @@ pub use resource_collection_access::{
 };
 pub use resource_usage_observer::{
     GpuActivity, ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver,
-    ServerObservation,
+    ServerObservation, UnattributedUsage,
 };
 pub use unauthorized_usage_notifier::UnauthorizedUsageNotifier;

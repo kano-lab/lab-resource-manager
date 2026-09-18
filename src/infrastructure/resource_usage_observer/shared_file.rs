@@ -2,7 +2,7 @@ use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, 
 use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
 use crate::domain::ports::resource_usage_observer::{
     GpuActivity, ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver,
-    ServerObservation,
+    ServerObservation, UnattributedUsage,
 };
 use crate::infrastructure::config::ResourceConfig;
 use async_trait::async_trait;
@@ -26,6 +26,12 @@ pub struct GpuUsageReport {
     pub generated_at: DateTime<Utc>,
     /// 観測されたGPU利用プロセスの一覧
     pub processes: Vec<GpuUsageProcessEntry>,
+    /// 持ち主をOSユーザー名に解決できなかった利用の一覧
+    ///
+    /// コンテナ実行等でUIDがこのホストのアカウントに対応しない場合がここに入る。
+    /// この欄を書かない古い`gpu-usage-reporter`のレポートでは空になる。
+    #[serde(default)]
+    pub unattributed: Vec<UnattributedUsageEntry>,
     /// デバイスごとの稼働状況
     ///
     /// 稼働率を読み出せない環境（古い`gpu-usage-reporter`、稼働率を報告しないGPU）では
@@ -44,6 +50,23 @@ pub struct GpuUsageProcessEntry {
     /// このデバイス・利用者の組み合わせで最も古いプロセス起動時刻
     pub started_at: DateTime<Utc>,
     /// このデバイス・利用者の組み合わせが確保しているメモリ量の合計（MiB）
+    ///
+    /// 読み出せない環境では欠ける。欠けていることは「確保していない」ではなく
+    /// 「どれだけ確保しているかを問えない」を意味する。
+    #[serde(default)]
+    pub used_memory_mib: Option<u64>,
+}
+
+/// 1つの(デバイス, UID)に集約された、持ち主の分からない利用エントリ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnattributedUsageEntry {
+    /// デバイス番号（`config/resources.toml`の`devices[].id`と対応）
+    pub device_number: u32,
+    /// プロセスの実UID（このホストのアカウントには解決できなかったもの）
+    pub uid: u32,
+    /// このデバイス・UIDの組み合わせで最も古いプロセス起動時刻
+    pub started_at: DateTime<Utc>,
+    /// このデバイス・UIDの組み合わせが確保しているメモリ量の合計（MiB）
     ///
     /// 読み出せない環境では欠ける。欠けていることは「確保していない」ではなく
     /// 「どれだけ確保しているかを問えない」を意味する。
@@ -143,8 +166,43 @@ impl SharedFileResourceUsageObserver {
                 generated_at: report.generated_at,
             },
             usages: self.build_observed_usages(&report),
+            unattributed_usages: self.build_unattributed_usages(&report),
             gpu_activities: self.build_gpu_activities(&report),
         }
+    }
+
+    /// レポートに載っているデバイス番号を、設定に照らしてリソースとして読む
+    fn resolve_gpu(&self, server: &str, device_number: u32) -> Option<Resource> {
+        let model = self
+            .resource_config
+            .get_server(server)?
+            .devices
+            .iter()
+            .find(|d| d.id == device_number)?
+            .model
+            .clone();
+
+        Some(Resource::Gpu(Gpu::new(
+            server.to_string(),
+            device_number,
+            model,
+        )))
+    }
+
+    /// レポートの帰属不明欄を、帰属不明の利用として読む
+    fn build_unattributed_usages(&self, report: &GpuUsageReport) -> Vec<UnattributedUsage> {
+        report
+            .unattributed
+            .iter()
+            .filter_map(|entry| {
+                let resource = self.resolve_gpu(&report.server, entry.device_number)?;
+                let observed = UnattributedUsage::new(resource, entry.uid, entry.started_at);
+                Some(match entry.used_memory_mib {
+                    Some(used_memory_mib) => observed.with_used_memory(used_memory_mib),
+                    None => observed,
+                })
+            })
+            .collect()
     }
 
     /// レポートのデバイス欄を、設定に載っているデバイスの稼働状況として読む
@@ -217,6 +275,7 @@ impl SharedFileResourceUsageObserver {
 struct ServerReading {
     observation: ServerObservation,
     usages: Vec<ObservedUsage>,
+    unattributed_usages: Vec<UnattributedUsage>,
     gpu_activities: Vec<((String, u32), GpuActivity)>,
 }
 
@@ -226,6 +285,7 @@ impl ServerReading {
         Self {
             observation,
             usages: Vec::new(),
+            unattributed_usages: Vec::new(),
             gpu_activities: Vec::new(),
         }
     }
@@ -235,17 +295,21 @@ impl ServerReading {
 impl ResourceUsageObserver for SharedFileResourceUsageObserver {
     async fn observe_active_usages(&self) -> Result<ObservationSnapshot, ObservationError> {
         let mut observed = Vec::new();
+        let mut unattributed = Vec::new();
         let mut servers = HashMap::new();
         let mut gpu_activities = HashMap::new();
 
         for server in &self.resource_config.servers {
             let reading = self.read_server_report(&server.name).await;
             observed.extend(reading.usages);
+            unattributed.extend(reading.unattributed_usages);
             gpu_activities.extend(reading.gpu_activities);
             servers.insert(server.name.clone(), reading.observation);
         }
 
-        Ok(ObservationSnapshot::new(observed, servers).with_gpu_activities(gpu_activities))
+        Ok(ObservationSnapshot::new(observed, servers)
+            .with_unattributed_usages(unattributed)
+            .with_gpu_activities(gpu_activities))
     }
 }
 
@@ -495,6 +559,116 @@ mod tests {
             snapshot.usages().len(),
             1,
             "稼働状況が無くても、誰が乗っているかは読み取れる"
+        );
+
+        tokio::fs::remove_dir_all(&dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn a_usage_whose_owner_could_not_be_resolved_is_still_read() {
+        let dir = temp_dir();
+        let generated_at = Utc::now();
+        let started_at = generated_at - Duration::minutes(20);
+        write_report(
+            &dir,
+            "thalys.json",
+            &format!(
+                r#"{{"server": "Thalys", "generated_at": "{}", "processes": [], "unattributed": [
+                    {{"device_number": 0, "uid": 100000, "started_at": "{}", "used_memory_mib": 24000}}
+                ]}}"#,
+                generated_at.to_rfc3339(),
+                started_at.to_rfc3339(),
+            ),
+        )
+        .await;
+
+        let observer = SharedFileResourceUsageObserver::new(
+            dir.clone(),
+            test_resource_config(),
+            Duration::minutes(5),
+        );
+        let snapshot = observer.observe_active_usages().await.unwrap();
+
+        let unattributed = snapshot.unattributed_usages();
+        assert_eq!(
+            unattributed.len(),
+            1,
+            "持ち主が分からないことを、利用がないことにしてはいけない"
+        );
+        assert_eq!(unattributed[0].uid(), 100_000);
+        assert_eq!(unattributed[0].active_since(), started_at);
+        assert_eq!(unattributed[0].used_memory_mib(), Some(24_000));
+        match unattributed[0].resource() {
+            Resource::Gpu(gpu) => {
+                assert_eq!(gpu.server(), "Thalys");
+                assert_eq!(gpu.device_number(), 0);
+                assert_eq!(gpu.model(), "A100");
+            }
+            other => panic!("unexpected resource: {:?}", other),
+        }
+
+        tokio::fs::remove_dir_all(&dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn an_unattributed_usage_on_an_unconfigured_device_is_filtered_out() {
+        let dir = temp_dir();
+        let generated_at = Utc::now();
+        write_report(
+            &dir,
+            "thalys.json",
+            &format!(
+                r#"{{"server": "Thalys", "generated_at": "{}", "processes": [], "unattributed": [
+                    {{"device_number": 99, "uid": 100000, "started_at": "{}"}}
+                ]}}"#,
+                generated_at.to_rfc3339(),
+                generated_at.to_rfc3339(),
+            ),
+        )
+        .await;
+
+        let observer = SharedFileResourceUsageObserver::new(
+            dir.clone(),
+            test_resource_config(),
+            Duration::minutes(5),
+        );
+        let snapshot = observer.observe_active_usages().await.unwrap();
+
+        assert!(snapshot.unattributed_usages().is_empty());
+
+        tokio::fs::remove_dir_all(&dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn a_report_from_an_older_reporter_reads_as_having_no_unattributed_usage() {
+        let dir = temp_dir();
+        let generated_at = Utc::now();
+        // `unattributed`欄を知らない古い`gpu-usage-reporter`が書いたレポート
+        write_report(
+            &dir,
+            "thalys.json",
+            &format!(
+                r#"{{"server": "Thalys", "generated_at": "{}", "processes": [
+                    {{"device_number": 0, "os_user": "kkawaguchi", "started_at": "{}"}}
+                ]}}"#,
+                generated_at.to_rfc3339(),
+                generated_at.to_rfc3339(),
+            ),
+        )
+        .await;
+
+        let observer = SharedFileResourceUsageObserver::new(
+            dir.clone(),
+            test_resource_config(),
+            Duration::minutes(5),
+        );
+        let snapshot = observer.observe_active_usages().await.unwrap();
+
+        assert!(snapshot.unattributed_usages().is_empty());
+        assert_eq!(
+            snapshot.usages().len(),
+            1,
+            "旧形式のレポートも読み続けられる"
         );
 
         tokio::fs::remove_dir_all(&dir).await.ok();

@@ -1,9 +1,9 @@
 use crate::application::error::ApplicationError;
 use crate::application::idle_notice_log::IdleNoticeLog;
-use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod, UsageId};
-use crate::domain::ports::repositories::{IdentityLinkRepository, ResourceUsageRepository};
+use crate::domain::ports::notifier::NotificationError;
+use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::domain::ports::{
     IdleEvidence, IdleReservation, IdleReservationNotifier, ObservationSnapshot,
     ResourceUsageObserver,
@@ -36,7 +36,7 @@ pub enum NoticePolicy {
 /// 手が離れているとは限らない。
 #[derive(Debug, Clone, Copy)]
 pub struct IdleCriteria {
-    /// 予約者本人のプロセスを観測できない状態がこれだけ続いたら知らせる
+    /// 利用をひとつも観測できない状態がこれだけ続いたら知らせる
     pub absent_threshold: Duration,
     /// プロセスは乗っているのに計算が走らない状態がこれだけ続いたら知らせる
     pub held_threshold: Duration,
@@ -87,6 +87,8 @@ enum NoticeOutcome {
     Sent,
     /// 知らせる頃合いだったが、様子を見るにとどめた
     Withheld,
+    /// 知らせる頃合いだったが、宛先が分からなかった
+    Unreachable,
     /// まだ知らせる頃合いではない
     NotDue,
 }
@@ -100,33 +102,30 @@ struct IdleSpell {
     evidence: IdleEvidence,
 }
 
-/// 進行中の予約のうち、予約者本人に使われていないものを検知して知らせるユースケース
+/// 進行中の予約のうち、使われていないものを検知して予約者へ知らせるユースケース
 ///
 /// # 判定
-/// 予約が押さえているGPUについて、予約者本人のプロセスがひとつも観測されないか、
-/// 乗ってはいるが計算が走っていない状態が続いたら、予約者へ知らせる。予約者以外の利用は
-/// 無断使用として`ReconcileObservedUsagesUseCase`が扱うため、ここでは予約者本人の
-/// 利用だけを見る。
+/// 予約が押さえているGPUについて、利用がひとつも観測されないか、乗ってはいるが
+/// 計算が走っていない状態が続いたら、予約者へ知らせる。誰のプロセスかは問わない。
+/// コンテナ等の中間層はプロセスの名義を予約者に辿れなくするが、予約が押さえる
+/// デバイスの上で起きていることは、名義によらず予約者の責任範囲である。
+/// 名義の照合（無断使用の検出）は`ReconcileObservedUsagesUseCase`の仕事。
 ///
 /// # 判定しない場合
 /// - 観測できていないサーバー（レポートの欠落・鮮度切れ）を含む予約
 ///   監視が止まっている間の沈黙は、使われていないことの証拠にならない
-/// - 予約者のOSユーザー名が分からない予約
-///   本人の利用を本人のものと見分けられない
 /// - 部屋の予約
 ///   利用を観測する手段がない
 /// - 残り時間が閾値に満たない予約
 ///   まもなく終わる予約を急かしても、予約者に取れる手はほとんどない
-pub struct DetectIdleReservationsUseCase<R, O, I, N>
+pub struct DetectIdleReservationsUseCase<R, O, N>
 where
     R: ResourceUsageRepository,
     O: ResourceUsageObserver,
-    I: IdentityLinkRepository,
     N: IdleReservationNotifier,
 {
     repository: Arc<R>,
     observer: Arc<O>,
-    identity_repo: Arc<I>,
     notifier: N,
     criteria: IdleCriteria,
     notices: Arc<IdleNoticeLog>,
@@ -134,11 +133,10 @@ where
     idle_spells: Mutex<HashMap<String, IdleSpell>>,
 }
 
-impl<R, O, I, N> DetectIdleReservationsUseCase<R, O, I, N>
+impl<R, O, N> DetectIdleReservationsUseCase<R, O, N>
 where
     R: ResourceUsageRepository,
     O: ResourceUsageObserver,
-    I: IdentityLinkRepository,
     N: IdleReservationNotifier,
 {
     /// 新しいユースケースインスタンスを作成
@@ -149,7 +147,6 @@ where
     pub fn new(
         repository: Arc<R>,
         observer: Arc<O>,
-        identity_repo: Arc<I>,
         notifier: N,
         criteria: IdleCriteria,
         notices: Arc<IdleNoticeLog>,
@@ -157,7 +154,6 @@ where
         Self {
             repository,
             observer,
-            identity_repo,
             notifier,
             criteria,
             notices,
@@ -182,10 +178,11 @@ where
         let mut held_partially = 0_usize;
         let mut notified = 0_usize;
         let mut withheld = 0_usize;
+        let mut unreachable = 0_usize;
         let mut failures = 0_usize;
 
         for reservation in &reservations {
-            let activity = self.judge(reservation, &snapshot).await?;
+            let activity = self.judge(reservation, &snapshot);
 
             if matches!(activity, ReservationActivity::InUse) {
                 self.forget(reservation.id());
@@ -210,6 +207,7 @@ where
             {
                 Ok(NoticeOutcome::Sent) => notified += 1,
                 Ok(NoticeOutcome::Withheld) => withheld += 1,
+                Ok(NoticeOutcome::Unreachable) => unreachable += 1,
                 Ok(NoticeOutcome::NotDue) => {}
                 Err(e) => {
                     failures += 1;
@@ -232,6 +230,7 @@ where
             held_partially,
             notified,
             withheld,
+            unreachable,
             failures,
             elapsed_ms = (Utc::now() - started_at).num_milliseconds(),
             "idle reservation pass finished"
@@ -240,48 +239,27 @@ where
         Ok(())
     }
 
-    /// 予約が予約者本人に使われているかを見立てる
+    /// 予約が使われているかを見立てる
     ///
-    /// 観測できていないサーバーや、OSユーザー名の分からない予約者については、
-    /// 見立てそのものを差し控える。
-    async fn judge(
+    /// 観測できていないサーバーを含む予約については、見立てそのものを差し控える。
+    fn judge(
         &self,
         reservation: &ResourceUsage,
         snapshot: &ObservationSnapshot,
-    ) -> Result<ReservationActivity, ApplicationError> {
+    ) -> ReservationActivity {
         let Some(servers) = servers_of(reservation) else {
-            return Ok(ReservationActivity::Undecidable);
+            return ReservationActivity::Undecidable;
         };
 
         if !servers.iter().all(|server| snapshot.covers(server)) {
-            return Ok(ReservationActivity::Undecidable);
+            return ReservationActivity::Undecidable;
         }
 
-        let Some(link) = self
-            .identity_repo
-            .find_by_email(reservation.owner_email())
-            .await?
-        else {
-            return Ok(ReservationActivity::Undecidable);
-        };
-
-        let mut owner_identities: Vec<ExternalIdentity> = Vec::with_capacity(servers.len());
-        for server in &servers {
-            let system = ExternalSystem::Os {
-                server: server.clone(),
-            };
-            let Some(identity) = link.get_identity_for_system(&system) else {
-                return Ok(ReservationActivity::Undecidable);
-            };
-            owner_identities.push(identity.clone());
-        }
-
-        Ok(judge_reservation_activity(
+        judge_reservation_activity(
             reservation.resources(),
-            &owner_identities,
             snapshot,
             self.criteria.computing_utilization_percent,
-        ))
+        )
     }
 
     /// 使われていない時間が閾値に達していれば予約者へ知らせる
@@ -322,16 +300,34 @@ where
             "telling the owner about an idle reservation"
         );
 
-        self.notifier
+        match self
+            .notifier
             .notify_idle(IdleReservation::new(
                 reservation.clone(),
                 idle_since,
                 evidence,
             ))
-            .await?;
-        // 知らせられてから黙る。先に記録すると、送信に失敗したまま二度と知らせなくなる
-        self.notices.silence(reservation.id(), now);
-        Ok(NoticeOutcome::Sent)
+            .await
+        {
+            Ok(()) => {
+                // 知らせられてから黙る。先に記録すると、送信に失敗したまま二度と知らせなくなる
+                self.notices.silence(reservation.id(), now);
+                Ok(NoticeOutcome::Sent)
+            }
+            Err(NotificationError::RecipientUnknown(reason)) => {
+                info!(
+                    usage_id = %reservation.id().as_str(),
+                    owner = %reservation.owner_email().as_str(),
+                    reason = %reason,
+                    "the owner cannot be reached; leaving the reservation quiet"
+                );
+                // 宛先を知らないことは、送る手段の不調ではない。次のポーリングで
+                // 確かめ直しても届くようにはならないため、送れたときと同じだけ黙る
+                self.notices.silence(reservation.id(), now);
+                Ok(NoticeOutcome::Unreachable)
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// この予約が今の様子で使われていないと確かめられた最初の時刻（初めてなら今）
