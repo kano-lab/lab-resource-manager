@@ -21,8 +21,6 @@ pub struct AppConfig {
     pub resource_config_path: PathBuf,
     /// ID紐付けファイルのパス
     pub identity_links_file: PathBuf,
-    /// カレンダーIDマッピングファイルのパス
-    pub calendar_mappings_file: PathBuf,
     /// ポーリング間隔（秒）
     pub polling_interval_secs: u64,
     /// GPU利用状況レポートの共有ディレクトリ（未設定なら実利用観測機能を無効化）

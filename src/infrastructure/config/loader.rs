@@ -44,10 +44,6 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(defaults::IDENTITY_LINKS_FILE));
 
-    let calendar_mappings_file = env::var("GOOGLE_CALENDAR_MAPPINGS_FILE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(defaults::CALENDAR_MAPPINGS_FILE));
-
     let polling_interval_secs =
         parse_number_env("POLLING_INTERVAL", defaults::POLLING_INTERVAL_SECS)?;
 
@@ -138,7 +134,6 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
         slack_app_token,
         resource_config_path,
         identity_links_file,
-        calendar_mappings_file,
         polling_interval_secs,
         gpu_usage_reports_dir,
         gpu_usage_max_staleness_secs,
