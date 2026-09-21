@@ -1,3 +1,132 @@
+# マイグレーションガイド
+
+## ストレージ設定スキーマの変更 (v2.0.0)
+
+v2.0.0 では `resources.toml` 設定ファイルの形式に破壊的変更が入ります。カレンダーID マッピングがリソース定義から分離され、関心の分離が改善されました。
+
+### 設定形式の変更
+
+予約データの永続化先の指定（ストレージマッピング）がリソース定義（「何が予約できるか」）から分離されました。
+
+**変更前（v1.x）:**
+
+```toml
+[[servers]]
+name = "gpu-server-1"
+calendar_id = "xxx@group.calendar.google.com"
+
+[[servers.devices]]
+id = 0
+model = "A100 80GB PCIe"
+
+[[rooms]]
+name = "Meeting Room A"
+calendar_id = "yyy@group.calendar.google.com"
+```
+
+**変更後（v2.0.0）:**
+
+```toml
+[[servers]]
+name = "gpu-server-1"
+
+[[servers.devices]]
+id = 0
+model = "A100 80GB PCIe"
+
+[[rooms]]
+name = "Meeting Room A"
+
+[storage]
+type = "google_calendar"
+
+[storage.calendars]
+"gpu-server-1" = "xxx@group.calendar.google.com"
+"Meeting Room A" = "yyy@group.calendar.google.com"
+```
+
+### 移行手順
+
+1. **現在の設定をバックアップ**
+
+   ```bash
+   cp /etc/lab-resource-manager/resources.toml ~/resources.toml.backup
+   ```
+
+2. **resources.toml を更新**
+
+   設定内の各サーバーと部屋に対して：
+   - `[[servers]]` または `[[rooms]]` から `calendar_id` 行を削除
+   - ファイルの末尾に新しい `[storage]` セクションを追加
+   - `[storage.calendars]` にリソース名 → カレンダーID マッピングを記述
+
+   **移行例:**
+   
+   以下を：
+   ```toml
+   [[servers]]
+   name = "gpu-server-1"
+   calendar_id = "xxx@group.calendar.google.com"
+   ```
+   
+   このように書き換えます：
+   ```toml
+   [[servers]]
+   name = "gpu-server-1"
+   
+   # ... 他のサーバー設定 ...
+   
+   [storage]
+   type = "google_calendar"
+   
+   [storage.calendars]
+   "gpu-server-1" = "xxx@group.calendar.google.com"
+   ```
+
+3. **設定を検証**
+
+   サービスを再起動して新しい設定を検証します：
+
+   ```bash
+   sudo systemctl restart lab-resource-manager
+   sudo journalctl -u lab-resource-manager -f
+   ```
+
+   写像に不一致がある場合、どのリソースがカレンダーID マッピングを欠いているかを列挙したエラーメッセージが表示されます。
+
+4. **検証チェックリスト**
+
+   - [ ] `[[servers]]` 内のすべてのサーバー名が `[storage.calendars]` にある
+   - [ ] `[[rooms]]` 内のすべての部屋名が `[storage.calendars]` にある
+   - [ ] サービスがエラーなく起動する: `sudo systemctl status lab-resource-manager`
+   - [ ] Slack ボットがコマンドに応答する
+   - [ ] カレンダー連携が動作する（ログで確認）
+
+### トラブルシューティング
+
+**エラー: "resources.toml の以下のリソースが storage.calendars に写像を持ちません"**
+
+これは、一部のサーバーまたは部屋がカレンダーID マッピングを欠いていることを意味します。確認してください：
+
+```bash
+# 設定されているリソースを確認
+grep '^name = ' /etc/lab-resource-manager/resources.toml
+
+# すべてが storage.calendars セクションにあることを確認
+grep -A 100 '\[storage.calendars\]' /etc/lab-resource-manager/resources.toml
+```
+
+欠けているエントリを `[storage.calendars]` に追加してください。
+
+### 注釈
+
+- `storage` セクションは `type = "google_calendar"` を指定する必要があります（現在唯一のサポートされたバックエンド）
+- すべてのリソース名（サーバーと部屋）はちょうど 1 つのカレンダーID マッピングを持つ必要があります
+- 写像が不完全な場合、アプリケーション起動時に明確なエラーで失敗します
+- 定義されているが使用されていないカレンダーに対して警告ログが表示されます（今後リソースを追加予定の場合は無視できます）
+
+---
+
 # マイグレーションガイド: Docker からバイナリリリースへ (v1.0.0)
 
 このガイドでは、Docker ベースのデプロイから新しいバイナリリリース + systemd への移行方法を説明します。

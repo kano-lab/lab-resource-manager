@@ -1,3 +1,132 @@
+# Migration Guide
+
+## Storage Configuration Schema Change (v2.0.0)
+
+v2.0.0 introduces a breaking change to the `resources.toml` configuration format: calendar ID mappings are now separated from resource definitions for better separation of concerns.
+
+### Configuration Format Change
+
+The storage mapping (where reservations are persisted) is now separate from resource definitions (what can be reserved).
+
+**Before (v1.x):**
+
+```toml
+[[servers]]
+name = "gpu-server-1"
+calendar_id = "xxx@group.calendar.google.com"
+
+[[servers.devices]]
+id = 0
+model = "A100 80GB PCIe"
+
+[[rooms]]
+name = "Meeting Room A"
+calendar_id = "yyy@group.calendar.google.com"
+```
+
+**After (v2.0.0):**
+
+```toml
+[[servers]]
+name = "gpu-server-1"
+
+[[servers.devices]]
+id = 0
+model = "A100 80GB PCIe"
+
+[[rooms]]
+name = "Meeting Room A"
+
+[storage]
+type = "google_calendar"
+
+[storage.calendars]
+"gpu-server-1" = "xxx@group.calendar.google.com"
+"Meeting Room A" = "yyy@group.calendar.google.com"
+```
+
+### Migration Steps
+
+1. **Backup Your Current Config**
+
+   ```bash
+   cp /etc/lab-resource-manager/resources.toml ~/resources.toml.backup
+   ```
+
+2. **Update resources.toml**
+
+   For each server and room in your configuration:
+   - Remove the `calendar_id` line from `[[servers]]` or `[[rooms]]` entries
+   - Add a new `[storage]` section at the end of the file
+   - Create `[storage.calendars]` with resource name -> calendar ID mappings
+
+   **Example Migration:**
+   
+   Move this:
+   ```toml
+   [[servers]]
+   name = "gpu-server-1"
+   calendar_id = "xxx@group.calendar.google.com"
+   ```
+   
+   To this:
+   ```toml
+   [[servers]]
+   name = "gpu-server-1"
+   
+   # ... rest of servers ...
+   
+   [storage]
+   type = "google_calendar"
+   
+   [storage.calendars]
+   "gpu-server-1" = "xxx@group.calendar.google.com"
+   ```
+
+3. **Verify Configuration**
+
+   Start the service to validate the new configuration:
+
+   ```bash
+   sudo systemctl restart lab-resource-manager
+   sudo journalctl -u lab-resource-manager -f
+   ```
+
+   If there are mismatched mappings, you'll see a clear error message listing which resources lack calendar ID mappings.
+
+4. **Validation Checklist**
+
+   - [ ] All server names in `[[servers]]` have corresponding entries in `[storage.calendars]`
+   - [ ] All room names in `[[rooms]]` have corresponding entries in `[storage.calendars]`
+   - [ ] Service starts without errors: `sudo systemctl status lab-resource-manager`
+   - [ ] Slack bot responds to commands
+   - [ ] Calendar integration works (verify in logs)
+
+### Troubleshooting
+
+**Error: "resources.toml の以下のリソースが storage.calendars に写像を持ちません"**
+
+This means some servers or rooms are missing calendar ID mappings. Check:
+
+```bash
+# See which resources are configured
+grep '^name = ' /etc/lab-resource-manager/resources.toml
+
+# Verify all are in the storage.calendars section
+grep -A 100 '\[storage.calendars\]' /etc/lab-resource-manager/resources.toml
+```
+
+Add any missing entries to `[storage.calendars]`.
+
+### Notes
+
+- The `storage_config` section must specify `type = "google_calendar"` (this is currently the only supported backend)
+- All resource names (servers and rooms) must have exactly one calendar ID mapping
+- The application startup will fail with a clear error if mappings are incomplete
+- Warning logs appear for extra calendars defined but not used (these can be ignored if you're planning to add resources later)
+
+---
+
 # Migration Guide: Docker to Binary Release (v1.0.0)
 
 This guide explains how to migrate from Docker-based deployment to the new binary release with systemd.

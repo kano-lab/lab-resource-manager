@@ -611,6 +611,7 @@ impl GoogleCalendarUsageRepository {
 
         match first_resource {
             Resource::Gpu(gpu) => {
+                // load_config で検証済みだが、念のため確認（防御的プログラミング）
                 let _ = self.config.get_server(gpu.server()).ok_or_else(|| {
                     RepositoryError::Unknown(format!("サーバーが見つかりません: {}", gpu.server()))
                 })?;
@@ -625,6 +626,7 @@ impl GoogleCalendarUsageRepository {
                     })
             }
             Resource::Room { name } => {
+                // load_config で検証済みだが、念のため確認（防御的プログラミング）
                 let _ = self
                     .config
                     .rooms
