@@ -132,6 +132,33 @@ Add any missing entries to `[storage.calendars]`.
 - Warning logs appear for extra calendars defined but not used (these can be ignored if
   you're planning to add resources later)
 
+### Removal of google_calendar_mappings.json (v2.0.0)
+
+v2.0.0 also removes the `google_calendar_mappings.json` file and the
+`GOOGLE_CALENDAR_MAPPINGS_FILE` environment variable. Since v1.5.1 the calendar event id is
+derived from the reservation id, so the file only served reservations created **before
+v1.5.1**, whose event ids were assigned by Google and cannot be derived.
+
+What happens to such old reservations: nothing breaks operationally, but they are
+**renumbered** — they now resolve by their event id instead of the mapped id. A reservation
+id copied out of an old event description stops resolving; descriptions are regenerated
+whenever a reservation is updated, so this settles on its own. If any reservation created
+before v1.5.1 is still upcoming and you want its id to stay stable, update it once before
+upgrading.
+
+Steps:
+
+1. Remove the `GOOGLE_CALENDAR_MAPPINGS_FILE` line from `/etc/default/lab-resource-manager`
+
+2. Remove the file, keeping a backup if you want one:
+
+   ```bash
+   cp /var/lib/lab-resource-manager/google_calendar_mappings.json ~/google_calendar_mappings.json.backup
+   rm /var/lib/lab-resource-manager/google_calendar_mappings.json
+   ```
+
+If you keep the file or the variable by accident, both are simply ignored.
+
 ---
 
 ## Docker to Binary Release (v1.0.0)

@@ -134,6 +134,32 @@ grep -A 100 '\[storage.calendars\]' /etc/lab-resource-manager/resources.toml
 - 定義されているが使用されていないカレンダーに対して警告ログが表示されます
   （今後リソースを追加予定の場合は無視できます）
 
+### google_calendar_mappings.json の廃止 (v2.0.0)
+
+v2.0.0 では `google_calendar_mappings.json` ファイルと `GOOGLE_CALENDAR_MAPPINGS_FILE`
+環境変数を削除しました。v1.5.1 以降、カレンダーイベントIDは予約IDから導出されるため、
+このファイルは **v1.5.1 より前**に作成された予約（イベントIDがGoogle採番で、予約IDから
+導出できないもの）の解決だけを担っていました。
+
+そうした古い予約がどうなるか: 運用上壊れることはありませんが、**番号が振り直されます**。
+以後は対応表のIDではなくイベントIDで解決されるため、古いイベント説明からコピーした
+予約IDは解決できなくなります。説明は予約を更新するたびに再生成されるので、これは
+自然に収束します。v1.5.1 より前に作成された予約がまだ進行中・予定にあり、そのIDを
+安定させたい場合は、アップグレード前に一度その予約を更新してください。
+
+手順:
+
+1. `/etc/default/lab-resource-manager` から `GOOGLE_CALENDAR_MAPPINGS_FILE` の行を削除します
+
+2. ファイルを削除します（残したければバックアップを取ってから）:
+
+   ```bash
+   cp /var/lib/lab-resource-manager/google_calendar_mappings.json ~/google_calendar_mappings.json.backup
+   rm /var/lib/lab-resource-manager/google_calendar_mappings.json
+   ```
+
+ファイルや環境変数を誤って残しても、どちらも単に無視されます。
+
 ---
 
 ## Docker からバイナリリリースへ (v1.0.0)

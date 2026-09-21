@@ -17,7 +17,6 @@ RESOURCE_CONFIG=/etc/lab-resource-manager/resources.toml
 
 # データファイル
 IDENTITY_LINKS_FILE=/var/lib/lab-resource-manager/identity_links.json
-GOOGLE_CALENDAR_MAPPINGS_FILE=/var/lib/lab-resource-manager/google_calendar_mappings.json
 
 # Slackボット設定
 SLACK_BOT_TOKEN=xoxb-your-bot-token-here

@@ -1,5 +1,4 @@
 use super::event_gateway::{CalendarEventGateway, GoogleCalendarEventGateway};
-use super::id_mapper::{ExternalId, IdMapper};
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::resource_usage::{
     entity::ResourceUsage,
@@ -22,6 +21,15 @@ use google_calendar3::{
 };
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
+
+/// Google Calendar の外部ID (calendar_id + event_id)
+#[derive(Debug, Clone)]
+struct ExternalId {
+    /// Calendar ID
+    calendar_id: String,
+    /// Event ID
+    event_id: String,
+}
 
 /// アプリ経由で作成されたイベントのdescriptionに付与される、予約者メールアドレス行の接頭辞
 const OWNER_LINE_PREFIX: &str = "予約者: ";
@@ -46,8 +54,7 @@ const RESERVATION_ID_LINE_PREFIX: &str = "予約ID: ";
 /// UUIDのハイフンを除いた表現を用いる。予約IDとイベントIDが決定的に対応するので、
 /// 両者の対応表を持たなくても相互に解決できる。
 ///
-/// イベントIDをアプリが指定するようになる前に作られた予約は、Google側が採番した
-/// イベントIDを持つためこの導出が使えない。それらは`IdMapper`が解決する。
+/// v2.0.0 以降はすべての予約のイベントIDを予約IDから導出可能。
 fn event_id_for(usage_id: &UsageId) -> String {
     usage_id.as_str().replace('-', "")
 }
@@ -69,7 +76,6 @@ pub struct GoogleCalendarUsageRepository {
     config: ResourceConfig,
     storage_config: StorageConfig,
     service_account_email: String,
-    id_mapper: Arc<IdMapper>,
     /// 予約者の付加情報（OSユーザー名など）を引くためのリポジトリ
     identity_repo: Arc<dyn IdentityLinkRepository>,
     /// 解釈失敗を既に警告したイベントID
@@ -84,13 +90,11 @@ impl GoogleCalendarUsageRepository {
     /// # Arguments
     /// * `service_account_key` - サービスアカウントキーファイルのパス
     /// * `config` - リソース設定
-    /// * `id_mappings_path` - IDマッピングファイルのパス
     /// * `identity_repo` - 同一性リンクリポジトリ
     /// * `storage_config` - ストレージバックエンド設定（カレンダーIDマッピング等）
     pub async fn new(
         service_account_key: &str,
         config: ResourceConfig,
-        id_mappings_path: std::path::PathBuf,
         identity_repo: Arc<dyn IdentityLinkRepository>,
         storage_config: StorageConfig,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -111,14 +115,11 @@ impl GoogleCalendarUsageRepository {
 
         let hub = CalendarHub::new(client, auth);
 
-        let id_mapper = IdMapper::new(id_mappings_path)?;
-
         Ok(Self {
             gateway: Arc::new(GoogleCalendarEventGateway::new(hub)),
             config,
             storage_config,
             service_account_email,
-            id_mapper: Arc::new(id_mapper),
             identity_repo,
             reported_parse_failures: Mutex::new(HashSet::new()),
         })
@@ -130,7 +131,6 @@ impl GoogleCalendarUsageRepository {
         gateway: Arc<dyn CalendarEventGateway>,
         config: ResourceConfig,
         service_account_email: String,
-        id_mappings_path: std::path::PathBuf,
         identity_repo: Arc<dyn IdentityLinkRepository>,
         storage_config: StorageConfig,
     ) -> Result<Self, RepositoryError> {
@@ -139,7 +139,6 @@ impl GoogleCalendarUsageRepository {
             config,
             storage_config,
             service_account_email,
-            id_mapper: Arc::new(IdMapper::new(id_mappings_path)?),
             identity_repo,
             reported_parse_failures: Mutex::new(HashSet::new()),
         })
@@ -314,14 +313,8 @@ impl GoogleCalendarUsageRepository {
         // Event ID から Domain ID を取得
         let event_id = event.id.clone().unwrap_or_default();
 
-        // イベントIDがそのまま予約IDになる。過去に採番した対応表がある場合のみ、
-        // 既存の予約IDを引き継ぐ（IDを変えると予約を指す既存の参照が壊れるため）。
-        let domain_id = match self.id_mapper.get_domain_id(&event_id)? {
-            Some(existing_domain_id) => existing_domain_id,
-            None => event_id.clone(),
-        };
-
-        let id = UsageId::from_string(domain_id);
+        // イベントIDがそのまま予約IDになる
+        let id = UsageId::from_string(event_id);
 
         // owner_emailの決定ロジック
         let owner_email = event
@@ -500,10 +493,6 @@ impl GoogleCalendarUsageRepository {
         usage: &ResourceUsage,
         target_calendar_id: &str,
     ) -> Result<Option<ExternalId>, RepositoryError> {
-        if let Some(external_id) = self.id_mapper.get_external_id(usage.id().as_str())? {
-            return Ok(Some(external_id));
-        }
-
         let event_id = event_id_for(usage.id());
 
         // 配置先を先に確認し、無ければ他のカレンダー（移動元）も探す
@@ -680,33 +669,8 @@ impl GoogleCalendarUsageRepository {
             }),
             // NOTE: attendeesを追加するとDomain-Wide Delegationが必要になるため、
             // 予約者情報はdescriptionに含めています
-            // NOTE: Event IDはGoogle Calendar側で自動生成され、id_mapperで管理されます
             ..Default::default()
         })
-    }
-
-    /// カレンダーIDからリソースコンテキスト（サーバー名または部屋名）を取得
-    fn get_resource_context(&self, calendar_id: &str) -> Result<String, RepositoryError> {
-        let mappings = self
-            .storage_config
-            .google_calendar_mappings()
-            .ok_or_else(|| {
-                RepositoryError::Unknown(
-                    "Google Calendarバックエンドの設定が見つかりません".to_string(),
-                )
-            })?;
-
-        // マッピングから逆引き
-        for (resource_name, cal_id) in mappings {
-            if cal_id == calendar_id {
-                return Ok(resource_name.clone());
-            }
-        }
-
-        Err(RepositoryError::Unknown(format!(
-            "カレンダーIDに対応するリソースが見つかりません: {}",
-            calendar_id
-        )))
     }
 
     /// event_idから直接イベントを検索（マッピングがない場合）
@@ -775,49 +739,9 @@ impl GoogleCalendarUsageRepository {
 #[async_trait]
 impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
-        let input_id = id.as_str();
-
-        // まずdomain_idとして外部IDを取得を試みる
-        let external_id = match self.id_mapper.get_external_id(input_id)? {
-            Some(ext_id) => ext_id,
-            None => {
-                // 見つからない場合、input_idがevent_idの可能性がある
-                // 逆引きマッピングを試みる
-                match self.id_mapper.get_domain_id(input_id)? {
-                    Some(domain_id) => {
-                        // domain_idが見つかったので、それで外部IDを取得
-                        match self.id_mapper.get_external_id(&domain_id)? {
-                            Some(ext_id) => ext_id,
-                            None => {
-                                return Ok(None);
-                            }
-                        }
-                    }
-                    None => {
-                        // 対応表に無い場合、予約IDから導出したイベントIDで全カレンダーを探す
-                        let found = self.find_by_event_id(&event_id_for(id)).await?;
-                        return found.map(|usage| Self::with_id(usage, id)).transpose();
-                    }
-                }
-            }
-        };
-
-        // 特定のカレンダーから直接イベントを取得
-        let event = match self
-            .gateway
-            .get_event(&external_id.calendar_id, &external_id.event_id)
-            .await?
-        {
-            Some(event) => event,
-            None => return Ok(None), // イベントが見つからない場合はNone
-        };
-
-        // リソースコンテキストを取得
-        let resource_context = self.get_resource_context(&external_id.calendar_id)?;
-
-        let usage = self.parse_event(event, &resource_context)?;
-
-        Ok(Some(Self::with_id(usage, id)?))
+        // 予約IDから導出したイベントIDで全カレンダーを探す
+        let found = self.find_by_event_id(&event_id_for(id)).await?;
+        found.map(|usage| Self::with_id(usage, id)).transpose()
     }
 
     /// 指定期間と重複するResourceUsageを検索
@@ -896,39 +820,7 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     }
 
     async fn delete(&self, id: &UsageId) -> Result<(), RepositoryError> {
-        let input_id = id.as_str();
-
-        // まずdomain_idとして外部IDを取得を試みる
-        let (external_id, actual_domain_id) = match self.id_mapper.get_external_id(input_id)? {
-            Some(ext_id) => (ext_id, input_id.to_string()),
-            None => {
-                // 見つからない場合、input_idがevent_idの可能性がある
-                // 逆引きマッピングを試みる
-                match self.id_mapper.get_domain_id(input_id)? {
-                    Some(domain_id) => {
-                        // domain_idが見つかったので、それで外部IDを取得
-                        let ext_id = self
-                            .id_mapper
-                            .get_external_id(&domain_id)?
-                            .ok_or(RepositoryError::NotFound)?;
-                        (ext_id, domain_id)
-                    }
-                    None => {
-                        // 対応表に無い場合、予約IDから導出したイベントIDで全カレンダーを探す
-                        return self.delete_by_event_id(&event_id_for(id)).await;
-                    }
-                }
-            }
-        };
-
-        // イベントを削除
-        self.gateway
-            .delete_event(&external_id.calendar_id, &external_id.event_id)
-            .await?;
-
-        // マッピングを削除
-        self.id_mapper.delete_mapping(&actual_domain_id)?;
-
-        Ok(())
+        // 予約IDから導出したイベントIDで全カレンダーを探して削除
+        self.delete_by_event_id(&event_id_for(id)).await
     }
 }

@@ -55,7 +55,6 @@
 //!     GoogleCalendarUsageRepository::new(
 //!         "secrets/service-account.json",
 //!         resource_config.clone(),
-//!         "data/google_calendar_mappings.json".into(),
 //!         identity_repo.clone(),
 //!         storage_config,
 //!     )

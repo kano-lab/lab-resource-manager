@@ -18,7 +18,6 @@ use crate::infrastructure::config::{
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use google_calendar3::api::{Event, EventCreator, EventDateTime};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 const SERVICE_ACCOUNT_EMAIL: &str = "service-account@example.com";
@@ -174,25 +173,6 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
     }
 }
 
-/// テスト終了時に自動削除される一時ファイルパス
-struct TempMappingPath(PathBuf);
-
-impl TempMappingPath {
-    fn new() -> Self {
-        Self(std::env::temp_dir().join(format!("lrm-id-mappings-{}.json", uuid::Uuid::new_v4())))
-    }
-
-    fn path(&self) -> PathBuf {
-        self.0.clone()
-    }
-}
-
-impl Drop for TempMappingPath {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
-    }
-}
-
 fn test_config() -> ResourceConfig {
     ResourceConfig {
         servers: vec![ServerConfig {
@@ -255,24 +235,18 @@ fn reservation_event(
 
 fn repository_with(
     events: Vec<Event>,
-) -> (
-    GoogleCalendarUsageRepository,
-    Arc<FakeCalendarEventGateway>,
-    TempMappingPath,
-) {
+) -> (GoogleCalendarUsageRepository, Arc<FakeCalendarEventGateway>) {
     let gateway = Arc::new(FakeCalendarEventGateway::new(events));
-    let mapping_path = TempMappingPath::new();
     let repository = GoogleCalendarUsageRepository::with_gateway(
         gateway.clone(),
         test_config(),
         SERVICE_ACCOUNT_EMAIL.to_string(),
-        mapping_path.path(),
         Arc::new(StubIdentityLinkRepository::default()),
         test_storage_config(),
     )
     .expect("テスト用リポジトリの構築に失敗");
 
-    (repository, gateway, mapping_path)
+    (repository, gateway)
 }
 
 #[tokio::test]
@@ -286,7 +260,7 @@ async fn find_overlapping_includes_reservation_that_already_ended() {
         now - Duration::hours(5),
         now - Duration::hours(3),
     );
-    let (repository, _gateway, _mapping_path) = repository_with(vec![existing]);
+    let (repository, _gateway) = repository_with(vec![existing]);
 
     // 4時間前〜2時間前を予約しようとすると、上の予約と重なる
     let period = TimePeriod::new(now - Duration::hours(4), now - Duration::hours(2)).unwrap();
@@ -303,7 +277,7 @@ async fn find_overlapping_includes_reservation_that_already_ended() {
 #[tokio::test]
 async fn find_overlapping_queries_exactly_the_requested_period() {
     let now = Utc::now();
-    let (repository, gateway, _mapping_path) = repository_with(vec![]);
+    let (repository, gateway) = repository_with(vec![]);
     let period = TimePeriod::new(now - Duration::hours(4), now - Duration::hours(2)).unwrap();
 
     repository.find_overlapping(&period).await.unwrap();
@@ -337,7 +311,7 @@ async fn find_overlapping_ignores_cancelled_events() {
         now + Duration::hours(1),
     );
     cancelled.status = Some("cancelled".to_string());
-    let (repository, _gateway, _mapping_path) = repository_with(vec![cancelled]);
+    let (repository, _gateway) = repository_with(vec![cancelled]);
 
     let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
 
@@ -367,7 +341,7 @@ async fn find_overlapping_skips_unparsable_events_but_keeps_the_rest() {
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
-    let (repository, _gateway, _mapping_path) = repository_with(vec![unparsable, valid]);
+    let (repository, _gateway) = repository_with(vec![unparsable, valid]);
 
     let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
 
@@ -390,7 +364,7 @@ async fn a_window_starting_now_excludes_reservations_that_already_ended() {
         now - Duration::hours(5),
         now - Duration::hours(3),
     );
-    let (repository, _gateway, _mapping_path) = repository_with(vec![ended]);
+    let (repository, _gateway) = repository_with(vec![ended]);
 
     let window = TimePeriod::new(now, now + Duration::days(30)).unwrap();
     let future = repository.find_overlapping(&window).await.unwrap();
@@ -408,7 +382,7 @@ async fn a_window_starting_now_keeps_an_ongoing_reservation() {
         now - Duration::hours(5),
         now + Duration::hours(1),
     );
-    let (repository, _gateway, _mapping_path) = repository_with(vec![ongoing]);
+    let (repository, _gateway) = repository_with(vec![ongoing]);
 
     let window = TimePeriod::new(now, now + Duration::days(30)).unwrap();
     let future = repository.find_overlapping(&window).await.unwrap();
@@ -422,7 +396,7 @@ async fn a_window_starting_now_keeps_an_ongoing_reservation() {
 
 #[tokio::test]
 async fn parse_failures_are_reported_once_per_event() {
-    let (repository, _gateway, _mapping_path) = repository_with(vec![]);
+    let (repository, _gateway) = repository_with(vec![]);
 
     // 同じイベントの解釈失敗を毎回警告すると、ポーリングのたびにログが積み上がる
     assert!(
@@ -497,24 +471,18 @@ impl IdentityLinkRepository for StubIdentityLinkRepository {
 
 fn repository_with_identities(
     identity_repo: StubIdentityLinkRepository,
-) -> (
-    GoogleCalendarUsageRepository,
-    Arc<FakeCalendarEventGateway>,
-    TempMappingPath,
-) {
+) -> (GoogleCalendarUsageRepository, Arc<FakeCalendarEventGateway>) {
     let gateway = Arc::new(FakeCalendarEventGateway::new(vec![]));
-    let mapping_path = TempMappingPath::new();
     let repository = GoogleCalendarUsageRepository::with_gateway(
         gateway.clone(),
         test_config(),
         SERVICE_ACCOUNT_EMAIL.to_string(),
-        mapping_path.path(),
         Arc::new(identity_repo),
         test_storage_config(),
     )
     .expect("テスト用リポジトリの構築に失敗");
 
-    (repository, gateway, mapping_path)
+    (repository, gateway)
 }
 
 fn gpu_usage(owner: &str, device_number: u32) -> ResourceUsage {
@@ -535,7 +503,7 @@ fn gpu_usage(owner: &str, device_number: u32) -> ResourceUsage {
 
 #[tokio::test]
 async fn description_includes_the_os_user_name_for_the_reserved_server() {
-    let (repository, _gateway, _mapping_path) =
+    let (repository, _gateway) =
         repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
             "owner@example.com",
             "Thalys",
@@ -553,8 +521,7 @@ async fn description_includes_the_os_user_name_for_the_reserved_server() {
 
 #[tokio::test]
 async fn description_includes_the_reservation_id() {
-    let (repository, _gateway, _mapping_path) =
-        repository_with_identities(StubIdentityLinkRepository::default());
+    let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
     let usage = gpu_usage("owner@example.com", 0);
 
     let description = repository.build_description(&usage).await;
@@ -567,8 +534,7 @@ async fn description_includes_the_reservation_id() {
 
 #[tokio::test]
 async fn description_omits_the_os_line_when_no_link_exists() {
-    let (repository, _gateway, _mapping_path) =
-        repository_with_identities(StubIdentityLinkRepository::default());
+    let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
     let usage = gpu_usage("unlinked@example.com", 0);
 
     let description = repository.build_description(&usage).await;
@@ -586,7 +552,7 @@ async fn description_omits_the_os_line_when_no_link_exists() {
 #[tokio::test]
 async fn description_uses_the_os_name_of_the_server_being_reserved() {
     // 同じ利用者がサーバーごとに別のOSユーザー名を持つ場合、予約したサーバーの名前を使う
-    let (repository, _gateway, _mapping_path) = repository_with_identities(
+    let (repository, _gateway) = repository_with_identities(
         StubIdentityLinkRepository::default()
             .with_os_user("owner@example.com", "Thalys", "kkawaguchi")
             .with_os_user("owner@example.com", "Freccia", "kinji"),
@@ -601,7 +567,7 @@ async fn description_uses_the_os_name_of_the_server_being_reserved() {
 
 #[tokio::test]
 async fn added_metadata_lines_do_not_leak_into_notes() {
-    let (repository, _gateway, _mapping_path) =
+    let (repository, _gateway) =
         repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
             "owner@example.com",
             "Thalys",
@@ -655,7 +621,7 @@ async fn reads_reservations_written_by_older_versions_with_markers() {
         "legacy@example.com",
         "旧形式の備考",
     ));
-    let (repository, _gateway, _mapping_path) = repository_with(vec![event]);
+    let (repository, _gateway) = repository_with(vec![event]);
 
     let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
     let found = repository.find_overlapping(&period).await.unwrap();
@@ -679,7 +645,7 @@ async fn reads_reservations_written_before_markers_existed() {
         "ancient@example.com",
         "マーカー導入前の備考",
     ));
-    let (repository, _gateway, _mapping_path) = repository_with(vec![event]);
+    let (repository, _gateway) = repository_with(vec![event]);
 
     let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
     let found = repository.find_overlapping(&period).await.unwrap();
@@ -694,7 +660,7 @@ async fn reads_reservations_written_before_markers_existed() {
 
 #[tokio::test]
 async fn newly_written_description_round_trips() {
-    let (repository, _gateway, _mapping_path) =
+    let (repository, _gateway) =
         repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
             "owner@example.com",
             "Thalys",
@@ -732,7 +698,7 @@ async fn newly_written_description_round_trips() {
 #[tokio::test]
 async fn metadata_lines_are_not_mistaken_for_the_owner() {
     // OS行や予約ID行が予約者として誤読されないこと（行の走査順に依存しない）
-    let (repository, _gateway, _mapping_path) =
+    let (repository, _gateway) =
         repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
             "owner@example.com",
             "Thalys",
@@ -755,8 +721,7 @@ async fn metadata_lines_are_not_mistaken_for_the_owner() {
 
 #[tokio::test]
 async fn saving_a_new_reservation_uses_an_event_id_derived_from_the_usage_id() {
-    let (repository, gateway, _mapping_path) =
-        repository_with_identities(StubIdentityLinkRepository::default());
+    let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
     let usage = gpu_usage("owner@example.com", 0);
 
     repository.save(&usage).await.unwrap();
@@ -779,8 +744,7 @@ async fn saving_a_new_reservation_uses_an_event_id_derived_from_the_usage_id() {
 
 #[tokio::test]
 async fn a_saved_reservation_can_be_found_by_id_without_a_mapping_file() {
-    let (repository, _gateway, mapping_path) =
-        repository_with_identities(StubIdentityLinkRepository::default());
+    let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
     let usage = gpu_usage("owner@example.com", 0);
 
     repository.save(&usage).await.unwrap();
@@ -788,10 +752,6 @@ async fn a_saved_reservation_can_be_found_by_id_without_a_mapping_file() {
 
     assert!(found.is_some(), "保存した予約はIDで引けるべき");
     assert_eq!(found.unwrap().id(), usage.id());
-    assert!(
-        !mapping_path.path().exists(),
-        "マッピングファイルを作らずに解決できるべき"
-    );
 }
 
 #[tokio::test]
@@ -804,7 +764,7 @@ async fn reading_an_event_without_a_mapping_uses_the_event_id_as_the_reservation
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
-    let (repository, _gateway, mapping_path) = repository_with(vec![event]);
+    let (repository, _gateway) = repository_with(vec![event]);
 
     let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
     let found = repository.find_overlapping(&period).await.unwrap();
@@ -814,10 +774,6 @@ async fn reading_an_event_without_a_mapping_uses_the_event_id_as_the_reservation
         found[0].id().as_str(),
         "someeventid1234",
         "イベントIDをそのまま予約IDとして扱うべき"
-    );
-    assert!(
-        !mapping_path.path().exists(),
-        "読み取りでマッピングを書き込んではいけない"
     );
 }
 
@@ -831,7 +787,7 @@ async fn reading_the_same_event_twice_yields_a_stable_reservation_id() {
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
-    let (repository, _gateway, _mapping_path) = repository_with(vec![event]);
+    let (repository, _gateway) = repository_with(vec![event]);
     let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
 
     let first = repository.find_overlapping(&period).await.unwrap();
@@ -846,8 +802,7 @@ async fn reading_the_same_event_twice_yields_a_stable_reservation_id() {
 
 #[tokio::test]
 async fn updating_a_saved_reservation_updates_the_event_instead_of_inserting_again() {
-    let (repository, gateway, _mapping_path) =
-        repository_with_identities(StubIdentityLinkRepository::default());
+    let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
     let usage = gpu_usage("owner@example.com", 0);
     repository.save(&usage).await.unwrap();
 
