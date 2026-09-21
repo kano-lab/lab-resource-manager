@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.0.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.8.0...v2.0.0) (2026-09-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* google_calendar_mappings.json is no longer read and the GOOGLE_CALENDAR_MAPPINGS_FILE environment variable is gone (both are ignored if left in place; reservation ids copied from pre-v1.5.1 event descriptions stop resolving). In the library API, GoogleCalendarUsageRepository::new no longer takes the mappings path.
+* existing resources.toml files stop loading until calendar_id entries are moved into the [storage] section (see the migration guide). In the library API, load_config returns a (ResourceConfig, StorageConfig) pair, ServerConfig and RoomConfig lose their calendar_id field, and GoogleCalendarUsageRepository::new takes the StorageConfig.
+* TemplateConfig gains a conflict_item field, so struct-literal construction outside this crate needs updating.
+* DetectIdleReservationsUseCase loses its IdentityLinkRepository type parameter and constructor argument; judge_reservation_activity drops its owner_identities parameter; GpuUsageReport gains a required unattributed field; NotificationError gains a RecipientUnknown variant; public error enums are non_exhaustive, so external matches need a wildcard arm.
+
+### Features
+
+* improve how multiple reservation conflicts are presented ([#164](https://github.com/kano-lab/lab-resource-manager/issues/164)) ([bbfb86b](https://github.com/kano-lab/lab-resource-manager/commit/bbfb86b71a52e3fdeab42de2ab2594ae0cfca2d2))
+* judge idle reservations by the reserved device, not process identity ([#161](https://github.com/kano-lab/lab-resource-manager/issues/161)) ([6141e74](https://github.com/kano-lab/lab-resource-manager/commit/6141e7454589c8cf70d6f6890fec917b3c56a83b))
+
+
+### Code Refactoring
+
+* drop the id-mapping file for calendar events ([#166](https://github.com/kano-lab/lab-resource-manager/issues/166)) ([88570ee](https://github.com/kano-lab/lab-resource-manager/commit/88570eeb70cf9f66ef6324265edf15c70a529069))
+* separate the storage mapping from resource definitions ([#165](https://github.com/kano-lab/lab-resource-manager/issues/165)) ([cbc3fdc](https://github.com/kano-lab/lab-resource-manager/commit/cbc3fdc482cc6f6519325cd14be470a2fec707c4))
+
 ## [1.8.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.7.1...v1.8.0) (2026-08-02)
 
 
