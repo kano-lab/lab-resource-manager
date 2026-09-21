@@ -134,36 +134,30 @@ Add any missing entries to `[storage.calendars]`.
 
 ### Removal of google_calendar_mappings.json (v2.0.0)
 
-v2.0.0 also removes the deprecated `google_calendar_mappings.json` file and the associated
-`GOOGLE_CALENDAR_MAPPINGS_FILE` environment variable. This file was used to track event IDs
-for reservations created before v1.9.0.
+v2.0.0 also removes the `google_calendar_mappings.json` file and the
+`GOOGLE_CALENDAR_MAPPINGS_FILE` environment variable. Since v1.5.1 the calendar event id is
+derived from the reservation id, so the file only served reservations created **before
+v1.5.1**, whose event ids were assigned by Google and cannot be derived.
 
-**Prerequisites for safe removal:**
+What happens to such old reservations: nothing breaks operationally, but they are
+**renumbered** — they now resolve by their event id instead of the mapped id. A reservation
+id copied out of an old event description stops resolving; descriptions are regenerated
+whenever a reservation is updated, so this settles on its own. If any reservation created
+before v1.5.1 is still upcoming and you want its id to stay stable, update it once before
+upgrading.
 
-All active and future reservations must have been created with v1.9.0 or later. If any
-reservations created before v1.9.0 are still in use, they will not resolve correctly after
-this file is removed.
+Steps:
 
-**Verification steps:**
+1. Remove the `GOOGLE_CALENDAR_MAPPINGS_FILE` line from `/etc/default/lab-resource-manager`
 
-1. Ensure all active reservations were created after v1.9.0 by checking your calendar:
-   - Examine event descriptions in the managed resource calendars
-   - Reservations created by the app include the reservation ID in the description
-   - If you find reservations without IDs or created manually, update or delete them before upgrading
+2. Remove the file, keeping a backup if you want one:
 
-2. Backup and remove the file (if present):
    ```bash
    cp /var/lib/lab-resource-manager/google_calendar_mappings.json ~/google_calendar_mappings.json.backup
    rm /var/lib/lab-resource-manager/google_calendar_mappings.json
    ```
 
-3. Remove the `GOOGLE_CALENDAR_MAPPINGS_FILE` environment variable from `/etc/default/lab-resource-manager`
-
-**Impact:**
-
-- If you accidentally keep the file, it will simply be ignored
-- Updated reservations will have their event descriptions regenerated, which updates the
-  stored reservation ID to match the current derivation method
+If you keep the file or the variable by accident, both are simply ignored.
 
 ---
 

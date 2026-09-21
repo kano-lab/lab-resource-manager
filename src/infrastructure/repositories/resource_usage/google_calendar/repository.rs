@@ -673,31 +673,6 @@ impl GoogleCalendarUsageRepository {
         })
     }
 
-    /// カレンダーIDからリソースコンテキスト（サーバー名または部屋名）を取得
-    #[allow(dead_code)]
-    fn get_resource_context(&self, calendar_id: &str) -> Result<String, RepositoryError> {
-        let mappings = self
-            .storage_config
-            .google_calendar_mappings()
-            .ok_or_else(|| {
-                RepositoryError::Unknown(
-                    "Google Calendarバックエンドの設定が見つかりません".to_string(),
-                )
-            })?;
-
-        // マッピングから逆引き
-        for (resource_name, cal_id) in mappings {
-            if cal_id == calendar_id {
-                return Ok(resource_name.clone());
-            }
-        }
-
-        Err(RepositoryError::Unknown(format!(
-            "カレンダーIDに対応するリソースが見つかりません: {}",
-            calendar_id
-        )))
-    }
-
     /// event_idから直接イベントを検索（マッピングがない場合）
     ///
     /// 全カレンダーから該当するイベントを検索してResourceUsageを返します。
