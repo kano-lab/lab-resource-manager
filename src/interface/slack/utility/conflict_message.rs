@@ -24,19 +24,39 @@ use std::sync::Arc;
 /// * `conflicts` - 競合した全件（競合したリソースと既存の使用予定の組）
 /// * `resource_config` - リソース設定（競合先リソースの通知設定を参照するため）
 /// * `identity_repo` - ID紐付けリポジトリ（既存予約の所有者表示名解決のため）
+///
+/// # 動作
+/// - 1件の競合: `conflict` テンプレートを使用（見出し含む）
+/// - 複数の競合: 見出し省略し件数行を先頭に付ける
 pub async fn build(
     conflicts: &[ResourceConflictError],
     resource_config: &ResourceConfig,
     identity_repo: &Arc<dyn IdentityLinkRepository>,
 ) -> String {
-    let mut messages = Vec::with_capacity(conflicts.len());
-    for conflict in conflicts {
-        messages.push(build_one(conflict, resource_config, identity_repo).await);
+    if conflicts.is_empty() {
+        return String::new();
     }
-    messages.join("\n\n")
+
+    if conflicts.len() == 1 {
+        // 1件の競合は従来通り見出しを含めてレンダリング
+        return build_one(&conflicts[0], resource_config, identity_repo).await;
+    }
+
+    // 複数競合時：件数行 + 各競合を簡潔版で表示
+    let mut items = Vec::with_capacity(conflicts.len());
+    for conflict in conflicts {
+        items.push(build_item(conflict, resource_config, identity_repo).await);
+    }
+
+    // 件数行を先頭に付ける
+    format!(
+        "{}件の予約と重複しています。\n\n{}",
+        conflicts.len(),
+        items.join("\n\n")
+    )
 }
 
-/// 1件分のリソース競合エラーからユーザー向けメッセージを構築
+/// 1件分のリソース競合エラーからユーザー向けメッセージを構築（見出し付き）
 async fn build_one(
     conflict: &ResourceConflictError,
     resource_config: &ResourceConfig,
@@ -72,6 +92,47 @@ async fn build_one(
     );
 
     renderer.render_conflict(
+        &conflict.resources,
+        &conflict.existing_usage,
+        &owner_display,
+    )
+}
+
+/// 複数競合時の1項目をレンダリング（見出しなし）
+async fn build_item(
+    conflict: &ResourceConflictError,
+    resource_config: &ResourceConfig,
+    identity_repo: &Arc<dyn IdentityLinkRepository>,
+) -> String {
+    let owner_display =
+        user_resolver::resolve_display_name(conflict.existing_usage.owner_email(), identity_repo)
+            .await;
+
+    // 競合先リソースに紐づく通知設定を流用
+    let notification_config = conflict
+        .resources
+        .first()
+        .map(|resource| resource_config.get_notifications_for_resource(resource))
+        .unwrap_or_default()
+        .into_iter()
+        .next();
+
+    let customization = notification_config
+        .as_ref()
+        .map(|c| c.customization())
+        .unwrap_or_default();
+    let timezone_owned = notification_config
+        .as_ref()
+        .and_then(|c| c.timezone())
+        .map(str::to_string);
+
+    let renderer = TemplateRenderer::new(
+        &customization.templates,
+        &customization.format,
+        timezone_owned.as_deref(),
+    );
+
+    renderer.render_conflict_item(
         &conflict.resources,
         &conflict.existing_usage,
         &owner_display,
@@ -188,12 +249,61 @@ mod tests {
 
         let message = build(&conflicts, &config(), &repo).await;
 
+        // 複数競合の場合、見出しは1回だけ（件数行）
         assert_eq!(
             message.matches("予約が重複しています").count(),
-            2,
-            "予約が別なら、予約者ごとに分けて伝えるべき: {message}"
+            0,
+            "複数競合は見出し（⚠️）なしで表示されるべき: {message}"
+        );
+        // 件数行が先頭にある
+        assert!(
+            message.starts_with("2件の予約と重複しています"),
+            "複数競合は件数行を先頭に付けるべき: {message}"
         );
         assert!(message.contains("owner-a@example.com"));
         assert!(message.contains("owner-b@example.com"));
+    }
+
+    #[tokio::test]
+    async fn single_conflict_shows_heading() {
+        let existing = reservation("owner@example.com", vec![gpu(0)]);
+        let conflicts = vec![ResourceConflictError::new(vec![gpu(0)], existing)];
+        let repo: Arc<dyn IdentityLinkRepository> = Arc::new(NoLinks);
+
+        let message = build(&conflicts, &config(), &repo).await;
+
+        // 1件の競合は見出しを含める
+        assert!(
+            message.contains("⚠️ 予約が重複しています"),
+            "単一の競合は見出しを含めるべき: {message}"
+        );
+        assert!(!message.starts_with("1件の予約と重複しています"));
+    }
+
+    #[tokio::test]
+    async fn multiple_conflicts_show_count_without_heading() {
+        let first = reservation("owner-a@example.com", vec![gpu(0)]);
+        let second = reservation("owner-b@example.com", vec![gpu(1)]);
+        let third = reservation("owner-c@example.com", vec![gpu(2)]);
+        let conflicts = vec![
+            ResourceConflictError::new(vec![gpu(0)], first),
+            ResourceConflictError::new(vec![gpu(1)], second),
+            ResourceConflictError::new(vec![gpu(2)], third),
+        ];
+        let repo: Arc<dyn IdentityLinkRepository> = Arc::new(NoLinks);
+
+        let message = build(&conflicts, &config(), &repo).await;
+
+        // 件数行が先頭
+        assert!(
+            message.starts_with("3件の予約と重複しています"),
+            "複数競合は件数行を先頭に付けるべき: {message}"
+        );
+        // ⚠️見出しはない
+        assert_eq!(
+            message.matches("⚠️ 予約が重複しています").count(),
+            0,
+            "複数競合は個別の見出し（⚠️）を含まないべき: {message}"
+        );
     }
 }

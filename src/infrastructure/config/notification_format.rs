@@ -25,6 +25,12 @@ pub struct TemplateConfig {
     /// 予約競合時のテンプレート（`{user}`/`{time}`/`{resource}`等は競合した既存予約の情報）
     #[serde(default)]
     pub conflict: Option<String>,
+
+    /// 複数競合時に各競合をリスト表示するテンプレート（見出しなし）
+    /// `conflict`と異なり、このテンプレートは複数の競合があるときのみ使われる。
+    /// `{user}`/`{time}`/`{resource}`等は各競合の既存予約の情報。
+    #[serde(default)]
+    pub conflict_item: Option<String>,
 }
 
 /// リソース表示スタイル
@@ -121,6 +127,7 @@ mod tests {
         assert!(config.updated.is_none());
         assert!(config.deleted.is_none());
         assert!(config.conflict.is_none());
+        assert!(config.conflict_item.is_none());
     }
 
     #[test]
