@@ -25,9 +25,15 @@ pub trait Notifier: Send + Sync {
 
 /// 通知エラー
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum NotificationError {
     /// 通知送信の失敗
     SendFailure(String),
+    /// 宛先が分からない（IdentityLink未登録、Slackアカウント未リンク等）
+    ///
+    /// 送る手段の不調ではなく、送り先を知らないという状態。再試行しても届くように
+    /// ならないため、呼び出し側は送信失敗とは別の扱いを選べる。
+    RecipientUnknown(String),
     /// リポジトリエラー（IdentityLink取得失敗等）
     RepositoryError(String),
 }
@@ -36,6 +42,9 @@ impl fmt::Display for NotificationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             NotificationError::SendFailure(msg) => write!(f, "通知送信エラー: {}", msg),
+            NotificationError::RecipientUnknown(msg) => {
+                write!(f, "通知の宛先が分かりません: {}", msg)
+            }
             NotificationError::RepositoryError(msg) => {
                 write!(f, "通知準備中のリポジトリエラー: {}", msg)
             }

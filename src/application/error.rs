@@ -12,6 +12,7 @@ use std::fmt;
 ///
 /// インフラストラクチャ層、ドメイン層、およびユースケース固有のエラーをラップする。
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ApplicationError {
     /// リポジトリ操作中に発生したエラー
     Repository(RepositoryError),

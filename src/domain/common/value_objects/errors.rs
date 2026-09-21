@@ -2,6 +2,7 @@ use std::fmt;
 
 /// EmailAddress Value Objectのエラー型
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum EmailAddressError {
     /// '@'が含まれていない
     MissingAtSign,

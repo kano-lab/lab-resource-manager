@@ -68,6 +68,63 @@ impl ObservedUsage {
     }
 }
 
+/// 誰のものかを言えないまま観測された利用
+///
+/// コンテナや共有アカウントのように、人と実行のあいだに中間層が挟まると、
+/// プロセスの実UIDから人を辿れなくなる。帰属できないことは、利用がないことを
+/// 意味しない。捨てたり誰かのものと決めつけたりせず、帰属できないままの姿で持つ。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UnattributedUsage {
+    resource: Resource,
+    uid: u32,
+    active_since: DateTime<Utc>,
+    used_memory_mib: Option<u64>,
+}
+
+impl UnattributedUsage {
+    /// 新しい帰属不明の観測結果を作成
+    pub fn new(resource: Resource, uid: u32, active_since: DateTime<Utc>) -> Self {
+        Self {
+            resource,
+            uid,
+            active_since,
+            used_memory_mib: None,
+        }
+    }
+
+    /// この利用が確保しているメモリ量を添える
+    pub fn with_used_memory(self, used_memory_mib: u64) -> Self {
+        Self {
+            used_memory_mib: Some(used_memory_mib),
+            ..self
+        }
+    }
+
+    /// 観測対象のリソースを取得
+    pub fn resource(&self) -> &Resource {
+        &self.resource
+    }
+
+    /// プロセスの実UID
+    ///
+    /// 人には辿れなかったが、観測されたプロセスを特定する手がかりにはなる。
+    pub fn uid(&self) -> u32 {
+        self.uid
+    }
+
+    /// 利用開始時刻を取得
+    pub fn active_since(&self) -> DateTime<Utc> {
+        self.active_since
+    }
+
+    /// この利用が確保しているメモリ量（MiB）
+    ///
+    /// `None`は「確保していない」ではなく「どれだけ確保しているかを問えない」を意味する。
+    pub fn used_memory_mib(&self) -> Option<u64> {
+        self.used_memory_mib
+    }
+}
+
 /// GPU1台が観測の窓のあいだにどれだけ計算していたか
 ///
 /// プロセスが乗っていることと、計算が走っていることは別である。メモリだけを確保して
@@ -136,6 +193,7 @@ impl ServerObservation {
 #[derive(Debug, Clone, Default)]
 pub struct ObservationSnapshot {
     usages: Vec<ObservedUsage>,
+    unattributed_usages: Vec<UnattributedUsage>,
     servers: HashMap<String, ServerObservation>,
     gpu_activities: HashMap<(String, u32), GpuActivity>,
 }
@@ -149,9 +207,26 @@ impl ObservationSnapshot {
     pub fn new(usages: Vec<ObservedUsage>, servers: HashMap<String, ServerObservation>) -> Self {
         Self {
             usages,
+            unattributed_usages: Vec::new(),
             servers,
             gpu_activities: HashMap::new(),
         }
+    }
+
+    /// 帰属不明の利用を添えた観測結果を返す
+    ///
+    /// 帰属を解決できない観測手段（コンテナ実行が混ざるサーバー等）があるため、
+    /// 帰属できた利用の一覧とは別に足せるようにしている。
+    pub fn with_unattributed_usages(self, unattributed_usages: Vec<UnattributedUsage>) -> Self {
+        Self {
+            unattributed_usages,
+            ..self
+        }
+    }
+
+    /// 帰属不明の利用の一覧を取得
+    pub fn unattributed_usages(&self) -> &[UnattributedUsage] {
+        &self.unattributed_usages
     }
 
     /// GPUごとの稼働状況を添えた観測結果を返す
@@ -224,6 +299,7 @@ pub trait ResourceUsageObserver: Send + Sync {
 
 /// 観測エラー
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ObservationError {
     /// 監視対象への接続失敗
     ConnectionFailure(String),

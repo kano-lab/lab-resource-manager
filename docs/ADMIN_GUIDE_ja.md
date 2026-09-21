@@ -257,11 +257,24 @@ cron登録する必要があります。このバイナリはリリースアー�
       "used_memory_mib": 38000
     }
   ],
+  "unattributed": [
+    {
+      "device_number": 1,
+      "uid": 100000,
+      "started_at": "2026-07-24T11:00:00+00:00",
+      "used_memory_mib": 24000
+    }
+  ],
   "devices": [
     {"device_number": 0, "peak_utilization_percent": 87}
   ]
 }
 ```
+
+`unattributed`は、実UIDをこのホストのユーザー名に解決できなかったプロセスです
+（コンテナ内のUID、user namespaceでずらされたUID等）。持ち主は分かりませんが、
+そのGPUが使われていることの証拠として数えられます。この欄を書かない古い
+`gpu-usage-reporter`のレポートも読み続けられます。
 
 `generated_at`から一定時間（既定5分想定）経過したファイルは古いデータとみなされ無視されます。
 cronが停止した場合に古い利用状況を「今も使用中」と誤判定しないための仕組みです。
@@ -289,7 +302,7 @@ cronが停止した場合に古い利用状況を「今も使用中」と誤判�
 | `GPU_USAGE_REPORTS_DIR` | (未設定=機能無効) | `SharedFileResourceUsageObserver`が読み取る共有ディレクトリ |
 | `GPU_USAGE_MAX_STALENESS_SECS` | `300` | レポートを無視し始める経過時間（秒） |
 | `UNRESERVED_USAGE_THRESHOLD_SECS` | `600` | 未予約利用を提案対象とみなす継続時間の閾値（秒） |
-| `IDLE_RESERVATION_THRESHOLD_SECS` | `1800` | 予約者本人のプロセスを観測できない予約を知らせるまでの時間（秒）。残り時間がこれに満たない予約には知らせない |
+| `IDLE_RESERVATION_THRESHOLD_SECS` | `1800` | 利用をひとつも観測できない予約を知らせるまでの時間（秒）。残り時間がこれに満たない予約には知らせない |
 | `IDLE_HELD_GPU_THRESHOLD_SECS` | `3600` | GPUを押さえたまま計算が走らない予約を知らせるまでの時間（秒） |
 | `COMPUTING_GPU_UTILIZATION_PERCENT` | `5` | 計算が走っているとみなす稼働率（%）。`0`にすると押さえたまま計算していない予約の検知が実質的に止まる |
 | `IDLE_HELD_GPU_NOTICES` | `observe` | 押さえたまま計算していない予約を、`notify`（予約者に知らせる）か`observe`（ログに数えるだけ）か |
@@ -299,8 +312,13 @@ cronが停止した場合に古い利用状況を「今も使用中」と誤判�
 **押さえたまま計算していない予約について**: プロセスが乗っていることは、計算が走っていることを
 意味しません。メモリだけを確保して待機させる使い方（常駐させた推論サーバー、開いたままの
 ノートブック、止まった学習ジョブ）では、GPUは他の人が使えないまま何も進んでいません。
-予約者本人のプロセスが乗っているGPUで`COMPUTING_GPU_UTILIZATION_PERCENT`以上の稼働率が
+プロセスが乗っているGPUで`COMPUTING_GPU_UTILIZATION_PERCENT`以上の稼働率が
 `IDLE_HELD_GPU_THRESHOLD_SECS`のあいだ一度も出なければ、予約者へDMを送ります。
+
+判定は誰のプロセスかを問いません。Docker等のコンテナ実行ではプロセスの名義を予約者に
+辿れませんが、予約が押さえているデバイスの上で計算が走っていれば使われている、確保だけが
+残っていれば押さえたまま、と読みます。このため予約者のOSユーザー名の紐付け（`/link-user`）は
+この判定の前提ではありません。名義の照合は無断使用の検知だけが行います。
 
 判定はGPU1台ずつ行います。8枚のうち1枚で計算が走っていることは、残りの7枚が使われている
 ことを意味しません。一部だけが休んでいる場合は、どのGPUのことなのかを添えて知らせます。
@@ -341,7 +359,7 @@ Slackアカウントも紐付いたメールアドレスにリンクされてい
 
 **DMが届くことを、人を巻き込まずに確かめる**: 管理者自身の予約1つで一巡させられます。
 
-1. 自分のOSユーザー名を`/link-user`で紐付ける
+1. 自分のSlackアカウントとメールアドレスが紐付いていること（`/register-calendar`）を確かめる
 2. 自分名義でGPUを1枚、2時間ほど予約する（他の人が使っていないもの）
 3. `IDLE_RESERVATION_THRESHOLD_SECS=60`・`IDLE_HELD_GPU_THRESHOLD_SECS=60`・
    `IDLE_HELD_GPU_NOTICES=notify`で起動する

@@ -3,6 +3,7 @@ use std::fmt;
 
 /// ResourceUsage集約のドメインエラー型
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum ResourceUsageError {
     /// 無効な時間枠（終了時刻が開始時刻より前）
     InvalidTimePeriod {

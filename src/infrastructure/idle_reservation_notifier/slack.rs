@@ -103,7 +103,7 @@ fn headline_of(evidence: &IdleEvidence) -> &'static str {
 /// そう判断した根拠を、予約者が心当たりと突き合わせられる形で述べる
 fn observation_of(evidence: &IdleEvidence) -> String {
     match evidence {
-        IdleEvidence::NoProcesses => "あなたの利用を確認できていません。".to_string(),
+        IdleEvidence::NoProcesses => "利用を確認できていません。".to_string(),
         IdleEvidence::HeldWithoutComputing {
             at_rest,
             peak_utilization_percent,

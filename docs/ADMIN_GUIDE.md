@@ -265,6 +265,14 @@ individually**, including the one that runs the LRM binary itself, each with its
       "used_memory_mib": 38000
     }
   ],
+  "unattributed": [
+    {
+      "device_number": 1,
+      "uid": 100000,
+      "started_at": "2026-07-24T11:00:00+00:00",
+      "used_memory_mib": 24000
+    }
+  ],
   "devices": [
     {"device_number": 0, "peak_utilization_percent": 87}
   ]
@@ -284,10 +292,15 @@ Each run takes that long to finish.
 `processes[].used_memory_mib` is what that user has allocated on that device — a per-user
 total rather than the device's, so nobody else's processes are counted into it.
 
+`unattributed` lists processes whose real UID could not be resolved to a username on this
+host (container UIDs, user-namespace remapping). Their owner is unknown, yet they still
+count as evidence that the GPU is occupied. Reports from an older `gpu-usage-reporter`
+that writes no such field keep parsing.
+
 Where utilization cannot be read — GPUs that return `[N/A]` for `utilization.gpu`, or an
 older `gpu-usage-reporter` that writes no `devices` — the field stays empty. Empty means
 "whether it was computing cannot be asked", not "it was not computing", and those GPUs are
-judged the way they always were: by whether the owner has processes on them. A missing
+judged the way they always were: by whether processes sit on them. A missing
 `used_memory_mib` works the same way: the amount goes unmentioned, the judgement still runs.
 
 **Enabling the feature on the main binary side:** the reconciliation loop (comparing
@@ -300,7 +313,7 @@ the same shared directory used by `gpu-usage-reporter` above to enable it:
 | `GPU_USAGE_REPORTS_DIR` | (unset = feature disabled) | Shared directory read by `SharedFileResourceUsageObserver` |
 | `GPU_USAGE_MAX_STALENESS_SECS` | `300` | How old a report can be before it's ignored |
 | `UNRESERVED_USAGE_THRESHOLD_SECS` | `600` | How long unreserved usage must continue before a proposal is sent |
-| `IDLE_RESERVATION_THRESHOLD_SECS` | `1800` | How long a reservation must go without any process from its owner before the owner is told. Reservations with less time left than this are left alone |
+| `IDLE_RESERVATION_THRESHOLD_SECS` | `1800` | How long a reservation must go without any observed usage before the owner is told. Reservations with less time left than this are left alone |
 | `IDLE_HELD_GPU_THRESHOLD_SECS` | `3600` | How long a GPU must be held without computation before the owner is told |
 | `COMPUTING_GPU_UTILIZATION_PERCENT` | `5` | The utilization at or above which a GPU counts as computing. Setting it to `0` effectively turns off the held-without-computing check |
 | `IDLE_HELD_GPU_NOTICES` | `observe` | Whether a GPU held without computation is reported to its owner (`notify`) or only counted in the logs (`observe`) |
@@ -310,9 +323,15 @@ the same shared directory used by `gpu-usage-reporter` above to enable it:
 **On reservations held without computation:** a process sitting on a GPU is not the same as
 computation running on it. Where memory is allocated and then left waiting — a resident
 inference server, an open notebook, a stalled training job — the GPU is unavailable to
-everyone else while nothing moves forward. If a GPU carrying the owner's processes does not
+everyone else while nothing moves forward. If a GPU carrying processes does not
 reach `COMPUTING_GPU_UTILIZATION_PERCENT` for `IDLE_HELD_GPU_THRESHOLD_SECS`, the owner gets
 a DM.
+
+The judgement does not ask whose processes they are. Container workloads (Docker and the
+like) carry UIDs that cannot be traced back to the owner, yet computation on the reserved
+device still counts as the reservation being used, and an allocation left behind still
+counts as holding it. An OS-username link (`/link-user`) is therefore not a precondition
+for this judgement; matching identities is left to unauthorized-usage detection.
 
 GPUs are judged one at a time. One of eight cards computing says nothing about the other
 seven. Where only some are at rest, the notice names which ones.
@@ -356,7 +375,7 @@ scopes for the DM to work.
 **Checking that DMs arrive, without involving anyone else:** one reservation of your own is
 enough to walk the whole path.
 
-1. Link your own OS username with `/link-user`.
+1. Check that your Slack account and email address are linked (`/register-calendar`).
 2. Reserve one GPU in your own name for a couple of hours (one nobody else is using).
 3. Start with `IDLE_RESERVATION_THRESHOLD_SECS=60`, `IDLE_HELD_GPU_THRESHOLD_SECS=60`, and
    `IDLE_HELD_GPU_NOTICES=notify`.

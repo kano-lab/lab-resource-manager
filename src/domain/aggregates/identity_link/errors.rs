@@ -3,6 +3,7 @@ use std::fmt;
 
 /// IdentityLink集約のドメインエラー型
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum IdentityLinkError {
     /// 指定された外部システムの識別情報が既に存在する
     IdentityAlreadyExists {

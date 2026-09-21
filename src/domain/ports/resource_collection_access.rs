@@ -4,6 +4,7 @@ use std::fmt;
 
 /// リソースコレクションアクセスのエラー型
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum ResourceCollectionAccessError {
     /// 認証エラー
     AuthenticationError(String),

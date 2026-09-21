@@ -186,12 +186,13 @@ keep others waiting. If you still intend to use it, press "✅ Still using it" a
 though the quiet lasts a while rather than forever. If it still goes unused after that, you
 will hear about it again.
 
+Whose processes they are does not matter: computation running inside Docker or any other
+container still counts as your reservation being used.
+
 Some reservations are never reported:
 
 - Reservations on a server that cannot be observed (without a report, whether it is in use
   is unknown)
-- Reservations whose owner has no OS username linked via `/link-user` (your processes cannot
-  be told apart from anyone else's)
 - Meeting room reservations
 - Reservations that are about to end
 
