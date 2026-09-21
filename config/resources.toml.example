@@ -22,8 +22,12 @@ channel_id = "C01234567..."
 # updated = "{user}が予約を変更: {resource} {time}"
 # deleted = "{user}が予約をキャンセル: {resource}"
 # conflict = "{user}が既に{resource}を{time}で予約済みです"
-#   - conflict: {user}/{time}/{resource}は予約を試みた本人ではなく、
+#   - conflict: 単一の競合時に使用。{user}/{time}/{resource}は予約を試みた本人ではなく、
 #     競合した既存予約の所有者・期間・リソースを指す
+# conflict_item = "👤 {user}\n📅 {time}\n{resource_label}\n{resource}{notes}"
+#   - conflict_item: 複数の競合時に使用。各競合をリスト表示する際の簡潔版テンプレート。
+#     見出しなし。件数行（「N件の予約と重複しています」）はテンプレートではなく
+#     ビルダー側で自動的に付加され、カスタマイズできません。
 
 # フォーマット設定（オプション）
 # [servers.notifications.format]

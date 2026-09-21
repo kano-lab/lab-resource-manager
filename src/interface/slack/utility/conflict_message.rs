@@ -13,7 +13,7 @@
 
 use crate::domain::ports::repositories::IdentityLinkRepository;
 use crate::domain::services::resource_usage::errors::ResourceConflictError;
-use crate::infrastructure::config::ResourceConfig;
+use crate::infrastructure::config::{NotificationCustomization, ResourceConfig};
 use crate::infrastructure::notifier::template_renderer::TemplateRenderer;
 use crate::interface::slack::utility::user_resolver;
 use std::sync::Arc;
@@ -56,18 +56,15 @@ pub async fn build(
     )
 }
 
-/// 1件分のリソース競合エラーからユーザー向けメッセージを構築（見出し付き）
-async fn build_one(
+/// 競合のレンダリングに必要な customization と timezone を取得する
+///
+/// 競合先リソースに紐づく通知設定から、テンプレート・フォーマット・タイムゾーンを
+/// 抽出します。複数リソースの競合でも同一予約に属するため、最初のリソースの設定を
+/// 流用すれば十分です。
+fn render_customization_for_conflict(
     conflict: &ResourceConflictError,
     resource_config: &ResourceConfig,
-    identity_repo: &Arc<dyn IdentityLinkRepository>,
-) -> String {
-    let owner_display =
-        user_resolver::resolve_display_name(conflict.existing_usage.owner_email(), identity_repo)
-            .await;
-
-    // 競合先リソースに紐づく通知設定を流用し、テンプレート/フォーマットを一致させる。
-    // まとめた競合は同一予約に属するため、どのリソースを見ても同じ設定になる。
+) -> (NotificationCustomization, Option<String>) {
     let notification_config = conflict
         .resources
         .first()
@@ -84,6 +81,22 @@ async fn build_one(
         .as_ref()
         .and_then(|c| c.timezone())
         .map(str::to_string);
+
+    (customization, timezone_owned)
+}
+
+/// 1件分のリソース競合エラーからユーザー向けメッセージを構築（見出し付き）
+async fn build_one(
+    conflict: &ResourceConflictError,
+    resource_config: &ResourceConfig,
+    identity_repo: &Arc<dyn IdentityLinkRepository>,
+) -> String {
+    let owner_display =
+        user_resolver::resolve_display_name(conflict.existing_usage.owner_email(), identity_repo)
+            .await;
+
+    let (customization, timezone_owned) =
+        render_customization_for_conflict(conflict, resource_config);
 
     let renderer = TemplateRenderer::new(
         &customization.templates,
@@ -108,23 +121,8 @@ async fn build_item(
         user_resolver::resolve_display_name(conflict.existing_usage.owner_email(), identity_repo)
             .await;
 
-    // 競合先リソースに紐づく通知設定を流用
-    let notification_config = conflict
-        .resources
-        .first()
-        .map(|resource| resource_config.get_notifications_for_resource(resource))
-        .unwrap_or_default()
-        .into_iter()
-        .next();
-
-    let customization = notification_config
-        .as_ref()
-        .map(|c| c.customization())
-        .unwrap_or_default();
-    let timezone_owned = notification_config
-        .as_ref()
-        .and_then(|c| c.timezone())
-        .map(str::to_string);
+    let (customization, timezone_owned) =
+        render_customization_for_conflict(conflict, resource_config);
 
     let renderer = TemplateRenderer::new(
         &customization.templates,
