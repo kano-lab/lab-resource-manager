@@ -12,7 +12,9 @@ use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePer
 use crate::domain::ports::repositories::{
     IdentityLinkRepository, RepositoryError, ResourceUsageRepository,
 };
-use crate::infrastructure::config::{DeviceConfig, ResourceConfig, ServerConfig};
+use crate::infrastructure::config::{
+    DeviceConfig, ResourceConfig, ServerConfig, StorageBackend, StorageConfig,
+};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use google_calendar3::api::{Event, EventCreator, EventDateTime};
@@ -195,7 +197,6 @@ fn test_config() -> ResourceConfig {
     ResourceConfig {
         servers: vec![ServerConfig {
             name: "Thalys".to_string(),
-            calendar_id: CALENDAR_ID.to_string(),
             devices: vec![
                 DeviceConfig {
                     id: 0,
@@ -209,6 +210,14 @@ fn test_config() -> ResourceConfig {
             notifications: vec![],
         }],
         rooms: vec![],
+    }
+}
+
+fn test_storage_config() -> StorageConfig {
+    let mut calendars = std::collections::HashMap::new();
+    calendars.insert("Thalys".to_string(), CALENDAR_ID.to_string());
+    StorageConfig {
+        backend: StorageBackend::GoogleCalendar { calendars },
     }
 }
 
@@ -259,6 +268,7 @@ fn repository_with(
         SERVICE_ACCOUNT_EMAIL.to_string(),
         mapping_path.path(),
         Arc::new(StubIdentityLinkRepository::default()),
+        test_storage_config(),
     )
     .expect("テスト用リポジトリの構築に失敗");
 
@@ -500,6 +510,7 @@ fn repository_with_identities(
         SERVICE_ACCOUNT_EMAIL.to_string(),
         mapping_path.path(),
         Arc::new(identity_repo),
+        test_storage_config(),
     )
     .expect("テスト用リポジトリの構築に失敗");
 

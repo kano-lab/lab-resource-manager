@@ -54,7 +54,6 @@ mod tests {
         ResourceConfig {
             servers: vec![ServerConfig {
                 name: "Thalys".to_string(),
-                calendar_id: "cal".to_string(),
                 devices: vec![DeviceConfig {
                     id: 0,
                     model: "A100".to_string(),

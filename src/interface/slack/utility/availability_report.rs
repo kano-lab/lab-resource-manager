@@ -187,7 +187,6 @@ mod tests {
         ResourceConfig {
             servers: vec![ServerConfig {
                 name: "gpu-server-1".to_string(),
-                calendar_id: "cal".to_string(),
                 devices: vec![DeviceConfig {
                     id: 0,
                     model: "A100 80GB PCIe".to_string(),
@@ -196,7 +195,6 @@ mod tests {
             }],
             rooms: vec![RoomConfig {
                 name: "Meeting Room A".to_string(),
-                calendar_id: "cal-room".to_string(),
                 notifications: room_notifications,
             }],
         }

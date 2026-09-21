@@ -84,7 +84,6 @@ Define GPU servers and rooms in `config/resources.toml`:
 ```toml
 [[servers]]
 name = "gpu-server-1"
-calendar_id = "your-calendar-id@group.calendar.google.com"  # Repository implementation-specific ID
 
 # Configure notification destinations per resource
 [[servers.notifications]]
@@ -110,17 +109,24 @@ model = "A100 80GB PCIe"
 
 [[rooms]]
 name = "Meeting Room A"
-calendar_id = "room-calendar-id@group.calendar.google.com"
 
 [[rooms.notifications]]
 type = "slack"
 bot_token = "xoxb-YOUR-BOT-TOKEN"
 channel_id = "C01234567..."
 # timezone = "Europe/London"
+
+# Storage mapping: resource names to backend-specific identifiers
+[storage]
+type = "google_calendar"
+
+[storage.calendars]
+"gpu-server-1" = "your-calendar-id@group.calendar.google.com"
+"Meeting Room A" = "room-calendar-id@group.calendar.google.com"
 ```
 
 Each resource can have multiple notifier implementations configured, and different resources can specify different
-notification destinations.
+notification destinations. The `[storage]` section maps resource names to their storage backend (e.g., Google Calendar IDs).
 
 **Timezone Configuration**: You can optionally specify a timezone for each notification
 destination using IANA timezone names (e.g., `Asia/Tokyo`, `America/New_York`,

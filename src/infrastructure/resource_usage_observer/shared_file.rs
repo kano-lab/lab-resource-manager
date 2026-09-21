@@ -322,7 +322,6 @@ mod tests {
         Arc::new(ResourceConfig {
             servers: vec![ServerConfig {
                 name: "Thalys".to_string(),
-                calendar_id: "dummy-calendar-id".to_string(),
                 devices: vec![DeviceConfig {
                     id: 0,
                     model: "A100".to_string(),

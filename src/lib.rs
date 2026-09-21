@@ -44,8 +44,8 @@
 //! use std::sync::Arc;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! // Load configuration
-//! let config = load_config("config/resources.toml")?;
+//! // Load configuration (returns both resource config and storage config)
+//! let (resource_config, storage_config) = load_config("config/resources.toml")?;
 //!
 //! // Create identity link repository for Slack user mapping
 //! let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new("data/identity_links.json".into()));
@@ -54,15 +54,16 @@
 //! let repository = Arc::new(
 //!     GoogleCalendarUsageRepository::new(
 //!         "secrets/service-account.json",
-//!         config.clone(),
+//!         resource_config.clone(),
 //!         "data/google_calendar_mappings.json".into(),
 //!         identity_repo.clone(),
+//!         storage_config,
 //!     )
 //!     .await?,
 //! );
 //! // NotificationRouter automatically supports all configured notification types
 //! // (Slack, Mock, etc.) based on config/resources.toml
-//! let notifier = NotificationRouter::new(config, identity_repo);
+//! let notifier = NotificationRouter::new(resource_config, identity_repo);
 //!
 //! // Create and run use case. The watch window states how far ahead changes are tracked;
 //! // recurring reservations expand into individual instances, so it cannot be unbounded.

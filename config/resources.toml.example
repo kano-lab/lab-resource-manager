@@ -3,7 +3,6 @@
 
 [[servers]]
 name = "gpu-server-1"
-calendar_id = "your-calendar-id@group.calendar.google.com"
 
 # 通知設定(複数設定可能)
 [[servers.notifications]]
@@ -61,7 +60,6 @@ model = "A100 80GB PCIe"
 
 [[servers]]
 name = "gpu-server-2"
-calendar_id = "your-calendar-id@group.calendar.google.com"
 
 [[servers.notifications]]
 type = "slack"
@@ -80,10 +78,25 @@ model = "A100 80GB PCIe"
 
 [[rooms]]
 name = "Meeting Room A"
-calendar_id = "your-calendar-id@group.calendar.google.com"
 
 [[rooms.notifications]]
 type = "slack"
 bot_token = "xoxb-YOUR-BOT-TOKEN"
 channel_id = "C01234567..."
 # timezone = "Asia/Tokyo"
+
+# ---
+
+# ストレージ設定
+# リソースをどこに保存するかを指定する
+# 実装固有の詳細（カレンダーID等）はここで管理され、
+# リソース定義から分離される
+
+[storage]
+type = "google_calendar"
+
+# Google Calendarのリソース名 -> カレンダーID マッピング
+[storage.calendars]
+"gpu-server-1" = "your-calendar-id@group.calendar.google.com"
+"gpu-server-2" = "your-calendar-id@group.calendar.google.com"
+"Meeting Room A" = "your-calendar-id@group.calendar.google.com"

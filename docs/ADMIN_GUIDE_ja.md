@@ -82,7 +82,6 @@ Google Calendarリポジトリを使用する場合:
 ```toml
 [[servers]]
 name = "gpu-server-1"
-calendar_id = "your-calendar-id@group.calendar.google.com"  # リポジトリ実装固有のID
 
 # リソースごとに通知先を設定
 [[servers.notifications]]
@@ -108,16 +107,24 @@ model = "A100 80GB PCIe"
 
 [[rooms]]
 name = "会議室A"
-calendar_id = "room-calendar-id@group.calendar.google.com"
 
 [[rooms.notifications]]
 type = "slack"
 bot_token = "xoxb-YOUR-BOT-TOKEN"
 channel_id = "C01234567..."
 # timezone = "Europe/London"
+
+# ストレージ設定: リソース名をバックエンド固有の識別子にマップ
+[storage]
+type = "google_calendar"
+
+[storage.calendars]
+"gpu-server-1" = "your-calendar-id@group.calendar.google.com"
+"会議室A" = "room-calendar-id@group.calendar.google.com"
 ```
 
 各リソースに複数の通知実装を設定でき、異なるリソースで異なる通知先を指定できます。
+`[storage]`セクションはリソース名をストレージバックエンド固有の識別子にマップします。
 
 **タイムゾーン設定**: 各通知先にIANA形式のタイムゾーン名（例: `Asia/Tokyo`、
 `America/New_York`、`Europe/London`）を指定できます。指定しない場合は、ボットが
