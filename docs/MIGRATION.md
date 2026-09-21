@@ -109,7 +109,7 @@ type = "google_calendar"
 
 ### v2.0.0 Troubleshooting
 
-**Error: "resources.toml の以下のリソースが storage.calendars に写像を持ちません"**
+#### Error: "resources.toml の以下のリソースが storage.calendars に写像を持ちません"
 
 This means some servers or rooms are missing calendar ID mappings. Check:
 
@@ -134,12 +134,12 @@ Add any missing entries to `[storage.calendars]`.
 
 ---
 
-# Migration Guide: Docker to Binary Release (v1.0.0)
+## Docker to Binary Release (v1.0.0)
 
 This guide explains how to migrate from Docker-based deployment to the new binary release
 with systemd.
 
-## Overview
+### Overview
 
 v1.0.0 introduces a breaking change in the deployment method:
 
@@ -151,21 +151,21 @@ v1.0.0 introduces a breaking change in the deployment method:
 | Env        | `.env`          | `/etc/default/lab-resource-manager` |
 | Binary     | Container       | `/usr/local/bin/lab-resource-manager` |
 
-## Prerequisites
+### Prerequisites
 
 - Root access to the server
 - Backup of existing data
 
-## v1.0.0 Migration Steps
+### v1.0.0 Migration Steps
 
-### 1. Stop Docker Container
+#### 1. Stop Docker Container
 
 ```bash
 cd /path/to/lab-resource-manager
 docker compose down
 ```
 
-### 2. Backup Existing Data
+#### 2. Backup Existing Data
 
 ```bash
 # Create backup directory
@@ -182,7 +182,7 @@ cp config/resources.toml ~/lrm-backup/
 cp .env ~/lrm-backup/
 ```
 
-### 3. Download and Install New Release
+#### 3. Download and Install New Release
 
 ```bash
 # Download the release
@@ -195,7 +195,7 @@ tar -xzf lab-resource-manager-x86_64-unknown-linux-gnu.tar.gz
 sudo bash deploy/install.sh
 ```
 
-### 4. Migrate Data Files
+#### 4. Migrate Data Files
 
 ```bash
 # Copy data files to new location
@@ -213,7 +213,7 @@ sudo chown -R lrm:lrm /var/lib/lab-resource-manager/
 sudo chown -R lrm:lrm /etc/lab-resource-manager/
 ```
 
-### 5. Create Environment File
+#### 5. Create Environment File
 
 Convert your `.env` to the new format:
 
@@ -232,7 +232,7 @@ EOF
 sudo chmod 600 /etc/default/lab-resource-manager
 ```
 
-### 6. Start the Service
+#### 6. Start the Service
 
 ```bash
 # Start the service
@@ -248,13 +248,13 @@ sudo journalctl -u lab-resource-manager -f
 sudo systemctl enable lab-resource-manager
 ```
 
-### 7. Verify Operation
+#### 7. Verify Operation
 
 1. Check Slack bot responds to commands
 2. Verify calendar integration works
 3. Monitor logs for any errors
 
-### 8. Clean Up (Optional)
+#### 8. Clean Up (Optional)
 
 After confirming everything works:
 
@@ -266,7 +266,7 @@ docker compose down --rmi all --volumes
 rm -rf /path/to/lab-resource-manager  # Old Docker deployment directory
 ```
 
-## Rollback
+### Rollback
 
 If issues occur, you can rollback to Docker:
 
@@ -280,9 +280,9 @@ cd /path/to/lab-resource-manager-backup
 docker compose up -d
 ```
 
-## v1.0.0 Troubleshooting
+### v1.0.0 Troubleshooting
 
-### Service fails to start
+#### Service fails to start
 
 Check logs:
 
@@ -296,7 +296,7 @@ Common issues:
 - Incorrect file permissions
 - Missing data files
 
-### Permission denied errors
+#### Permission denied errors
 
 Ensure correct ownership:
 
@@ -305,11 +305,11 @@ sudo chown -R lrm:lrm /var/lib/lab-resource-manager/
 sudo chown -R lrm:lrm /etc/lab-resource-manager/
 ```
 
-### Cannot find configuration
+#### Cannot find configuration
 
 Verify paths in `/etc/default/lab-resource-manager` are absolute paths and files exist.
 
-## Support
+### Support
 
 If you encounter issues, please open an issue at
 <https://github.com/kano-lab/lab-resource-manager/issues>

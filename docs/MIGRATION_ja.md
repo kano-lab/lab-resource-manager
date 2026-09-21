@@ -109,7 +109,7 @@ type = "google_calendar"
 
 ### v2.0.0 トラブルシューティング
 
-**エラー: "resources.toml の以下のリソースが storage.calendars に写像を持ちません"**
+#### エラー: "resources.toml の以下のリソースが storage.calendars に写像を持ちません"
 
 これは、一部のサーバーまたは部屋がカレンダーID マッピングを欠いていることを意味します。
 確認してください：
@@ -136,12 +136,12 @@ grep -A 100 '\[storage.calendars\]' /etc/lab-resource-manager/resources.toml
 
 ---
 
-# マイグレーションガイド: Docker からバイナリリリースへ (v1.0.0)
+## Docker からバイナリリリースへ (v1.0.0)
 
 このガイドでは、Docker ベースのデプロイから新しいバイナリリリース + systemd
 への移行方法を説明します。
 
-## 概要
+### 概要
 
 v1.0.0 ではデプロイ方式が大きく変更されました：
 
@@ -153,21 +153,21 @@ v1.0.0 ではデプロイ方式が大きく変更されました：
 | 環境変数 | `.env`          | `/etc/default/lab-resource-manager` |
 | バイナリ | コンテナ内 | `/usr/local/bin/lab-resource-manager` |
 
-## 前提条件
+### 前提条件
 
 - サーバーへのroot権限
 - 既存データのバックアップ
 
-## v1.0.0 移行手順
+### v1.0.0 移行手順
 
-### 1. Dockerコンテナの停止
+#### 1. Dockerコンテナの停止
 
 ```bash
 cd /path/to/lab-resource-manager
 docker compose down
 ```
 
-### 2. 既存データのバックアップ
+#### 2. 既存データのバックアップ
 
 ```bash
 # バックアップディレクトリを作成
@@ -184,7 +184,7 @@ cp config/resources.toml ~/lrm-backup/
 cp .env ~/lrm-backup/
 ```
 
-### 3. 新バージョンのダウンロードとインストール
+#### 3. 新バージョンのダウンロードとインストール
 
 ```bash
 # リリースをダウンロード
@@ -197,7 +197,7 @@ tar -xzf lab-resource-manager-x86_64-unknown-linux-gnu.tar.gz
 sudo bash deploy/install.sh
 ```
 
-### 4. データファイルの移行
+#### 4. データファイルの移行
 
 ```bash
 # データファイルを新しい場所にコピー
@@ -215,7 +215,7 @@ sudo chown -R lrm:lrm /var/lib/lab-resource-manager/
 sudo chown -R lrm:lrm /etc/lab-resource-manager/
 ```
 
-### 5. 環境ファイルの作成
+#### 5. 環境ファイルの作成
 
 `.env` を新しい形式に変換：
 
@@ -234,7 +234,7 @@ EOF
 sudo chmod 600 /etc/default/lab-resource-manager
 ```
 
-### 6. サービスの起動
+#### 6. サービスの起動
 
 ```bash
 # サービスを起動
@@ -250,13 +250,13 @@ sudo journalctl -u lab-resource-manager -f
 sudo systemctl enable lab-resource-manager
 ```
 
-### 7. 動作確認
+#### 7. 動作確認
 
 1. Slack ボットがコマンドに応答することを確認
 2. カレンダー連携が動作することを確認
 3. ログを監視してエラーがないか確認
 
-### 8. クリーンアップ（オプション）
+#### 8. クリーンアップ（オプション）
 
 すべてが動作することを確認した後：
 
@@ -268,7 +268,7 @@ docker compose down --rmi all --volumes
 rm -rf /path/to/lab-resource-manager  # 旧 Docker デプロイディレクトリ
 ```
 
-## ロールバック
+### ロールバック
 
 問題が発生した場合、Docker にロールバックできます：
 
@@ -282,9 +282,9 @@ cd /path/to/lab-resource-manager-backup
 docker compose up -d
 ```
 
-## v1.0.0 トラブルシューティング
+### v1.0.0 トラブルシューティング
 
-### サービスの起動に失敗する
+#### サービスの起動に失敗する
 
 ログを確認：
 
@@ -298,7 +298,7 @@ sudo journalctl -u lab-resource-manager -e
 - ファイルパーミッションが正しくない
 - データファイルがない
 
-### パーミッション拒否エラー
+#### パーミッション拒否エラー
 
 正しい所有権を確認：
 
@@ -307,12 +307,12 @@ sudo chown -R lrm:lrm /var/lib/lab-resource-manager/
 sudo chown -R lrm:lrm /etc/lab-resource-manager/
 ```
 
-### 設定が見つからない
+#### 設定が見つからない
 
 `/etc/default/lab-resource-manager` のパスが絶対パスであり、ファイルが存在することを
 確認してください。
 
-## サポート
+### サポート
 
 問題が発生した場合は、以下で issue を開いてください：
 <https://github.com/kano-lab/lab-resource-manager/issues>
