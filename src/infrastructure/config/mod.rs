@@ -17,6 +17,8 @@ pub mod loader;
 pub mod notification_format;
 /// リソース設定の定義と読み込み
 pub mod resource_config;
+/// ストレージバックエンド設定
+pub mod storage_config;
 
 pub use app_config::AppConfig;
 pub use loader::{ConfigLoadError, load_from_env};
@@ -26,3 +28,4 @@ pub use notification_format::{
 pub use resource_config::{
     DeviceConfig, NotificationConfig, ResourceConfig, RoomConfig, ServerConfig, load_config,
 };
+pub use storage_config::{StorageBackend, StorageConfig};

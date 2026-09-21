@@ -2,8 +2,8 @@ use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
 use crate::infrastructure::config::notification_format::{
     FormatConfig, NotificationCustomization, TemplateConfig,
 };
+use crate::infrastructure::config::storage_config::StorageConfig;
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::fs;
 
 /// 通知設定の種類と設定値
@@ -67,9 +67,8 @@ impl NotificationConfig {
 
 /// リソース全体の設定
 ///
-/// TODO(#113): 保存先の指定をリソース定義から分離する。この設定はSlackのビューやMCPなど
-/// 「何が予約できるか」を知りたいだけの箇所にも渡るため、永続化実装の識別子が
-/// 不要な範囲まで届いている
+/// 「何が予約できるか」を定義する設定。
+/// ストレージバックエンド固有の設定（カレンダーIDなど）は分離された StorageConfig に移した。
 #[derive(Debug, Deserialize, Clone)]
 pub struct ResourceConfig {
     /// サーバー（GPU）の設定リスト
@@ -83,8 +82,6 @@ pub struct ResourceConfig {
 pub struct ServerConfig {
     /// サーバー名
     pub name: String,
-    /// カレンダーID（Google Calendar実装固有。TODO(#113)を参照）
-    pub calendar_id: String,
     /// デバイス（GPU）のリスト
     pub devices: Vec<DeviceConfig>,
     /// 通知設定のリスト
@@ -105,21 +102,11 @@ pub struct DeviceConfig {
 pub struct RoomConfig {
     /// 部屋名
     pub name: String,
-    /// カレンダーID（Google Calendar実装固有。TODO(#113)を参照）
-    pub calendar_id: String,
     /// 通知設定のリスト
     pub notifications: Vec<NotificationConfig>,
 }
 
 impl ResourceConfig {
-    /// カレンダーIDからサーバー名へのマッピングを取得
-    pub fn calendar_to_server_map(&self) -> HashMap<String, String> {
-        self.servers
-            .iter()
-            .map(|s| (s.calendar_id.clone(), s.name.clone()))
-            .collect()
-    }
-
     /// サーバー設定を名前で検索
     pub fn get_server(&self, name: &str) -> Option<&ServerConfig> {
         self.servers.iter().find(|s| s.name == name)
@@ -165,11 +152,37 @@ impl ResourceConfig {
     }
 }
 
+/// リソースとストレージ設定の組み合わせ
+///
+/// resources.tomlから読み込まれた設定を分離するための中間構造。
+#[derive(Debug, Deserialize)]
+struct ConfigRoot {
+    /// サーバー（GPU）の設定リスト
+    #[serde(default)]
+    servers: Vec<ServerConfig>,
+    /// 部屋の設定リスト
+    #[serde(default)]
+    rooms: Vec<RoomConfig>,
+    /// ストレージバックエンド設定
+    #[serde(default)]
+    storage: Option<StorageConfig>,
+}
+
 /// TOMLファイルからリソース設定を読み込む
+///
+/// `resources.toml` から ResourceConfig と StorageConfig を読み込み、タプルで返す。
 pub fn load_config(
     path: impl AsRef<std::path::Path>,
-) -> Result<ResourceConfig, Box<dyn std::error::Error>> {
+) -> Result<(ResourceConfig, StorageConfig), Box<dyn std::error::Error>> {
     let content = fs::read_to_string(path)?;
-    let config: ResourceConfig = toml::from_str(&content)?;
-    Ok(config)
+    let root: ConfigRoot = toml::from_str(&content)?;
+
+    let resource_config = ResourceConfig {
+        servers: root.servers,
+        rooms: root.rooms,
+    };
+
+    let storage_config = root.storage.ok_or("storage設定が見つかりません")?;
+
+    Ok((resource_config, storage_config))
 }

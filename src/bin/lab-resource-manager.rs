@@ -70,7 +70,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 設定の読み込み
     // ===========================================
     let app_config = load_from_env()?;
-    let resource_config = Arc::new(load_config(&app_config.resource_config_path)?);
+    let (resource_config, storage_config) = load_config(&app_config.resource_config_path)?;
+    let resource_config = Arc::new(resource_config);
 
     // 後段でapp_configがSlackAppに所有権移動するため、MCP関連の値は先に控えておく
     let mcp_listen_addr = app_config.mcp_listen_addr;
@@ -115,16 +116,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             resource_config.as_ref().clone(),
             app_config.calendar_mappings_file.clone(),
             identity_repo.clone(),
+            storage_config.clone(),
         )
         .await?,
     );
 
     // UseCases
-    let collection_ids: Vec<String> = resource_config
-        .servers
-        .iter()
-        .map(|s| s.calendar_id.clone())
-        .chain(resource_config.rooms.iter().map(|r| r.calendar_id.clone()))
+    // ストレージ設定からカレンダーIDのマッピングを取得
+    let collection_ids: Vec<String> = storage_config
+        .google_calendar_mappings()
+        .ok_or("Google Calendarバックエンドの設定が見つかりません")?
+        .values()
+        .cloned()
         .collect();
 
     let grant_access_usecase = Arc::new(GrantUserResourceAccessUseCase::new(

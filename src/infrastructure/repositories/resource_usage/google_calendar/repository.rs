@@ -10,7 +10,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{
     IdentityLinkRepository, RepositoryError, ResourceUsageRepository,
 };
-use crate::infrastructure::config::ResourceConfig;
+use crate::infrastructure::config::{ResourceConfig, StorageConfig};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use google_calendar3::{
@@ -67,6 +67,7 @@ fn is_active_event(event: &Event) -> bool {
 pub struct GoogleCalendarUsageRepository {
     gateway: Arc<dyn CalendarEventGateway>,
     config: ResourceConfig,
+    storage_config: StorageConfig,
     service_account_email: String,
     id_mapper: Arc<IdMapper>,
     /// 予約者の付加情報（OSユーザー名など）を引くためのリポジトリ
@@ -84,11 +85,14 @@ impl GoogleCalendarUsageRepository {
     /// * `service_account_key` - サービスアカウントキーファイルのパス
     /// * `config` - リソース設定
     /// * `id_mappings_path` - IDマッピングファイルのパス
+    /// * `identity_repo` - 同一性リンクリポジトリ
+    /// * `storage_config` - ストレージバックエンド設定（カレンダーIDマッピング等）
     pub async fn new(
         service_account_key: &str,
         config: ResourceConfig,
         id_mappings_path: std::path::PathBuf,
         identity_repo: Arc<dyn IdentityLinkRepository>,
+        storage_config: StorageConfig,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let secret = yup_oauth2::read_service_account_key(service_account_key).await?;
         let service_account_email = secret.client_email.clone();
@@ -112,6 +116,7 @@ impl GoogleCalendarUsageRepository {
         Ok(Self {
             gateway: Arc::new(GoogleCalendarEventGateway::new(hub)),
             config,
+            storage_config,
             service_account_email,
             id_mapper: Arc::new(id_mapper),
             identity_repo,
@@ -127,10 +132,12 @@ impl GoogleCalendarUsageRepository {
         service_account_email: String,
         id_mappings_path: std::path::PathBuf,
         identity_repo: Arc<dyn IdentityLinkRepository>,
+        storage_config: StorageConfig,
     ) -> Result<Self, RepositoryError> {
         Ok(Self {
             gateway,
             config,
+            storage_config,
             service_account_email,
             id_mapper: Arc::new(IdMapper::new(id_mappings_path)?),
             identity_repo,
@@ -204,17 +211,28 @@ impl GoogleCalendarUsageRepository {
     /// 管理対象のカレンダー一覧
     /// 戻り値: (calendar_id, resource_name)
     fn calendars(&self) -> Vec<(String, String)> {
-        self.config
-            .servers
-            .iter()
-            .map(|server| (server.calendar_id.clone(), server.name.clone()))
-            .chain(
-                self.config
-                    .rooms
-                    .iter()
-                    .map(|room| (room.calendar_id.clone(), room.name.clone())),
-            )
-            .collect()
+        let mappings = match self.storage_config.google_calendar_mappings() {
+            Some(m) => m,
+            None => return Vec::new(),
+        };
+
+        let mut calendars = Vec::new();
+
+        // サーバーのカレンダーを追加
+        for server in &self.config.servers {
+            if let Some(calendar_id) = mappings.get(&server.name) {
+                calendars.push((calendar_id.clone(), server.name.clone()));
+            }
+        }
+
+        // 部屋のカレンダーを追加
+        for room in &self.config.rooms {
+            if let Some(calendar_id) = mappings.get(&room.name) {
+                calendars.push((calendar_id.clone(), room.name.clone()));
+            }
+        }
+
+        calendars
     }
 
     /// すべてのカレンダーから、指定期間に重なるイベントを取得
@@ -593,13 +611,21 @@ impl GoogleCalendarUsageRepository {
 
         match first_resource {
             Resource::Gpu(gpu) => {
-                let server = self.config.get_server(gpu.server()).ok_or_else(|| {
+                let _ = self.config.get_server(gpu.server()).ok_or_else(|| {
                     RepositoryError::Unknown(format!("サーバーが見つかりません: {}", gpu.server()))
                 })?;
-                Ok(server.calendar_id.clone())
+                self.storage_config
+                    .calendar_id_for_resource(gpu.server())
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| {
+                        RepositoryError::Unknown(format!(
+                            "カレンダーIDマッピングが見つかりません: {}",
+                            gpu.server()
+                        ))
+                    })
             }
             Resource::Room { name } => {
-                let room = self
+                let _ = self
                     .config
                     .rooms
                     .iter()
@@ -607,7 +633,15 @@ impl GoogleCalendarUsageRepository {
                     .ok_or_else(|| {
                         RepositoryError::Unknown(format!("部屋が見つかりません: {}", name))
                     })?;
-                Ok(room.calendar_id.clone())
+                self.storage_config
+                    .calendar_id_for_resource(name)
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| {
+                        RepositoryError::Unknown(format!(
+                            "カレンダーIDマッピングが見つかりません: {}",
+                            name
+                        ))
+                    })
             }
         }
     }
@@ -651,17 +685,19 @@ impl GoogleCalendarUsageRepository {
 
     /// カレンダーIDからリソースコンテキスト（サーバー名または部屋名）を取得
     fn get_resource_context(&self, calendar_id: &str) -> Result<String, RepositoryError> {
-        // サーバーカレンダーから検索
-        for server in &self.config.servers {
-            if server.calendar_id == calendar_id {
-                return Ok(server.name.clone());
-            }
-        }
+        let mappings = self
+            .storage_config
+            .google_calendar_mappings()
+            .ok_or_else(|| {
+                RepositoryError::Unknown(
+                    "Google Calendarバックエンドの設定が見つかりません".to_string(),
+                )
+            })?;
 
-        // 部屋カレンダーから検索
-        for room in &self.config.rooms {
-            if room.calendar_id == calendar_id {
-                return Ok(room.name.clone());
+        // マッピングから逆引き
+        for (resource_name, cal_id) in mappings {
+            if cal_id == calendar_id {
+                return Ok(resource_name.clone());
             }
         }
 

@@ -344,7 +344,6 @@ mod tests {
             servers: vec![
                 ServerConfig {
                     name: "gpu-server-1".to_string(),
-                    calendar_id: "cal-1".to_string(),
                     devices: (0..4)
                         .map(|id| DeviceConfig {
                             id,
@@ -355,7 +354,6 @@ mod tests {
                 },
                 ServerConfig {
                     name: "gpu-server-2".to_string(),
-                    calendar_id: "cal-2".to_string(),
                     devices: vec![DeviceConfig {
                         id: 0,
                         model: "A100 80GB PCIe".to_string(),
