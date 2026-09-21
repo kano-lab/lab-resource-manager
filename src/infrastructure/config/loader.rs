@@ -14,6 +14,7 @@ use thiserror::Error;
 
 /// 設定読み込み時のエラー
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ConfigLoadError {
     /// 必須の環境変数が設定されていない
     #[error("環境変数 {0} が必要です")]

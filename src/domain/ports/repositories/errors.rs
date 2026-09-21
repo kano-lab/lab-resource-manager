@@ -6,6 +6,7 @@ use std::fmt;
 
 /// リポジトリ操作で発生するエラー
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum RepositoryError {
     /// リソースが見つからない
     NotFound,

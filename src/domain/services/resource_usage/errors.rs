@@ -54,6 +54,7 @@ impl DomainError for ResourceConflictError {}
 
 /// 競合チェックで発生するエラー
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ConflictCheckError {
     /// リソース競合（リクエストしたリソースのうち競合した全件）
     ///

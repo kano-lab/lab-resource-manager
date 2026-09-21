@@ -25,6 +25,7 @@ pub trait Notifier: Send + Sync {
 
 /// 通知エラー
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum NotificationError {
     /// 通知送信の失敗
     SendFailure(String),

@@ -3,6 +3,7 @@ use std::fmt;
 
 /// 認可エラー
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum AuthorizationError {
     /// 権限不足
     Forbidden {

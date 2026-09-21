@@ -299,6 +299,7 @@ pub trait ResourceUsageObserver: Send + Sync {
 
 /// 観測エラー
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ObservationError {
     /// 監視対象への接続失敗
     ConnectionFailure(String),

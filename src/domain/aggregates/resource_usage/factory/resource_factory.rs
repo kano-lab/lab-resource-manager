@@ -108,6 +108,7 @@ impl ResourceFactory {
 
 /// リソースファクトリのエラー型
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ResourceFactoryError {
     /// デバイス指定が空
     EmptySpecification,
