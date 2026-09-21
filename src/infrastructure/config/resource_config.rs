@@ -221,10 +221,7 @@ mod load_config_tests {
     use std::path::PathBuf;
 
     fn create_temp_config(content: &str) -> PathBuf {
-        let temp_path = PathBuf::from(format!(
-            "/tmp/lrm-test-{}.toml",
-            uuid::Uuid::new_v4()
-        ));
+        let temp_path = PathBuf::from(format!("/tmp/lrm-test-{}.toml", uuid::Uuid::new_v4()));
         fs::write(&temp_path, content).unwrap();
         temp_path
     }

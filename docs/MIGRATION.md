@@ -2,11 +2,13 @@
 
 ## Storage Configuration Schema Change (v2.0.0)
 
-v2.0.0 introduces a breaking change to the `resources.toml` configuration format: calendar ID mappings are now separated from resource definitions for better separation of concerns.
+v2.0.0 introduces a breaking change to the `resources.toml` configuration format: calendar
+ID mappings are now separated from resource definitions for better separation of concerns.
 
 ### Configuration Format Change
 
-The storage mapping (where reservations are persisted) is now separate from resource definitions (what can be reserved).
+The storage mapping (where reservations are persisted) is now separate from resource
+definitions (what can be reserved).
 
 **Before (v1.x):**
 
@@ -45,7 +47,7 @@ type = "google_calendar"
 "Meeting Room A" = "yyy@group.calendar.google.com"
 ```
 
-### Migration Steps
+### v2.0.0 Migration Steps
 
 1. **Backup Your Current Config**
 
@@ -61,24 +63,26 @@ type = "google_calendar"
    - Create `[storage.calendars]` with resource name -> calendar ID mappings
 
    **Example Migration:**
-   
+
    Move this:
+
    ```toml
    [[servers]]
    name = "gpu-server-1"
    calendar_id = "xxx@group.calendar.google.com"
    ```
-   
+
    To this:
+
    ```toml
    [[servers]]
    name = "gpu-server-1"
-   
+
    # ... rest of servers ...
-   
+
    [storage]
    type = "google_calendar"
-   
+
    [storage.calendars]
    "gpu-server-1" = "xxx@group.calendar.google.com"
    ```
@@ -92,7 +96,8 @@ type = "google_calendar"
    sudo journalctl -u lab-resource-manager -f
    ```
 
-   If there are mismatched mappings, you'll see a clear error message listing which resources lack calendar ID mappings.
+   If there are mismatched mappings, you'll see a clear error message listing which
+   resources lack calendar ID mappings.
 
 4. **Validation Checklist**
 
@@ -102,7 +107,7 @@ type = "google_calendar"
    - [ ] Slack bot responds to commands
    - [ ] Calendar integration works (verify in logs)
 
-### Troubleshooting
+### v2.0.0 Troubleshooting
 
 **Error: "resources.toml の以下のリソースが storage.calendars に写像を持ちません"**
 
@@ -118,37 +123,40 @@ grep -A 100 '\[storage.calendars\]' /etc/lab-resource-manager/resources.toml
 
 Add any missing entries to `[storage.calendars]`.
 
-### Notes
+### v2.0.0 Notes
 
-- The `storage_config` section must specify `type = "google_calendar"` (this is currently the only supported backend)
+- The `storage_config` section must specify `type = "google_calendar"` (this is currently
+  the only supported backend)
 - All resource names (servers and rooms) must have exactly one calendar ID mapping
 - The application startup will fail with a clear error if mappings are incomplete
-- Warning logs appear for extra calendars defined but not used (these can be ignored if you're planning to add resources later)
+- Warning logs appear for extra calendars defined but not used (these can be ignored if
+  you're planning to add resources later)
 
 ---
 
 # Migration Guide: Docker to Binary Release (v1.0.0)
 
-This guide explains how to migrate from Docker-based deployment to the new binary release with systemd.
+This guide explains how to migrate from Docker-based deployment to the new binary release
+with systemd.
 
 ## Overview
 
 v1.0.0 introduces a breaking change in the deployment method:
 
-| Item | Before (Docker) | After (v1.0.0) |
-|------|-----------------|----------------|
-| Deployment | Docker Compose | Binary + systemd |
-| Config | `config/` | `/etc/lab-resource-manager/` |
-| Data | `data/` | `/var/lib/lab-resource-manager/` |
-| Env | `.env` | `/etc/default/lab-resource-manager` |
-| Binary | Container | `/usr/local/bin/lab-resource-manager` |
+| Item       | Before (Docker) | After (v1.0.0)          |
+|------------|-----------------|-------------------------|
+| Deployment | Docker Compose  | Binary + systemd        |
+| Config     | `config/`       | `/etc/lab-resource-manager/` |
+| Data       | `data/`         | `/var/lib/lab-resource-manager/` |
+| Env        | `.env`          | `/etc/default/lab-resource-manager` |
+| Binary     | Container       | `/usr/local/bin/lab-resource-manager` |
 
 ## Prerequisites
 
 - Root access to the server
 - Backup of existing data
 
-## Migration Steps
+## v1.0.0 Migration Steps
 
 ### 1. Stop Docker Container
 
@@ -272,7 +280,7 @@ cd /path/to/lab-resource-manager-backup
 docker compose up -d
 ```
 
-## Troubleshooting
+## v1.0.0 Troubleshooting
 
 ### Service fails to start
 

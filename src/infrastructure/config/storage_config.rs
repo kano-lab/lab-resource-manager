@@ -49,10 +49,14 @@ impl StorageConfig {
     /// # 返り値
     /// - `Ok(())`: すべてのリソースが写像を持つ場合
     /// - `Err(missing_resources)`: 写像のないリソース名のリスト
-    pub fn validate_resource_mappings(&self, server_names: &[String], room_names: &[String]) -> Result<(), Vec<String>> {
+    pub fn validate_resource_mappings(
+        &self,
+        server_names: &[String],
+        room_names: &[String],
+    ) -> Result<(), Vec<String>> {
         let mappings = match self.google_calendar_mappings() {
             Some(m) => m,
-            None => return Err("storage.calendars マップが見つかりません".to_string()).map_err(|e| vec![e]),
+            None => return Err(vec!["storage.calendars マップが見つかりません".to_string()]),
         };
 
         let mut missing = Vec::new();
@@ -79,14 +83,21 @@ impl StorageConfig {
     /// ストレージマッピングに存在するが、リソース定義に存在しないキーを検出
     ///
     /// これは警告対象です（リソース追加前の事前登録がありうるため、エラーではない）
-    pub fn find_unmapped_calendars(&self, server_names: &[String], room_names: &[String]) -> Vec<String> {
+    pub fn find_unmapped_calendars(
+        &self,
+        server_names: &[String],
+        room_names: &[String],
+    ) -> Vec<String> {
         let mappings = match self.google_calendar_mappings() {
             Some(m) => m,
             None => return Vec::new(),
         };
 
-        let all_resource_names: std::collections::HashSet<_> =
-            server_names.iter().chain(room_names.iter()).map(|s| s.as_str()).collect();
+        let all_resource_names: std::collections::HashSet<_> = server_names
+            .iter()
+            .chain(room_names.iter())
+            .map(|s| s.as_str())
+            .collect();
 
         mappings
             .keys()
