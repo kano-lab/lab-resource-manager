@@ -32,8 +32,10 @@ pub mod defaults {
     /// 予約削除時のデフォルトテンプレート
     pub const DELETED: &str =
         "🗑️ 予約削除\n👤 {user}\n\n📅 期間\n{time}\n\n{resource_label}\n{resource}{notes}";
-    /// 予約競合時のデフォルトテンプレート
+    /// 予約競合時のデフォルトテンプレート（1件の競合）
     pub const CONFLICT: &str = "⚠️ 予約が重複しています\n👤 予約者\n{user}\n\n📅 競合する期間\n{time}\n\n{resource_label}\n{resource}{notes}";
+    /// 複数競合時の各項目テンプレート（見出しなし）
+    pub const CONFLICT_ITEM: &str = "👤 {user}\n\n📅 {time}\n\n{resource_label}\n{resource}{notes}";
 }
 
 /// テンプレートレンダラー
@@ -120,6 +122,30 @@ impl<'a> TemplateRenderer<'a> {
             .conflict
             .as_deref()
             .unwrap_or(defaults::CONFLICT);
+        self.render(
+            template,
+            conflicting_resources,
+            existing_usage.time_period(),
+            existing_usage.notes().map(String::as_str),
+            user_display,
+        )
+    }
+
+    /// 複数競合時の各項目をレンダリング（見出しなし）
+    ///
+    /// 複数の予約と競合する場合に、1件ずつリスト表示するために使う。
+    /// 最初の見出しと件数行は `conflict_message` が別途追加する。
+    pub fn render_conflict_item(
+        &self,
+        conflicting_resources: &[Resource],
+        existing_usage: &ResourceUsage,
+        user_display: &str,
+    ) -> String {
+        let template = self
+            .templates
+            .conflict_item
+            .as_deref()
+            .unwrap_or(defaults::CONFLICT_ITEM);
         self.render(
             template,
             conflicting_resources,
@@ -268,6 +294,7 @@ mod tests {
             updated: None,
             deleted: None,
             conflict: None,
+            conflict_item: None,
         };
         let format = FormatConfig {
             resource_style: ResourceStyle::Compact,
@@ -375,6 +402,7 @@ mod tests {
             updated: None,
             deleted: None,
             conflict: Some("{user}が既に{resource}を{time}で予約済みです".to_string()),
+            conflict_item: None,
         };
         let format = FormatConfig::default();
 
@@ -421,5 +449,54 @@ mod tests {
         let result = renderer.render_created(&usage, "user");
 
         assert!(!result.contains("📝 備考"));
+    }
+
+    #[test]
+    fn test_render_conflict_item_with_default_template() {
+        let templates = TemplateConfig::default();
+        let format = FormatConfig::default();
+
+        let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
+        let existing_usage = create_test_usage();
+        let conflicting_resource =
+            Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
+
+        let result = renderer.render_conflict_item(
+            std::slice::from_ref(&conflicting_resource),
+            &existing_usage,
+            "<@U67890>",
+        );
+
+        // conflict_itemテンプレートは見出し（⚠️）を含まない
+        assert!(!result.contains("⚠️ 予約が重複しています"));
+        assert!(result.contains("👤 <@U67890>"));
+        assert!(result.contains("Thalys"));
+    }
+
+    #[test]
+    fn test_render_conflict_item_with_custom_template() {
+        let templates = TemplateConfig {
+            created: None,
+            updated: None,
+            deleted: None,
+            conflict: None,
+            conflict_item: Some("{user} : {time} に {resource}".to_string()),
+        };
+        let format = FormatConfig::default();
+
+        let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
+        let existing_usage = create_test_usage();
+        let conflicting_resource =
+            Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string()));
+
+        let result = renderer.render_conflict_item(
+            std::slice::from_ref(&conflicting_resource),
+            &existing_usage,
+            "田中太郎",
+        );
+
+        assert!(result.contains("田中太郎 : "));
+        assert!(result.contains("に"));
+        assert!(result.contains("GPU:1"));
     }
 }
