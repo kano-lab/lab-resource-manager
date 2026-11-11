@@ -13,7 +13,7 @@ pub trait UnauthorizedUsageNotifier: Send + Sync {
     /// 無断使用を行った本人へ通知する
     async fn notify(
         &self,
-        reserved_usage: &ReservedSlot,
+        reserved_slot: &ReservedSlot,
         actual_user_email: &EmailAddress,
     ) -> Result<(), NotificationError>;
 }

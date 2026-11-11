@@ -208,11 +208,8 @@ mod tests {
         .unwrap()
     }
 
-    fn availabilities(
-        resources: &[Resource],
-        usages: &[ReservedSlot],
-    ) -> Vec<ResourceAvailability> {
-        calculate(resources, &window(), usages)
+    fn availabilities(resources: &[Resource], slots: &[ReservedSlot]) -> Vec<ResourceAvailability> {
+        calculate(resources, &window(), slots)
     }
 
     #[test]
@@ -224,10 +221,10 @@ mod tests {
             gpu("gpu-server-2", 1),
             gpu("gpu-server-2", 2),
         ];
-        let usages = vec![reservation(vec![gpu("gpu-server-1", 1)])];
+        let slots = vec![reservation(vec![gpu("gpu-server-1", 1)])];
 
         let (server, devices) =
-            server_with_most_free_devices(&availabilities(&resources, &usages), at(12)).unwrap();
+            server_with_most_free_devices(&availabilities(&resources, &slots), at(12)).unwrap();
 
         assert_eq!(server, "gpu-server-2");
         assert_eq!(devices, vec![0, 1, 2]);
@@ -246,10 +243,10 @@ mod tests {
     #[test]
     fn a_fully_booked_lab_offers_no_server() {
         let resources = vec![gpu("gpu-server-1", 0)];
-        let usages = vec![reservation(vec![gpu("gpu-server-1", 0)])];
+        let slots = vec![reservation(vec![gpu("gpu-server-1", 0)])];
 
         assert_eq!(
-            server_with_most_free_devices(&availabilities(&resources, &usages), at(12)),
+            server_with_most_free_devices(&availabilities(&resources, &slots), at(12)),
             None
         );
     }

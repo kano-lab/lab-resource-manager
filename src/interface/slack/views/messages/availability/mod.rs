@@ -42,13 +42,13 @@ pub const NOW: &str = "now";
 /// * `availabilities` - 各リソースの空き（設定順）
 /// * `now` - 状態を判定する時刻
 /// * `timezone` - 時刻表示に使うタイムゾーン名。未指定ならボットのローカル時刻
-/// * `owner_displays` - 予約者の表示名。解決できなかった予約者はメールアドレスで表示する
+/// * `holder_displays` - 予約者の表示名。解決できなかった予約者はメールアドレスで表示する
 /// * `day_options` - 表示する日を切り替える選択肢
 pub fn build(
     availabilities: &[ResourceAvailability],
     now: DateTime<Utc>,
     timezone: Option<&str>,
-    owner_displays: &HashMap<EmailAddress, String>,
+    holder_displays: &HashMap<EmailAddress, String>,
     day_options: &[DayOption],
 ) -> SlackMessageContent {
     if availabilities.is_empty() {
@@ -72,11 +72,11 @@ pub fn build(
         )));
     }
 
-    if let Some(rooms) = room_lines(availabilities, now, timezone, owner_displays) {
+    if let Some(rooms) = room_lines(availabilities, now, timezone, holder_displays) {
         blocks.push(section(rooms));
     }
 
-    if let Some(ongoing) = ongoing_gpu_lines(availabilities, now, timezone, owner_displays) {
+    if let Some(ongoing) = ongoing_gpu_lines(availabilities, now, timezone, holder_displays) {
         blocks.push(SlackBlock::Divider(SlackDividerBlock::new()));
         blocks.push(section(ongoing));
     }
@@ -270,7 +270,7 @@ fn room_lines(
     availabilities: &[ResourceAvailability],
     now: DateTime<Utc>,
     timezone: Option<&str>,
-    owner_displays: &HashMap<EmailAddress, String>,
+    holder_displays: &HashMap<EmailAddress, String>,
 ) -> Option<String> {
     let lines: Vec<String> = availabilities
         .iter()
@@ -284,7 +284,7 @@ fn room_lines(
                 AvailabilityState::Busy(busy) => format!(
                     "🔴 {} — {} 〜{}",
                     name,
-                    display_name(busy.holder_email(), owner_displays),
+                    display_name(busy.holder_email(), holder_displays),
                     format_moment(busy.period().end(), now, timezone)
                 ),
             })
@@ -305,7 +305,7 @@ fn ongoing_gpu_lines(
     availabilities: &[ResourceAvailability],
     now: DateTime<Utc>,
     timezone: Option<&str>,
-    owner_displays: &HashMap<EmailAddress, String>,
+    holder_displays: &HashMap<EmailAddress, String>,
 ) -> Option<String> {
     let reservations = ongoing_gpu_reservations(availabilities, now);
 
@@ -320,7 +320,7 @@ fn ongoing_gpu_lines(
                 "🔴 {} — {} 〜{}",
                 format_resources_styled(&reservation.resources, ResourceStyle::Compact)
                     .replace('\n', " / "),
-                display_name(&reservation.holder_email, owner_displays),
+                display_name(&reservation.holder_email, holder_displays),
                 format_moment(reservation.ends_at, now, timezone)
             )
         })
@@ -331,7 +331,7 @@ fn ongoing_gpu_lines(
 
 /// 内訳に並べる、いま動いている予約
 struct OngoingReservation {
-    usage_id: ReservedSlotId,
+    slot_id: ReservedSlotId,
     holder_email: EmailAddress,
     resources: Vec<Resource>,
     ends_at: DateTime<Utc>,
@@ -357,11 +357,11 @@ fn ongoing_gpu_reservations(
 
         match reservations
             .iter_mut()
-            .find(|reservation| reservation.usage_id == *busy.slot_id())
+            .find(|reservation| reservation.slot_id == *busy.slot_id())
         {
             Some(reservation) => reservation.resources.push(availability.resource().clone()),
             None => reservations.push(OngoingReservation {
-                usage_id: busy.slot_id().clone(),
+                slot_id: busy.slot_id().clone(),
                 holder_email: busy.holder_email().clone(),
                 resources: vec![availability.resource().clone()],
                 ends_at: busy.period().end(),
@@ -373,8 +373,8 @@ fn ongoing_gpu_reservations(
 }
 
 /// 予約者の表示名（解決できていなければメールアドレス）
-fn display_name(email: &EmailAddress, owner_displays: &HashMap<EmailAddress, String>) -> String {
-    owner_displays
+fn display_name(email: &EmailAddress, holder_displays: &HashMap<EmailAddress, String>) -> String {
+    holder_displays
         .get(email)
         .cloned()
         .unwrap_or_else(|| email.as_str().to_string())

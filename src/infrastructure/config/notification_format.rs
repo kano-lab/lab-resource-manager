@@ -6,16 +6,17 @@ use serde::Deserialize;
 
 /// メッセージテンプレート設定
 ///
-/// 各イベントタイプ（作成・更新・削除・競合）のメッセージテンプレートを定義。
+/// 通知の種類（予約の作成・変更・取り消し、定期予約の予約枠1つの変更・取り消し、競合）ごとの
+/// メッセージテンプレートを定義。
 /// プレースホルダー: `{user}`, `{resource}`, `{time}`, `{notes}`, `{resource_label}`
 /// （定期予約のテンプレートでは加えて`{recurrence}`）
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq, Hash, Default)]
 pub struct TemplateConfig {
-    /// 予約作成時のテンプレート
+    /// 単発予約の作成時のテンプレート
     #[serde(default)]
     pub created: Option<String>,
 
-    /// 予約更新時のテンプレート
+    /// 単発予約の変更時のテンプレート（今で終了を含む）
     #[serde(default)]
     pub updated: Option<String>,
 
@@ -25,7 +26,7 @@ pub struct TemplateConfig {
     #[serde(default, alias = "deleted")]
     pub cancelled: Option<String>,
 
-    /// 予約競合時のテンプレート（`{user}`/`{time}`/`{resource}`等は競合した既存予約の情報）
+    /// 予約競合時のテンプレート（`{user}`/`{time}`/`{resource}`等は競合した既存の予約枠の情報）
     #[serde(default)]
     pub conflict: Option<String>,
 
@@ -37,12 +38,12 @@ pub struct TemplateConfig {
 
     /// 定期予約作成時のテンプレート
     ///
-    /// 定期予約のテンプレートでは`{recurrence}`（繰り返しの間隔）も使える。
-    /// `{time}`は各回の時間帯を示す代表の回（把握できるかぎり初回）の期間。
+    /// 定期予約のテンプレートでは`{recurrence}`（繰り返しの規則）も使える。
+    /// `{time}`は初回の予約枠の期間。
     #[serde(default)]
     pub recurring_created: Option<String>,
 
-    /// 定期予約変更時のテンプレート（複数の回に及ぶ変更）
+    /// 定期予約変更時のテンプレート（複数の予約枠に及ぶ変更）
     #[serde(default)]
     pub recurring_updated: Option<String>,
 

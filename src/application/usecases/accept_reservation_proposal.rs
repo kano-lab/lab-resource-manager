@@ -92,11 +92,11 @@ impl<R: ReservationRepository> AcceptReservationProposalUseCase<R> {
                 self.repository.as_ref(),
                 &time_period,
                 &resources,
-                existing.as_ref().map(|usage| usage.id()),
+                existing.as_ref().map(|slot| slot.id()),
             )
             .await?;
 
-        let usage = match existing {
+        let slot = match existing {
             Some(existing) => ReservedSlot::reconstruct(
                 existing.id().clone(),
                 holder_email,
@@ -112,10 +112,10 @@ impl<R: ReservationRepository> AcceptReservationProposalUseCase<R> {
             )?,
         };
 
-        self.repository.save_slot(&usage).await?;
-        settled_sessions.insert(session_key, usage.id().clone());
+        self.repository.save_slot(&slot).await?;
+        settled_sessions.insert(session_key, slot.id().clone());
 
-        Ok(usage.id().clone())
+        Ok(slot.id().clone())
     }
 
     /// ひとつの機会を表すキーを作る
@@ -156,9 +156,9 @@ impl<R: ReservationRepository> AcceptReservationProposalUseCase<R> {
             .find_slots_held_by(holder_email, &in_progress)
             .await?;
 
-        Ok(candidates.into_iter().find(|usage| {
-            usage.notes().map(String::as_str) == Some(POST_HOC_RESERVATION_NOTES)
-                && usage.resources().iter().collect::<HashSet<_>>() == requested
+        Ok(candidates.into_iter().find(|slot| {
+            slot.notes().map(String::as_str) == Some(POST_HOC_RESERVATION_NOTES)
+                && slot.resources().iter().collect::<HashSet<_>>() == requested
         }))
     }
 }
@@ -187,20 +187,20 @@ mod tests {
     /// 事後予約として保存済みの予約を作る
     async fn save_post_hoc_reservation(
         repository: &MockReservationRepository,
-        owner: &str,
+        holder: &str,
         resources: Vec<Resource>,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> ReservedSlotId {
-        let usage = ReservedSlot::new(
-            email(owner),
+        let slot = ReservedSlot::new(
+            email(holder),
             TimePeriod::new(start, end).unwrap(),
             resources,
             Some(POST_HOC_RESERVATION_NOTES.to_string()),
         )
         .unwrap();
-        repository.save_slot(&usage).await.unwrap();
-        usage.id().clone()
+        repository.save_slot(&slot).await.unwrap();
+        slot.id().clone()
     }
 
     /// 保存されている全予約（終了済みを含む）
@@ -219,7 +219,7 @@ mod tests {
         let active_since = Utc::now() - Duration::hours(1);
         let existing_id = save_post_hoc_reservation(
             &repository,
-            "owner@example.com",
+            "holder@example.com",
             vec![gpu(0), gpu(1)],
             active_since,
             active_since + Duration::hours(2),
@@ -229,7 +229,7 @@ mod tests {
         let usecase = AcceptReservationProposalUseCase::new(repository.clone());
         let returned_id = usecase
             .execute(
-                email("owner@example.com"),
+                email("holder@example.com"),
                 vec![gpu(0), gpu(1)],
                 active_since,
                 Duration::hours(12),
@@ -256,7 +256,7 @@ mod tests {
         let active_since = Utc::now() - Duration::hours(5);
         save_post_hoc_reservation(
             &repository,
-            "owner@example.com",
+            "holder@example.com",
             vec![gpu(0)],
             active_since,
             Utc::now() - Duration::hours(1),
@@ -266,7 +266,7 @@ mod tests {
         let usecase = AcceptReservationProposalUseCase::new(repository.clone());
         usecase
             .execute(
-                email("owner@example.com"),
+                email("holder@example.com"),
                 vec![gpu(0)],
                 active_since,
                 Duration::hours(12),
@@ -285,7 +285,7 @@ mod tests {
         let active_since = Utc::now() - Duration::hours(1);
         save_post_hoc_reservation(
             &repository,
-            "owner@example.com",
+            "holder@example.com",
             vec![gpu(0)],
             active_since,
             active_since + Duration::hours(12),
@@ -295,7 +295,7 @@ mod tests {
         let usecase = AcceptReservationProposalUseCase::new(repository.clone());
         usecase
             .execute(
-                email("owner@example.com"),
+                email("holder@example.com"),
                 vec![gpu(0)],
                 active_since,
                 Duration::hours(2),
@@ -321,7 +321,7 @@ mod tests {
         let usecase = AcceptReservationProposalUseCase::new(repository.clone());
         usecase
             .execute(
-                email("owner@example.com"),
+                email("holder@example.com"),
                 vec![gpu(0), gpu(1)],
                 active_since,
                 Duration::hours(3),
@@ -359,7 +359,7 @@ mod tests {
         let usecase = AcceptReservationProposalUseCase::new(repository.clone());
         let result = usecase
             .execute(
-                email("owner@example.com"),
+                email("holder@example.com"),
                 vec![gpu(0)],
                 active_since,
                 Duration::hours(3),
@@ -383,7 +383,7 @@ mod tests {
         let active_since = Utc::now() - Duration::hours(1);
         save_post_hoc_reservation(
             &repository,
-            "owner@example.com",
+            "holder@example.com",
             vec![gpu(0)],
             active_since,
             active_since + Duration::hours(2),
@@ -394,7 +394,7 @@ mod tests {
         let usecase = AcceptReservationProposalUseCase::new(repository.clone());
         usecase
             .execute(
-                email("owner@example.com"),
+                email("holder@example.com"),
                 vec![gpu(1)],
                 active_since,
                 Duration::hours(2),
@@ -437,7 +437,7 @@ mod tests {
             id: &ReservedSlotId,
         ) -> Result<Option<ReservedSlot>, RepositoryError> {
             // IDを指定した取得は書き込み直後でも一貫して読める
-            Ok(self.all().into_iter().find(|usage| usage.id() == id))
+            Ok(self.all().into_iter().find(|slot| slot.id() == id))
         }
 
         async fn find_slots_overlapping(
@@ -449,7 +449,7 @@ mod tests {
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|usage| usage.time_period().overlaps_with(time_period))
+                .filter(|slot| slot.time_period().overlaps_with(time_period))
                 .cloned()
                 .collect())
         }
@@ -464,18 +464,18 @@ mod tests {
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|usage| usage.holder_email() == holder_email)
-                .filter(|usage| usage.time_period().overlaps_with(time_period))
+                .filter(|slot| slot.holder_email() == holder_email)
+                .filter(|slot| slot.time_period().overlaps_with(time_period))
                 .cloned()
                 .collect())
         }
 
-        async fn save_slot(&self, usage: &ReservedSlot) -> Result<(), RepositoryError> {
+        async fn save_slot(&self, slot: &ReservedSlot) -> Result<(), RepositoryError> {
             let mut pending = self.pending.lock().unwrap();
-            if let Some(existing) = pending.iter_mut().find(|p| p.id() == usage.id()) {
-                *existing = usage.clone();
+            if let Some(existing) = pending.iter_mut().find(|p| p.id() == slot.id()) {
+                *existing = slot.clone();
             } else {
-                pending.push(usage.clone());
+                pending.push(slot.clone());
             }
             Ok(())
         }
@@ -512,7 +512,7 @@ mod tests {
             tokio::spawn(async move {
                 usecase
                     .execute(
-                        email("owner@example.com"),
+                        email("holder@example.com"),
                         vec![gpu(5)],
                         active_since,
                         Duration::hours(1),
@@ -525,7 +525,7 @@ mod tests {
             tokio::spawn(async move {
                 usecase
                     .execute(
-                        email("owner@example.com"),
+                        email("holder@example.com"),
                         vec![gpu(5)],
                         active_since,
                         Duration::hours(1),
@@ -553,7 +553,7 @@ mod tests {
 
         let first = usecase
             .execute(
-                email("owner@example.com"),
+                email("holder@example.com"),
                 vec![gpu(5)],
                 active_since,
                 Duration::hours(1),
@@ -564,7 +564,7 @@ mod tests {
         // 反映される前に別の長さを選び直す
         let second = usecase
             .execute(
-                email("owner@example.com"),
+                email("holder@example.com"),
                 vec![gpu(5)],
                 active_since,
                 Duration::hours(12),
@@ -592,7 +592,7 @@ mod tests {
         let pressed_at = Utc::now();
         usecase
             .execute(
-                email("owner@example.com"),
+                email("holder@example.com"),
                 vec![gpu(0)],
                 active_since,
                 Duration::hours(1),
@@ -623,7 +623,7 @@ mod tests {
         let active_since = Utc::now() - Duration::days(6);
         save_post_hoc_reservation(
             &repository,
-            "owner@example.com",
+            "holder@example.com",
             vec![gpu(0)],
             active_since,
             Utc::now() - Duration::hours(1),
@@ -633,7 +633,7 @@ mod tests {
         let usecase = AcceptReservationProposalUseCase::new(repository.clone());
         let result = usecase
             .execute(
-                email("owner@example.com"),
+                email("holder@example.com"),
                 vec![gpu(0)],
                 active_since,
                 Duration::hours(1),

@@ -10,7 +10,7 @@
 //! # モジュール
 //!
 //! - `policy` - 認可ポリシーの基本トレイトとエラー型
-//! - `reservation_policy` - リソース使用予定の認可ポリシー実装
+//! - `reservation_policy` - 予約枠の認可ポリシー実装
 
 pub mod policy;
 pub mod reservation_policy;

@@ -177,10 +177,10 @@ mod tests {
 
     fn availabilities(
         resources: &[Resource],
-        usages: &[ReservedSlot],
+        slots: &[ReservedSlot],
         window: &TimePeriod,
     ) -> Vec<ResourceAvailability> {
-        calculate(resources, window, usages)
+        calculate(resources, window, slots)
     }
 
     /// メッセージに載っている文言をつないで取り出す
@@ -234,8 +234,8 @@ mod tests {
     #[test]
     fn a_gap_touching_the_start_of_the_day_drops_its_opening_time() {
         let window = whole_day();
-        let usages = vec![reservation(vec![gpu(0)], jst(3, 13), jst(3, 17))];
-        let availabilities = availabilities(&[gpu(0)], &usages, &window);
+        let slots = vec![reservation(vec![gpu(0)], jst(3, 13), jst(3, 17))];
+        let availabilities = availabilities(&[gpu(0)], &slots, &window);
 
         let text = rendered(&build(
             &availabilities,
@@ -255,11 +255,11 @@ mod tests {
     #[test]
     fn a_gap_in_the_middle_carries_both_times() {
         let window = whole_day();
-        let usages = vec![
+        let slots = vec![
             reservation(vec![gpu(0)], jst(3, 0), jst(3, 9)),
             reservation(vec![gpu(0)], jst(3, 15), jst(4, 0)),
         ];
-        let availabilities = availabilities(&[gpu(0)], &usages, &window);
+        let availabilities = availabilities(&[gpu(0)], &slots, &window);
 
         let text = rendered(&build(
             &availabilities,
@@ -276,8 +276,8 @@ mod tests {
     #[test]
     fn resources_with_no_gap_are_named_at_the_end_instead_of_listed() {
         let window = whole_day();
-        let usages = vec![reservation(vec![gpu(1)], jst(3, 0), jst(4, 0))];
-        let availabilities = availabilities(&[gpu(0), gpu(1)], &usages, &window);
+        let slots = vec![reservation(vec![gpu(1)], jst(3, 0), jst(4, 0))];
+        let availabilities = availabilities(&[gpu(0), gpu(1)], &slots, &window);
 
         let text = rendered(&build(
             &availabilities,
@@ -299,8 +299,8 @@ mod tests {
     #[test]
     fn a_fully_booked_day_says_so() {
         let window = whole_day();
-        let usages = vec![reservation(vec![gpu(0)], jst(3, 0), jst(4, 0))];
-        let availabilities = availabilities(&[gpu(0)], &usages, &window);
+        let slots = vec![reservation(vec![gpu(0)], jst(3, 0), jst(4, 0))];
+        let availabilities = availabilities(&[gpu(0)], &slots, &window);
 
         let text = rendered(&build(
             &availabilities,

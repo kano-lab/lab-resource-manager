@@ -13,7 +13,7 @@ impl<R: ReservationRepository> CheckResourceAvailabilityUseCase<R> {
     /// 新しいCheckResourceAvailabilityUseCaseインスタンスを作成
     ///
     /// # Arguments
-    /// * `repository` - ReservedSlotリポジトリ
+    /// * `repository` - 予約リポジトリ
     pub fn new(repository: Arc<R>) -> Self {
         Self { repository }
     }
@@ -35,8 +35,8 @@ impl<R: ReservationRepository> CheckResourceAvailabilityUseCase<R> {
         resources: &[Resource],
         window: &TimePeriod,
     ) -> Result<Vec<ResourceAvailability>, ApplicationError> {
-        let usages = self.repository.find_slots_overlapping(window).await?;
+        let slots = self.repository.find_slots_overlapping(window).await?;
 
-        Ok(availability::calculate(resources, window, &usages))
+        Ok(availability::calculate(resources, window, &slots))
     }
 }

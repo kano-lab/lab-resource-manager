@@ -9,7 +9,7 @@ use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::{
-    ACTION_IDLE_CANCEL, ACTION_IDLE_KEEP, ACTION_IDLE_RELEASE,
+    ACTION_IDLE_CANCEL, ACTION_IDLE_END_EARLY, ACTION_IDLE_KEEP,
 };
 use crate::interface::slack::utility::{
     interaction_reply, reservation_failure, reservation_summary, user_resolver,
@@ -28,8 +28,8 @@ where
     R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
-    let Some(usage_id_str) = &action.value else {
-        error!("idle reservation button carried no usage id");
+    let Some(slot_id_str) = &action.value else {
+        error!("idle reservation button carried no slot id");
         return Ok(());
     };
 
@@ -38,21 +38,21 @@ where
         return Ok(());
     };
 
-    let usage_id = ReservedSlotId::from_string(usage_id_str.to_string());
+    let slot_id = ReservedSlotId::from_string(slot_id_str.to_string());
     let action_id = action.action_id.to_string();
 
     let feedback = match action_id.as_str() {
-        ACTION_IDLE_KEEP => keep(app, &usage_id),
-        ACTION_IDLE_RELEASE | ACTION_IDLE_CANCEL => {
+        ACTION_IDLE_KEEP => keep(app, &slot_id),
+        ACTION_IDLE_END_EARLY | ACTION_IDLE_CANCEL => {
             let requested_by = EmailAddress::new(
                 user_resolver::resolve_user_email(&user.id, &app.repositories().identity_link)
                     .await?,
             )?;
 
-            if action_id == ACTION_IDLE_RELEASE {
-                release(app, &usage_id, &requested_by).await
+            if action_id == ACTION_IDLE_END_EARLY {
+                release(app, &slot_id, &requested_by).await
             } else {
-                cancel(app, &usage_id, &requested_by).await
+                cancel(app, &slot_id, &requested_by).await
             }
         }
         other => {
@@ -68,16 +68,16 @@ where
 /// 「まだ使う」に答える
 ///
 /// 予約は使われる見込みなので、しばらくこの予約について声をかけない。
-fn keep<R, N>(app: &SlackApp<R, N>, usage_id: &ReservedSlotId) -> String
+fn keep<R, N>(app: &SlackApp<R, N>, slot_id: &ReservedSlotId) -> String
 where
     R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
-    app.idle_notices().silence(usage_id, Utc::now());
+    app.idle_notices().silence(slot_id, Utc::now());
     info!(
-        usage_id = %usage_id.as_str(),
+        slot_id = %slot_id.as_str(),
         origin = "slack",
-        "the owner intends to keep using the reservation"
+        "the holder intends to keep using the reservation"
     );
     "👍 わかりました。しばらくこの予約については知らせません。".to_string()
 }
@@ -85,7 +85,7 @@ where
 /// 「今で終了する」に答える
 async fn release<R, N>(
     app: &SlackApp<R, N>,
-    usage_id: &ReservedSlotId,
+    slot_id: &ReservedSlotId,
     requested_by: &EmailAddress,
 ) -> String
 where
@@ -93,7 +93,7 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     info!(
-        usage_id = %usage_id.as_str(),
+        slot_id = %slot_id.as_str(),
         requested_by = %requested_by.as_str(),
         origin = "slack",
         "releasing an idle reservation early"
@@ -102,7 +102,7 @@ where
     match app
         .usecases()
         .end_slot_early
-        .execute(usage_id, requested_by)
+        .execute(slot_id, requested_by)
         .await
     {
         Ok(released) => format!(
@@ -111,12 +111,12 @@ where
         ),
         Err(failure) => {
             warn!(
-                usage_id = %usage_id.as_str(),
+                slot_id = %slot_id.as_str(),
                 reason = %failure,
                 origin = "slack",
                 "releasing the idle reservation was refused"
             );
-            reservation_failure::release_message(&failure)
+            reservation_failure::end_early_message(&failure)
         }
     }
 }
@@ -124,7 +124,7 @@ where
 /// 「予約を取り消す」に答える
 async fn cancel<R, N>(
     app: &SlackApp<R, N>,
-    usage_id: &ReservedSlotId,
+    slot_id: &ReservedSlotId,
     requested_by: &EmailAddress,
 ) -> String
 where
@@ -132,7 +132,7 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     info!(
-        usage_id = %usage_id.as_str(),
+        slot_id = %slot_id.as_str(),
         requested_by = %requested_by.as_str(),
         origin = "slack",
         "cancelling an idle reservation"
@@ -141,13 +141,13 @@ where
     match app
         .usecases()
         .cancel_slot
-        .execute(usage_id, requested_by)
+        .execute(slot_id, requested_by)
         .await
     {
-        Ok(()) => "✅ 予約を取り消しました。".to_string(),
+        Ok(cancelled) => reservation_failure::cancelled_message(&cancelled),
         Err(failure) => {
             warn!(
-                usage_id = %usage_id.as_str(),
+                slot_id = %slot_id.as_str(),
                 reason = %failure,
                 origin = "slack",
                 "cancelling the idle reservation was refused"

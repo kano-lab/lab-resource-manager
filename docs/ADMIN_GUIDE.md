@@ -149,12 +149,14 @@ timezone = "Asia/Tokyo"
 [servers.notifications.templates]
 created = "{user} is using {resource} at {time}"
 updated = "{user} changed reservation: {resource} {time}"
-deleted = "{user} cancelled reservation: {resource}"
-conflict = "{user} already reserved {resource} at {time}"
-conflict_item = "👤 {user}\n📅 {time}\n{resource_label}\n{resource}{notes}"
+cancelled = "{user} cancelled reservation: {resource}"
 recurring_created = "{user} set up a recurring reservation: {resource} {recurrence} {time}"
 recurring_updated = "{user} changed a recurring reservation: {resource} {recurrence}"
 recurring_cancelled = "{user} cancelled a recurring reservation: {resource} {recurrence}"
+slot_updated = "{user} changed one slot of a recurring reservation: {resource} {time}"
+slot_cancelled = "{user} cancelled one slot of a recurring reservation: {resource} {time}"
+conflict = "{user} already reserved {resource} at {time}"
+conflict_item = "👤 {user}\n📅 {time}\n{resource_label}\n{resource}{notes}"
 
 # Format settings (optional)
 [servers.notifications.format]
@@ -163,19 +165,25 @@ time_style = "smart"         # Time display style
 date_format = "md"           # Date format
 ```
 
-`recurring_created`/`recurring_updated`/`recurring_cancelled` are used for
-recurring reservations (events created in the calendar with a repeat
-setting). A recurring reservation is announced in a single message, not
-once per occurrence. These templates can also use `{recurrence}` (the
-interval, such as "毎週 月・水"); `{time}` is the period of the first
-occurrence. Changing, cancelling, or ending early a single occurrence is
-still announced with `updated`/`deleted`.
+Notifications are about reservations (one-time or recurring). Which template is
+used:
+
+| Template | Used when |
+|---|---|
+| `created`/`updated`/`cancelled` | A one-time reservation is created, changed (including ended early), or cancelled |
+| `recurring_created`/`recurring_updated`/`recurring_cancelled` | A recurring reservation is created, changed across several reserved slots, or cancelled |
+| `slot_updated`/`slot_cancelled` | One reserved slot of a recurring reservation is changed (including ended early) or cancelled |
+
+A recurring reservation is announced in a single message, not once per
+reserved slot. The recurring templates can also use `{recurrence}` (the
+recurrence rule, such as "毎週 月・水"); there `{time}` is the period of the
+first reserved slot. The old key `deleted` is still read as `cancelled`.
 
 `conflict` is used when a reservation request is rejected due to a conflict.
 It is used **only when there is a single conflict**. Unlike
-`created`/`updated`/`deleted`, its placeholders refer to the **existing**
-reservation that caused the conflict, not the request that was rejected:
-`{user}` is the existing reservation's owner, `{time}` is its period, and
+`created`/`updated`/`cancelled`, its placeholders refer to the **existing**
+reserved slot that caused the conflict, not the request that was rejected:
+`{user}` is its holder, `{time}` is its period, and
 `{resource}` is the specific resource that conflicted. It is shown to the
 user who attempted the reservation, using the format/template settings of
 the conflicting resource's notification config (not a resource-wide
@@ -416,7 +424,7 @@ thresholds are short, other people's reservations get DMs too — keep that wind
 
 ### 7. MCP Server Setup (Optional)
 
-Agents such as Claude Code can view, create, update, and cancel reservations through an
+Agents such as Claude Code can view, create, change, end early, and cancel reservations through an
 embedded MCP (Model Context Protocol) server that runs inside the main
 `lab-resource-manager` process. No new binary or systemd service is needed — the HTTP/SSE
 listener is started as an additional task within the existing process. The Google service
@@ -520,19 +528,21 @@ person).
 
 | Tool | Description |
 |------|--------------|
-| `list_all_reservations` | List all future (including ongoing) reservations |
-| `list_my_reservations` | List reservations owned by the caller |
-| `get_reservation` | Get a reservation's details by ID |
-| `create_reservation` | Create a new reservation (GPU server or room) |
-| `update_reservation` | Update the time or notes of a reservation you own |
-| `release_reservation_early` | End a running reservation of yours now, releasing the remaining time |
-| `cancel_reservation` | Cancel a reservation you own |
 | `list_resources` | List the resources that can be reserved (GPU servers with their devices, rooms) |
 | `check_availability` | Check when each resource is free in a period (up to 60 days, filterable by server or room) |
+| `list_slots` | List every reserved slot overlapping the next 60 days (including running ones) |
+| `list_my_slots` | List the caller's reserved slots overlapping the next 60 days |
+| `get_slot` | Get a reserved slot's details by slot ID |
+| `get_reservation` | Get a reservation's details by reservation ID (with its recurrence rule if recurring) |
+| `create_reservation` | Create a one-time reservation (GPU server or room) |
+| `update_slot` | Change the time or notes of one of your reserved slots |
+| `end_slot_early` | End one of your running reserved slots now, releasing the remaining time |
+| `cancel_slot` | Cancel one of your reserved slots (other slots of a recurring reservation stay) |
+| `cancel_reservation` | Cancel one of your reservations entirely (every slot of a recurring one) |
 
-Write tools (create/update/cancel) treat the email address linked to the caller's Bearer
-token as the owner. Updating or cancelling someone else's reservation is rejected by the
-same existing authorization rule used by `/reserve` (owner only).
+Write tools treat the email address linked to the caller's Bearer token as the reservation
+holder. Changing or cancelling someone else's reservation is rejected by the same
+authorization rule used by `/reserve` (holder only).
 
 TLS itself (handshake succeeding with a self-signed certificate, rejection when the CA
 isn't trusted, and the auth middleware still requiring a Bearer token independently of the
@@ -638,11 +648,13 @@ reconcile pass finished
   observed=6 reservations_in_progress=5 matched_to_a_reservation=5
   unreserved_sessions=1 failures=0 elapsed_ms=412
 change detection pass finished
-  reservations=23 created=0 deleted=0 elapsed_ms=380
+  slots=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
 ```
 
 A count that jumps or an `elapsed_ms` that grows points at a problem well before anything
-visibly breaks.
+visibly breaks. `appeared`/`disappeared` count reserved slots coming and going;
+`notifications` counts the messages actually sent. A recurring reservation's slots are
+announced together, so `notifications` can be lower than the slot changes.
 
 Set `RUST_LOG=debug` to also see per-step detail (form parsing, modal handling, individual
 Slack API calls). This is verbose and meant for investigating a specific problem, not for

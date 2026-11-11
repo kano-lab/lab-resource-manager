@@ -1,4 +1,4 @@
-//! リソース使用ドメインサービスのエラー
+//! 予約のドメインサービスのエラー
 
 use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::Resource;
@@ -18,15 +18,15 @@ use std::fmt;
 pub struct ResourceConflictError {
     /// この予約と競合したリソース
     pub resources: Vec<Resource>,
-    /// 競合している既存の使用予定
-    pub existing_usage: ReservedSlot,
+    /// 競合している既存の予約枠
+    pub existing_slot: ReservedSlot,
 }
 
 impl ResourceConflictError {
-    pub fn new(resources: Vec<Resource>, existing_usage: ReservedSlot) -> Self {
+    pub fn new(resources: Vec<Resource>, existing_slot: ReservedSlot) -> Self {
         Self {
             resources,
-            existing_usage,
+            existing_slot,
         }
     }
 }
@@ -43,7 +43,7 @@ impl fmt::Display for ResourceConflictError {
             f,
             "リソース競合: {} (競合する予約ID: {})",
             resources,
-            self.existing_usage.id().as_str()
+            self.existing_slot.id().as_str()
         )
     }
 }

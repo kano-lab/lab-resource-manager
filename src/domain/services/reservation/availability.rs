@@ -139,18 +139,18 @@ impl ResourceAvailability {
 /// # 引数
 /// * `resources` - 対象のリソース（この並び順で返す）
 /// * `window` - 算出の対象期間
-/// * `usages` - `window`に重なる予約。呼び出し側がリポジトリから取得して渡す
+/// * `slots` - `window`に重なる予約。呼び出し側がリポジトリから取得して渡す
 ///
 /// # 戻り値
 /// `resources`と同じ並びの空き情報
 pub fn calculate(
     resources: &[Resource],
     window: &TimePeriod,
-    usages: &[ReservedSlot],
+    slots: &[ReservedSlot],
 ) -> Vec<ResourceAvailability> {
     resources
         .iter()
-        .map(|resource| calculate_one(resource, window, usages))
+        .map(|resource| calculate_one(resource, window, slots))
         .collect()
 }
 
@@ -158,20 +158,19 @@ pub fn calculate(
 fn calculate_one(
     resource: &Resource,
     window: &TimePeriod,
-    usages: &[ReservedSlot],
+    slots: &[ReservedSlot],
 ) -> ResourceAvailability {
-    let mut busy_periods: Vec<BusyPeriod> = usages
+    let mut busy_periods: Vec<BusyPeriod> = slots
         .iter()
-        .filter(|usage| {
-            usage
-                .resources()
+        .filter(|slot| {
+            slot.resources()
                 .iter()
                 .any(|reserved| reserved.conflicts_with(resource))
         })
-        .filter_map(|usage| {
-            clip_to(usage.time_period(), window).map(|period| BusyPeriod {
-                slot_id: usage.id().clone(),
-                holder_email: usage.holder_email().clone(),
+        .filter_map(|slot| {
+            clip_to(slot.time_period(), window).map(|period| BusyPeriod {
+                slot_id: slot.id().clone(),
+                holder_email: slot.holder_email().clone(),
                 period,
             })
         })
@@ -248,9 +247,9 @@ mod tests {
         ))
     }
 
-    fn reservation(owner: &str, resources: Vec<Resource>, from: u32, to: u32) -> ReservedSlot {
+    fn reservation(holder: &str, resources: Vec<Resource>, from: u32, to: u32) -> ReservedSlot {
         ReservedSlot::new(
-            EmailAddress::new(owner.to_string()).unwrap(),
+            EmailAddress::new(holder.to_string()).unwrap(),
             TimePeriod::new(at(from), at(to)).unwrap(),
             resources,
             None,
@@ -258,8 +257,8 @@ mod tests {
         .unwrap()
     }
 
-    fn availability_of(resource: &Resource, usages: &[ReservedSlot]) -> ResourceAvailability {
-        calculate(std::slice::from_ref(resource), &window(), usages)
+    fn availability_of(resource: &Resource, slots: &[ReservedSlot]) -> ResourceAvailability {
+        calculate(std::slice::from_ref(resource), &window(), slots)
             .into_iter()
             .next()
             .unwrap()
@@ -275,9 +274,9 @@ mod tests {
 
     #[test]
     fn a_reservation_covering_the_window_leaves_no_free_time() {
-        let usages = vec![reservation("owner@example.com", vec![gpu(0)], 9, 21)];
+        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 9, 21)];
 
-        let availability = availability_of(&gpu(0), &usages);
+        let availability = availability_of(&gpu(0), &slots);
 
         assert!(
             availability.free_periods().is_empty(),
@@ -288,9 +287,9 @@ mod tests {
 
     #[test]
     fn the_time_before_and_after_a_reservation_is_free() {
-        let usages = vec![reservation("owner@example.com", vec![gpu(0)], 13, 17)];
+        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 13, 17)];
 
-        let availability = availability_of(&gpu(0), &usages);
+        let availability = availability_of(&gpu(0), &slots);
 
         assert_eq!(
             availability.free_periods(),
@@ -303,12 +302,12 @@ mod tests {
 
     #[test]
     fn back_to_back_reservations_do_not_leave_an_empty_gap_between_them() {
-        let usages = vec![
+        let slots = vec![
             reservation("a@example.com", vec![gpu(0)], 13, 15),
             reservation("b@example.com", vec![gpu(0)], 15, 17),
         ];
 
-        let availability = availability_of(&gpu(0), &usages);
+        let availability = availability_of(&gpu(0), &slots);
 
         assert_eq!(
             availability.free_periods(),
@@ -328,12 +327,12 @@ mod tests {
     #[test]
     fn overlapping_reservations_do_not_confuse_the_remaining_free_time() {
         // 既存の予約同士が重複している状況（人手でカレンダーを編集すると起こりうる）
-        let usages = vec![
+        let slots = vec![
             reservation("a@example.com", vec![gpu(0)], 13, 18),
             reservation("b@example.com", vec![gpu(0)], 15, 17),
         ];
 
-        let availability = availability_of(&gpu(0), &usages);
+        let availability = availability_of(&gpu(0), &slots);
 
         assert_eq!(
             availability.free_periods(),
@@ -347,9 +346,9 @@ mod tests {
 
     #[test]
     fn a_reservation_running_past_the_window_is_clipped_to_it() {
-        let usages = vec![reservation("owner@example.com", vec![gpu(0)], 6, 12)];
+        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 6, 12)];
 
-        let availability = availability_of(&gpu(0), &usages);
+        let availability = availability_of(&gpu(0), &slots);
 
         assert_eq!(
             availability.busy_periods()[0].period(),
@@ -360,9 +359,9 @@ mod tests {
 
     #[test]
     fn reservations_of_other_resources_are_ignored() {
-        let usages = vec![reservation("owner@example.com", vec![gpu(1)], 13, 17)];
+        let slots = vec![reservation("holder@example.com", vec![gpu(1)], 13, 17)];
 
-        let availability = availability_of(&gpu(0), &usages);
+        let availability = availability_of(&gpu(0), &slots);
 
         assert!(
             availability.is_entirely_free(),
@@ -372,14 +371,14 @@ mod tests {
 
     #[test]
     fn a_reservation_holding_several_resources_occupies_each_of_them() {
-        let usages = vec![reservation(
-            "owner@example.com",
+        let slots = vec![reservation(
+            "holder@example.com",
             vec![gpu(0), gpu(1), gpu(2)],
             13,
             17,
         )];
 
-        let availabilities = calculate(&[gpu(0), gpu(1), gpu(2)], &window(), &usages);
+        let availabilities = calculate(&[gpu(0), gpu(1), gpu(2)], &window(), &slots);
 
         for availability in &availabilities {
             assert_eq!(
@@ -393,21 +392,21 @@ mod tests {
 
     #[test]
     fn the_state_during_a_reservation_names_who_holds_it() {
-        let usages = vec![reservation("owner@example.com", vec![gpu(0)], 13, 17)];
-        let availability = availability_of(&gpu(0), &usages);
+        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 13, 17)];
+        let availability = availability_of(&gpu(0), &slots);
 
         let AvailabilityState::Busy(busy) = availability.state_at(at(14)) else {
             panic!("予約の最中は使用中のはず");
         };
 
-        assert_eq!(busy.holder_email().as_str(), "owner@example.com");
+        assert_eq!(busy.holder_email().as_str(), "holder@example.com");
         assert_eq!(busy.period().end(), at(17));
     }
 
     #[test]
     fn the_state_when_free_tells_when_the_next_reservation_starts() {
-        let usages = vec![reservation("owner@example.com", vec![gpu(0)], 13, 17)];
-        let availability = availability_of(&gpu(0), &usages);
+        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 13, 17)];
+        let availability = availability_of(&gpu(0), &slots);
 
         let AvailabilityState::Free { until } = availability.state_at(at(10)) else {
             panic!("予約の前は空いているはず");
@@ -422,8 +421,8 @@ mod tests {
 
     #[test]
     fn whether_a_resource_is_free_follows_the_reservations() {
-        let usages = vec![reservation("owner@example.com", vec![gpu(0)], 13, 17)];
-        let availability = availability_of(&gpu(0), &usages);
+        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 13, 17)];
+        let availability = availability_of(&gpu(0), &slots);
 
         assert!(availability.is_free_at(at(10)), "予約の前は空いている");
         assert!(
@@ -435,8 +434,8 @@ mod tests {
 
     #[test]
     fn the_state_at_the_end_of_a_reservation_is_already_free() {
-        let usages = vec![reservation("owner@example.com", vec![gpu(0)], 13, 17)];
-        let availability = availability_of(&gpu(0), &usages);
+        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 13, 17)];
+        let availability = availability_of(&gpu(0), &slots);
 
         assert!(
             matches!(
@@ -460,8 +459,8 @@ mod tests {
 
     #[test]
     fn a_busy_resource_reports_when_it_frees_up() {
-        let usages = vec![reservation("owner@example.com", vec![gpu(0)], 9, 17)];
-        let availability = availability_of(&gpu(0), &usages);
+        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 9, 17)];
+        let availability = availability_of(&gpu(0), &slots);
 
         assert_eq!(availability.next_free_at(at(10)), Some(at(17)));
     }
@@ -479,11 +478,11 @@ mod tests {
 
     #[test]
     fn a_resource_free_between_two_reservations_is_usable_right_now() {
-        let usages = vec![
+        let slots = vec![
             reservation("a@example.com", vec![gpu(0)], 13, 15),
             reservation("b@example.com", vec![gpu(0)], 17, 19),
         ];
-        let availability = availability_of(&gpu(0), &usages);
+        let availability = availability_of(&gpu(0), &slots);
 
         assert_eq!(
             availability.next_free_at(at(10)),
@@ -494,11 +493,11 @@ mod tests {
 
     #[test]
     fn a_busy_resource_reports_the_first_gap_not_a_later_one() {
-        let usages = vec![
+        let slots = vec![
             reservation("a@example.com", vec![gpu(0)], 9, 13),
             reservation("b@example.com", vec![gpu(0)], 15, 17),
         ];
-        let availability = availability_of(&gpu(0), &usages);
+        let availability = availability_of(&gpu(0), &slots);
 
         assert_eq!(
             availability.next_free_at(at(10)),
@@ -509,8 +508,8 @@ mod tests {
 
     #[test]
     fn a_resource_booked_to_the_end_of_the_window_never_frees_up() {
-        let usages = vec![reservation("owner@example.com", vec![gpu(0)], 9, 21)];
-        let availability = availability_of(&gpu(0), &usages);
+        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 9, 21)];
+        let availability = availability_of(&gpu(0), &slots);
 
         assert_eq!(
             availability.next_free_at(at(10)),
@@ -536,7 +535,7 @@ mod tests {
     fn a_reservation_that_ends_before_the_window_does_not_appear() {
         let window = TimePeriod::new(at(9), at(21)).unwrap();
         let past = ReservedSlot::new(
-            EmailAddress::new("owner@example.com".to_string()).unwrap(),
+            EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(at(9) - Duration::hours(3), at(9)).unwrap(),
             vec![gpu(0)],
             None,

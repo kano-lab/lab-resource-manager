@@ -25,10 +25,10 @@ impl ResourceConflictChecker {
     /// リソース競合をチェック
     ///
     /// # Arguments
-    /// * `repository` - リソース使用リポジトリ
+    /// * `repository` - 予約リポジトリ
     /// * `time_period` - チェック対象の時間帯
     /// * `resources` - チェック対象のリソースリスト
-    /// * `exclude_usage_id` - チェックから除外するUsageID（更新時に自分自身を除外するため）
+    /// * `exclude_slot_id` - チェックから除外する予約枠ID（更新時に自分自身を除外するため）
     ///
     /// # Returns
     /// 競合がない場合はOk(())、競合がある場合はエラー。
@@ -47,7 +47,7 @@ impl ResourceConflictChecker {
         repository: &R,
         time_period: &TimePeriod,
         resources: &[Resource],
-        exclude_usage_id: Option<&ReservedSlotId>,
+        exclude_slot_id: Option<&ReservedSlotId>,
     ) -> Result<(), ConflictCheckError> {
         // 指定期間と重複する予約を検索
         let overlapping = repository.find_slots_overlapping(time_period).await?;
@@ -59,29 +59,29 @@ impl ResourceConflictChecker {
         let mut position_of: HashMap<ReservedSlotId, usize> = HashMap::new();
 
         for new_resource in resources {
-            for existing_usage in &overlapping {
+            for existing_slot in &overlapping {
                 // 除外対象の場合はスキップ
-                if let Some(exclude_id) = exclude_usage_id
-                    && existing_usage.id() == exclude_id
+                if let Some(exclude_id) = exclude_slot_id
+                    && existing_slot.id() == exclude_id
                 {
                     continue;
                 }
 
-                let conflicts_with_this_usage = existing_usage
+                let conflicts_with_this_slot = existing_slot
                     .resources()
                     .iter()
                     .any(|existing_resource| new_resource.conflicts_with(existing_resource));
 
-                if conflicts_with_this_usage {
-                    match position_of.get(existing_usage.id()) {
+                if conflicts_with_this_slot {
+                    match position_of.get(existing_slot.id()) {
                         Some(&position) => {
                             conflicts[position].resources.push(new_resource.clone());
                         }
                         None => {
-                            position_of.insert(existing_usage.id().clone(), conflicts.len());
+                            position_of.insert(existing_slot.id().clone(), conflicts.len());
                             conflicts.push(ResourceConflictError::new(
                                 vec![new_resource.clone()],
-                                existing_usage.clone(),
+                                existing_slot.clone(),
                             ));
                         }
                     }
@@ -166,9 +166,9 @@ mod tests {
         TimePeriod::new(start, end).unwrap()
     }
 
-    fn usage_with(owner: &str, resources: Vec<Resource>) -> ReservedSlot {
+    fn slot_with(holder: &str, resources: Vec<Resource>) -> ReservedSlot {
         ReservedSlot::new(
-            EmailAddress::new(owner.to_string()).unwrap(),
+            EmailAddress::new(holder.to_string()).unwrap(),
             test_period(),
             resources,
             None,
@@ -178,7 +178,7 @@ mod tests {
 
     #[tokio::test]
     async fn collects_all_conflicting_resources_not_just_the_first() {
-        let alice_usage = usage_with(
+        let alice_slot = slot_with(
             "alice@example.com",
             vec![Resource::Gpu(Gpu::new(
                 "Thalys".to_string(),
@@ -186,7 +186,7 @@ mod tests {
                 "A100".to_string(),
             ))],
         );
-        let bob_usage = usage_with(
+        let bob_slot = slot_with(
             "bob@example.com",
             vec![Resource::Gpu(Gpu::new(
                 "Thalys".to_string(),
@@ -195,7 +195,7 @@ mod tests {
             ))],
         );
         let repository = StubRepository {
-            overlapping: vec![alice_usage, bob_usage],
+            overlapping: vec![alice_slot, bob_slot],
         };
 
         // GPU:0(alice)とGPU:1(bob)の両方をまとめて予約しようとして、両方競合する
@@ -215,17 +215,17 @@ mod tests {
 
         // 最初の1件で打ち切らず、両方の競合が報告される
         assert_eq!(conflicts.len(), 2);
-        let owners: Vec<&str> = conflicts
+        let holders: Vec<&str> = conflicts
             .iter()
-            .map(|c| c.existing_usage.holder_email().as_str())
+            .map(|c| c.existing_slot.holder_email().as_str())
             .collect();
-        assert!(owners.contains(&"alice@example.com"));
-        assert!(owners.contains(&"bob@example.com"));
+        assert!(holders.contains(&"alice@example.com"));
+        assert!(holders.contains(&"bob@example.com"));
     }
 
     #[tokio::test]
     async fn no_conflict_when_resources_are_disjoint() {
-        let alice_usage = usage_with(
+        let alice_slot = slot_with(
             "alice@example.com",
             vec![Resource::Gpu(Gpu::new(
                 "Thalys".to_string(),
@@ -234,7 +234,7 @@ mod tests {
             ))],
         );
         let repository = StubRepository {
-            overlapping: vec![alice_usage],
+            overlapping: vec![alice_slot],
         };
 
         let requested = vec![Resource::Gpu(Gpu::new(
@@ -253,7 +253,7 @@ mod tests {
     #[tokio::test]
     async fn conflicts_with_one_reservation_are_reported_as_a_single_entry() {
         // ひとつの予約が3枚を押さえていて、その3枚をまとめて予約しようとする
-        let existing = usage_with(
+        let existing = slot_with(
             "alice@example.com",
             vec![
                 Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string())),
@@ -298,8 +298,8 @@ mod tests {
         let gpu0 = || Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
         let repository = StubRepository {
             overlapping: vec![
-                usage_with("alice@example.com", vec![gpu0()]),
-                usage_with("bob@example.com", vec![gpu0()]),
+                slot_with("alice@example.com", vec![gpu0()]),
+                slot_with("bob@example.com", vec![gpu0()]),
             ],
         };
 
@@ -318,11 +318,11 @@ mod tests {
             2,
             "ひとつのリソースが複数の予約と競合するなら、その全てを知らせるべき"
         );
-        let owners: Vec<&str> = conflicts
+        let holders: Vec<&str> = conflicts
             .iter()
-            .map(|c| c.existing_usage.holder_email().as_str())
+            .map(|c| c.existing_slot.holder_email().as_str())
             .collect();
-        assert!(owners.contains(&"alice@example.com"));
-        assert!(owners.contains(&"bob@example.com"));
+        assert!(holders.contains(&"alice@example.com"));
+        assert!(holders.contains(&"bob@example.com"));
     }
 }

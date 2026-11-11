@@ -39,13 +39,13 @@ fn email(address: &str) -> EmailAddress {
 }
 
 fn reservation(
-    owner: &str,
+    holder: &str,
     resources: Vec<Resource>,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
 ) -> ReservedSlot {
     ReservedSlot::new(
-        email(owner),
+        email(holder),
         TimePeriod::new(from, to).unwrap(),
         resources,
         None,
@@ -53,8 +53,8 @@ fn reservation(
     .unwrap()
 }
 
-fn availabilities(resources: &[Resource], usages: &[ReservedSlot]) -> Vec<ResourceAvailability> {
-    calculate(resources, &window(), usages)
+fn availabilities(resources: &[Resource], slots: &[ReservedSlot]) -> Vec<ResourceAvailability> {
+    calculate(resources, &window(), slots)
 }
 
 fn no_displays() -> HashMap<EmailAddress, String> {
@@ -101,14 +101,14 @@ fn context_element_text(element: &SlackContextBlockElement) -> String {
 #[test]
 fn the_headline_counts_what_is_free_right_now() {
     let resources = vec![gpu("gpu-server-1", 0), gpu("gpu-server-1", 1)];
-    let usages = vec![reservation(
+    let slots = vec![reservation(
         "sato@example.com",
         vec![gpu("gpu-server-1", 1)],
         jst(1, 10),
         jst(1, 18),
     )];
 
-    let headline = headline(&availabilities(&resources, &usages), now());
+    let headline = headline(&availabilities(&resources, &slots), now());
 
     assert_eq!(headline, "いま GPU 1台 が空いています");
 }
@@ -128,14 +128,14 @@ fn the_headline_counts_gpus_and_rooms_separately() {
 #[test]
 fn the_headline_omits_a_kind_that_has_nothing_free() {
     let resources = vec![gpu("gpu-server-1", 0), room("Meeting Room A")];
-    let usages = vec![reservation(
+    let slots = vec![reservation(
         "sato@example.com",
         vec![room("Meeting Room A")],
         jst(1, 10),
         jst(1, 16),
     )];
 
-    let headline = headline(&availabilities(&resources, &usages), now());
+    let headline = headline(&availabilities(&resources, &slots), now());
 
     assert_eq!(
         headline, "いま GPU 1台 が空いています",
@@ -146,14 +146,14 @@ fn the_headline_omits_a_kind_that_has_nothing_free() {
 #[test]
 fn a_fully_booked_lab_says_so_instead_of_counting_zero() {
     let resources = vec![gpu("gpu-server-1", 0)];
-    let usages = vec![reservation(
+    let slots = vec![reservation(
         "sato@example.com",
         vec![gpu("gpu-server-1", 0)],
         jst(1, 10),
         jst(1, 18),
     )];
 
-    let headline = headline(&availabilities(&resources, &usages), now());
+    let headline = headline(&availabilities(&resources, &slots), now());
 
     assert_eq!(headline, "いま空いているリソースはありません");
 }
@@ -161,7 +161,7 @@ fn a_fully_booked_lab_says_so_instead_of_counting_zero() {
 #[test]
 fn a_fully_booked_lab_is_told_when_something_frees_up() {
     let resources = vec![gpu("gpu-server-1", 0), gpu("gpu-server-1", 1)];
-    let usages = vec![
+    let slots = vec![
         reservation(
             "sato@example.com",
             vec![gpu("gpu-server-1", 0)],
@@ -176,7 +176,7 @@ fn a_fully_booked_lab_is_told_when_something_frees_up() {
         ),
     ];
 
-    let line = earliest_free_line(&availabilities(&resources, &usages), now(), TOKYO).unwrap();
+    let line = earliest_free_line(&availabilities(&resources, &slots), now(), TOKYO).unwrap();
 
     assert!(
         line.contains("16:00"),
@@ -204,7 +204,7 @@ fn a_reservation_holding_several_gpus_takes_one_line() {
         gpu("gpu-server-1", 1),
         gpu("gpu-server-1", 2),
     ];
-    let usages = vec![reservation(
+    let slots = vec![reservation(
         "sato@example.com",
         vec![gpu("gpu-server-1", 1), gpu("gpu-server-1", 2)],
         jst(1, 10),
@@ -212,7 +212,7 @@ fn a_reservation_holding_several_gpus_takes_one_line() {
     )];
 
     let lines = ongoing_gpu_lines(
-        &availabilities(&resources, &usages),
+        &availabilities(&resources, &slots),
         now(),
         TOKYO,
         &no_displays(),
@@ -233,7 +233,7 @@ fn a_reservation_holding_several_gpus_takes_one_line() {
 #[test]
 fn separate_reservations_take_separate_lines() {
     let resources = vec![gpu("gpu-server-1", 0), gpu("gpu-server-1", 1)];
-    let usages = vec![
+    let slots = vec![
         reservation(
             "sato@example.com",
             vec![gpu("gpu-server-1", 0)],
@@ -249,7 +249,7 @@ fn separate_reservations_take_separate_lines() {
     ];
 
     let lines = ongoing_gpu_lines(
-        &availabilities(&resources, &usages),
+        &availabilities(&resources, &slots),
         now(),
         TOKYO,
         &no_displays(),
@@ -264,7 +264,7 @@ fn separate_reservations_take_separate_lines() {
 #[test]
 fn a_reserver_is_shown_by_their_display_name_when_it_is_known() {
     let resources = vec![gpu("gpu-server-1", 0)];
-    let usages = vec![reservation(
+    let slots = vec![reservation(
         "sato@example.com",
         vec![gpu("gpu-server-1", 0)],
         jst(1, 10),
@@ -272,13 +272,8 @@ fn a_reserver_is_shown_by_their_display_name_when_it_is_known() {
     )];
     let displays = HashMap::from([(email("sato@example.com"), "<@U01SATO>".to_string())]);
 
-    let lines = ongoing_gpu_lines(
-        &availabilities(&resources, &usages),
-        now(),
-        TOKYO,
-        &displays,
-    )
-    .unwrap();
+    let lines =
+        ongoing_gpu_lines(&availabilities(&resources, &slots), now(), TOKYO, &displays).unwrap();
 
     assert!(lines.contains("<@U01SATO>"), "{lines}");
     assert!(
@@ -319,7 +314,7 @@ fn a_free_room_is_listed_without_a_reserver() {
 #[test]
 fn a_busy_room_carries_its_reserver_and_end_time_on_the_same_line() {
     let resources = vec![room("Meeting Room A")];
-    let usages = vec![reservation(
+    let slots = vec![reservation(
         "sato@example.com",
         vec![room("Meeting Room A")],
         jst(1, 10),
@@ -327,7 +322,7 @@ fn a_busy_room_carries_its_reserver_and_end_time_on_the_same_line() {
     )];
 
     let lines = room_lines(
-        &availabilities(&resources, &usages),
+        &availabilities(&resources, &slots),
         now(),
         TOKYO,
         &no_displays(),
@@ -378,7 +373,7 @@ fn the_message_answers_before_it_details() {
         gpu("gpu-server-1", 1),
         room("Meeting Room A"),
     ];
-    let usages = vec![reservation(
+    let slots = vec![reservation(
         "sato@example.com",
         vec![gpu("gpu-server-1", 1)],
         jst(1, 10),
@@ -386,7 +381,7 @@ fn the_message_answers_before_it_details() {
     )];
 
     let content = build(
-        &availabilities(&resources, &usages),
+        &availabilities(&resources, &slots),
         now(),
         TOKYO,
         &no_displays(),

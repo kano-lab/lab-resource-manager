@@ -39,14 +39,14 @@ where
     let window = TimePeriod::new(now, now + Duration::days(LOOKAHEAD_DAYS))?;
 
     let availabilities = availabilities_in(app, &window).await?;
-    let owner_displays =
-        resolve_owner_displays(&availabilities, now, &app.repositories().identity_link).await;
+    let holder_displays =
+        resolve_holder_displays(&availabilities, now, &app.repositories().identity_link).await;
 
     Ok(availability_message::build(
         &availabilities,
         now,
         timezone.as_deref(),
-        &owner_displays,
+        &holder_displays,
         &day_options(now, timezone.as_deref()),
     ))
 }
@@ -120,25 +120,25 @@ fn day_window(date: NaiveDate, now: DateTime<Utc>, timezone: Option<&str>) -> Op
 /// いま使用中の予約について、予約者の表示名を解決する
 ///
 /// 解決できなかった予約者は結果に含めない（ビューがメールアドレスで表示する）。
-pub async fn resolve_owner_displays(
+pub async fn resolve_holder_displays(
     availabilities: &[ResourceAvailability],
     now: DateTime<Utc>,
     identity_repo: &Arc<dyn IdentityLinkRepository>,
 ) -> HashMap<EmailAddress, String> {
-    let mut owners: Vec<EmailAddress> = Vec::new();
+    let mut holders: Vec<EmailAddress> = Vec::new();
 
     for availability in availabilities {
         if let AvailabilityState::Busy(busy) = availability.state_at(now)
-            && !owners.contains(busy.holder_email())
+            && !holders.contains(busy.holder_email())
         {
-            owners.push(busy.holder_email().clone());
+            holders.push(busy.holder_email().clone());
         }
     }
 
-    let mut displays = HashMap::with_capacity(owners.len());
-    for owner in owners {
-        let display = user_resolver::resolve_display_name(&owner, identity_repo).await;
-        displays.insert(owner, display);
+    let mut displays = HashMap::with_capacity(holders.len());
+    for holder in holders {
+        let display = user_resolver::resolve_display_name(&holder, identity_repo).await;
+        displays.insert(holder, display);
     }
 
     displays

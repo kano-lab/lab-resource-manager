@@ -8,7 +8,7 @@ use crate::domain::services::{
 use std::sync::Arc;
 use tracing::info;
 
-/// リソース使用予定を更新するユースケース
+/// 予約枠を更新するユースケース
 pub struct UpdateSlotUseCase<R: ReservationRepository> {
     repository: Arc<R>,
     authorization_policy: ReservationAuthorizationPolicy,
@@ -19,7 +19,7 @@ impl<R: ReservationRepository> UpdateSlotUseCase<R> {
     /// 新しいUpdateSlotUseCaseインスタンスを作成
     ///
     /// # Arguments
-    /// * `repository` - ReservedSlotリポジトリ
+    /// * `repository` - 予約リポジトリ
     pub fn new(repository: Arc<R>) -> Self {
         let authorization_policy = ReservationAuthorizationPolicy::new();
         let conflict_checker = ResourceConflictChecker::new();
@@ -30,11 +30,11 @@ impl<R: ReservationRepository> UpdateSlotUseCase<R> {
         }
     }
 
-    /// リソース使用予定を更新
+    /// 予約枠を更新
     ///
     /// # Arguments
-    /// * `id` - 使用予定ID
-    /// * `holder_email` - 所有者のメールアドレス（権限チェック用）
+    /// * `id` - 予約枠ID
+    /// * `holder_email` - 予約者のメールアドレス（権限チェック用）
     /// * `new_time_period` - 新しい使用期間（Noneの場合は変更なし）
     /// * `new_notes` - 新しい備考（Noneの場合は変更なし）
     ///
@@ -43,7 +43,7 @@ impl<R: ReservationRepository> UpdateSlotUseCase<R> {
     ///
     /// # Errors
     /// - 指定されたIDの予約が見つからない場合
-    /// - 所有者が一致しない場合
+    /// - 予約者が一致しない場合
     /// - 新しい時間枠が競合する場合
     /// - リポジトリエラー
     pub async fn execute(
@@ -54,7 +54,7 @@ impl<R: ReservationRepository> UpdateSlotUseCase<R> {
         new_notes: Option<String>,
     ) -> Result<(), ApplicationError> {
         // 既存の予約を取得
-        let mut usage = self
+        let mut slot = self
             .repository
             .find_slot(id)
             .await?
@@ -62,7 +62,7 @@ impl<R: ReservationRepository> UpdateSlotUseCase<R> {
 
         // 認可チェック
         self.authorization_policy
-            .authorize_update(holder_email, &usage)
+            .authorize_update(holder_email, &slot)
             .map_err(|e| ApplicationError::Unauthorized(e.to_string()))?;
 
         // 時間枠の更新と競合チェック
@@ -72,27 +72,27 @@ impl<R: ReservationRepository> UpdateSlotUseCase<R> {
                 .check_conflicts(
                     self.repository.as_ref(),
                     &new_period,
-                    usage.resources(),
-                    Some(usage.id()),
+                    slot.resources(),
+                    Some(slot.id()),
                 )
                 .await?;
 
-            usage.update_time_period(new_period);
+            slot.update_time_period(new_period);
         }
 
         // 備考の更新
         if let Some(notes) = new_notes {
-            usage.update_notes(notes);
+            slot.update_notes(notes);
         }
 
         // 更新
-        self.repository.save_slot(&usage).await?;
+        self.repository.save_slot(&slot).await?;
 
         info!(
-            usage_id = %usage.id().as_str(),
-            owner = %usage.holder_email().as_str(),
-            start = %usage.time_period().start(),
-            end = %usage.time_period().end(),
+            slot_id = %slot.id().as_str(),
+            holder = %slot.holder_email().as_str(),
+            start = %slot.time_period().start(),
+            end = %slot.time_period().end(),
             "reservation updated"
         );
 

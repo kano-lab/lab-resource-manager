@@ -11,7 +11,7 @@ use crate::application::usecases::{
     ListSlotsHeldByUseCase, ListSlotsUseCase, UpdateSlotUseCase,
 };
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, TimePeriod};
-use crate::domain::aggregates::reservation::{ReservationId, ReservedSlotId};
+use crate::domain::aggregates::reservation::{ReservationId, ReservationKind, ReservedSlotId};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::infrastructure::config::ResourceConfig;
@@ -407,7 +407,14 @@ where
         let id = ReservedSlotId::from_string(params.id);
 
         match self.usecases.cancel_slot.execute(&id, &caller).await {
-            Ok(()) => Ok(success_text("予約枠を取り消しました")),
+            Ok(cancelled) => Ok(success_text(match cancelled.reservation_kind() {
+                ReservationKind::OneTime => {
+                    "予約枠を取り消しました（単発予約なので予約も無くなりました）"
+                }
+                ReservationKind::Recurring => {
+                    "予約枠を取り消しました（定期予約と他の予約枠は残っています）"
+                }
+            })),
             Err(e) => Ok(tool_error(e)),
         }
     }

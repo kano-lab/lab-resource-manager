@@ -268,7 +268,7 @@ async fn find_overlapping_includes_reservation_that_already_ended() {
     let existing = reservation_event(
         "already-ended",
         "0",
-        "owner@example.com",
+        "holder@example.com",
         now - Duration::hours(5),
         now - Duration::hours(3),
     );
@@ -318,7 +318,7 @@ async fn find_overlapping_ignores_cancelled_events() {
     let mut cancelled = reservation_event(
         "cancelled-event",
         "0",
-        "owner@example.com",
+        "holder@example.com",
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
@@ -342,14 +342,14 @@ async fn find_overlapping_skips_unparsable_events_but_keeps_the_rest() {
     let unparsable = reservation_event(
         "unparsable",
         "実験中",
-        "owner@example.com",
+        "holder@example.com",
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
     let valid = reservation_event(
         "valid",
         "1",
-        "owner@example.com",
+        "holder@example.com",
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
@@ -372,7 +372,7 @@ async fn a_window_starting_now_excludes_reservations_that_already_ended() {
     let ended = reservation_event(
         "already-ended",
         "0",
-        "owner@example.com",
+        "holder@example.com",
         now - Duration::hours(5),
         now - Duration::hours(3),
     );
@@ -390,7 +390,7 @@ async fn a_window_starting_now_keeps_an_ongoing_reservation() {
     let ongoing = reservation_event(
         "ongoing",
         "0",
-        "owner@example.com",
+        "holder@example.com",
         now - Duration::hours(5),
         now + Duration::hours(1),
     );
@@ -500,11 +500,11 @@ fn repository_with_identities(
     (repository, gateway)
 }
 
-fn gpu_usage(owner: &str, device_number: u32) -> ReservedSlot {
+fn gpu_usage(holder: &str, device_number: u32) -> ReservedSlot {
     use crate::domain::aggregates::reservation::value_objects::Gpu;
     let now = Utc::now();
     ReservedSlot::new(
-        crate::domain::common::EmailAddress::new(owner.to_string()).unwrap(),
+        crate::domain::common::EmailAddress::new(holder.to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(Gpu::new(
             "Thalys".to_string(),
@@ -520,13 +520,13 @@ fn gpu_usage(owner: &str, device_number: u32) -> ReservedSlot {
 async fn description_includes_the_os_user_name_for_the_reserved_server() {
     let (repository, _gateway) =
         repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
-            "owner@example.com",
+            "holder@example.com",
             "Thalys",
             "kkawaguchi",
         ));
-    let usage = gpu_usage("owner@example.com", 0);
+    let slot = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&usage).await;
+    let description = repository.build_description(&slot).await;
 
     assert!(
         description.contains("OS: kkawaguchi"),
@@ -537,12 +537,12 @@ async fn description_includes_the_os_user_name_for_the_reserved_server() {
 #[tokio::test]
 async fn description_includes_the_reservation_id() {
     let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let usage = gpu_usage("owner@example.com", 0);
+    let slot = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&usage).await;
+    let description = repository.build_description(&slot).await;
 
     assert!(
-        description.contains(usage.id().as_str()),
+        description.contains(slot.id().as_str()),
         "予約IDが入るべき: {description}"
     );
 }
@@ -550,9 +550,9 @@ async fn description_includes_the_reservation_id() {
 #[tokio::test]
 async fn description_omits_the_os_line_when_no_link_exists() {
     let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let usage = gpu_usage("unlinked@example.com", 0);
+    let slot = gpu_usage("unlinked@example.com", 0);
 
-    let description = repository.build_description(&usage).await;
+    let description = repository.build_description(&slot).await;
 
     assert!(
         !description.contains("OS:"),
@@ -569,12 +569,12 @@ async fn description_uses_the_os_name_of_the_server_being_reserved() {
     // 同じ利用者がサーバーごとに別のOSユーザー名を持つ場合、予約したサーバーの名前を使う
     let (repository, _gateway) = repository_with_identities(
         StubIdentityLinkRepository::default()
-            .with_os_user("owner@example.com", "Thalys", "kkawaguchi")
-            .with_os_user("owner@example.com", "Freccia", "kinji"),
+            .with_os_user("holder@example.com", "Thalys", "kkawaguchi")
+            .with_os_user("holder@example.com", "Freccia", "kinji"),
     );
-    let usage = gpu_usage("owner@example.com", 0);
+    let slot = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&usage).await;
+    let description = repository.build_description(&slot).await;
 
     assert!(description.contains("OS: kkawaguchi"), "{description}");
     assert!(!description.contains("kinji"), "{description}");
@@ -584,13 +584,13 @@ async fn description_uses_the_os_name_of_the_server_being_reserved() {
 async fn added_metadata_lines_do_not_leak_into_notes() {
     let (repository, _gateway) =
         repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
-            "owner@example.com",
+            "holder@example.com",
             "Thalys",
             "kkawaguchi",
         ));
     let now = Utc::now();
-    let usage = ReservedSlot::new(
-        crate::domain::common::EmailAddress::new("owner@example.com".to_string()).unwrap(),
+    let slot = ReservedSlot::new(
+        crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(
             crate::domain::aggregates::reservation::value_objects::Gpu::new(
@@ -604,22 +604,22 @@ async fn added_metadata_lines_do_not_leak_into_notes() {
     .unwrap();
 
     // 生成したdescriptionを読み戻したとき、管理セクションの行が備考に混ざらないこと
-    let description = repository.build_description(&usage).await;
+    let description = repository.build_description(&slot).await;
     let notes = GoogleCalendarReservationRepository::extract_notes(&description);
 
     assert_eq!(notes.as_deref(), Some("killしても大丈夫です"));
 }
 
 /// 旧バージョンが書いたdescription（管理セクション内は予約者行のみ）
-fn legacy_description_with_markers(owner: &str, notes: &str) -> String {
+fn legacy_description_with_markers(holder: &str, notes: &str) -> String {
     format!(
-        "[lab-resource-manager:managed-section:begin]\n予約者: {owner}\n[lab-resource-manager:managed-section:end]\n\n{notes}"
+        "[lab-resource-manager:managed-section:begin]\n予約者: {holder}\n[lab-resource-manager:managed-section:end]\n\n{notes}"
     )
 }
 
 /// マーカーが導入される前のdescription（1行目が予約者行）
-fn legacy_description_without_markers(owner: &str, notes: &str) -> String {
-    format!("予約者: {owner}\n{notes}")
+fn legacy_description_without_markers(holder: &str, notes: &str) -> String {
+    format!("予約者: {holder}\n{notes}")
 }
 
 #[tokio::test]
@@ -677,13 +677,13 @@ async fn reads_reservations_written_before_markers_existed() {
 async fn newly_written_description_round_trips() {
     let (repository, _gateway) =
         repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
-            "owner@example.com",
+            "holder@example.com",
             "Thalys",
             "kkawaguchi",
         ));
     let now = Utc::now();
-    let usage = ReservedSlot::new(
-        crate::domain::common::EmailAddress::new("owner@example.com".to_string()).unwrap(),
+    let slot = ReservedSlot::new(
+        crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(
             crate::domain::aggregates::reservation::value_objects::Gpu::new(
@@ -697,13 +697,13 @@ async fn newly_written_description_round_trips() {
     .unwrap();
 
     // 新形式で書いたdescriptionから、予約者と備考が元の値として読み戻せること
-    let description = repository.build_description(&usage).await;
+    let description = repository.build_description(&slot).await;
 
-    let owner = description
+    let holder = description
         .lines()
         .find_map(|line| line.strip_prefix("予約者: "))
         .expect("予約者行が読めるべき");
-    assert_eq!(owner, "owner@example.com");
+    assert_eq!(holder, "holder@example.com");
     assert_eq!(
         GoogleCalendarReservationRepository::extract_notes(&description).as_deref(),
         Some("実験中")
@@ -711,42 +711,42 @@ async fn newly_written_description_round_trips() {
 }
 
 #[tokio::test]
-async fn metadata_lines_are_not_mistaken_for_the_owner() {
+async fn metadata_lines_are_not_mistaken_for_the_holder() {
     // OS行や予約ID行が予約者として誤読されないこと（行の走査順に依存しない）
     let (repository, _gateway) =
         repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
-            "owner@example.com",
+            "holder@example.com",
             "Thalys",
             "kkawaguchi",
         ));
-    let usage = gpu_usage("owner@example.com", 0);
+    let slot = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&usage).await;
-    let owner_lines: Vec<&str> = description
+    let description = repository.build_description(&slot).await;
+    let holder_lines: Vec<&str> = description
         .lines()
         .filter_map(|line| line.strip_prefix("予約者: "))
         .collect();
 
     assert_eq!(
-        owner_lines,
-        vec!["owner@example.com"],
+        holder_lines,
+        vec!["holder@example.com"],
         "予約者行はちょうど1行であるべき: {description}"
     );
 }
 
 #[tokio::test]
-async fn saving_a_new_reservation_uses_an_event_id_derived_from_the_usage_id() {
+async fn saving_a_new_reservation_uses_an_event_id_derived_from_the_slot_id() {
     let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let usage = gpu_usage("owner@example.com", 0);
+    let slot = gpu_usage("holder@example.com", 0);
 
-    repository.save_slot(&usage).await.unwrap();
+    repository.save_slot(&slot).await.unwrap();
 
     let inserted = gateway.inserted();
     assert_eq!(inserted.len(), 1);
     let event_id = inserted[0].1.id.clone().expect("イベントIDを指定するべき");
     assert_eq!(
         event_id,
-        usage.id().as_str().replace('-', ""),
+        slot.id().as_str().replace('-', ""),
         "イベントIDは予約IDから導出されるべき"
     );
     assert!(
@@ -760,13 +760,13 @@ async fn saving_a_new_reservation_uses_an_event_id_derived_from_the_usage_id() {
 #[tokio::test]
 async fn a_saved_reservation_can_be_found_by_id_without_a_mapping_file() {
     let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let usage = gpu_usage("owner@example.com", 0);
+    let slot = gpu_usage("holder@example.com", 0);
 
-    repository.save_slot(&usage).await.unwrap();
-    let found = repository.find_slot(usage.id()).await.unwrap();
+    repository.save_slot(&slot).await.unwrap();
+    let found = repository.find_slot(slot.id()).await.unwrap();
 
     assert!(found.is_some(), "保存した予約はIDで引けるべき");
-    assert_eq!(found.unwrap().id(), usage.id());
+    assert_eq!(found.unwrap().id(), slot.id());
 }
 
 #[tokio::test]
@@ -775,7 +775,7 @@ async fn reading_an_event_without_a_mapping_uses_the_event_id_as_the_reservation
     let event = reservation_event(
         "someeventid1234",
         "0",
-        "owner@example.com",
+        "holder@example.com",
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
@@ -798,7 +798,7 @@ async fn reading_the_same_event_twice_yields_a_stable_reservation_id() {
     let event = reservation_event(
         "stableeventid99",
         "0",
-        "owner@example.com",
+        "holder@example.com",
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
@@ -818,20 +818,20 @@ async fn reading_the_same_event_twice_yields_a_stable_reservation_id() {
 #[tokio::test]
 async fn updating_a_saved_reservation_updates_the_event_instead_of_inserting_again() {
     let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let usage = gpu_usage("owner@example.com", 0);
-    repository.save_slot(&usage).await.unwrap();
+    let slot = gpu_usage("holder@example.com", 0);
+    repository.save_slot(&slot).await.unwrap();
 
     // 期間を変えて同じ予約を保存し直す
     let extended = ReservedSlot::reconstruct(
-        usage.id().clone(),
-        usage.holder_email().clone(),
+        slot.id().clone(),
+        slot.holder_email().clone(),
         TimePeriod::new(
-            usage.time_period().start(),
-            usage.time_period().start() + Duration::hours(6),
+            slot.time_period().start(),
+            slot.time_period().start() + Duration::hours(6),
         )
         .unwrap(),
-        usage.resources().to_vec(),
-        usage.notes().cloned(),
+        slot.resources().to_vec(),
+        slot.notes().cloned(),
     )
     .unwrap();
     repository.save_slot(&extended).await.unwrap();
@@ -845,7 +845,7 @@ async fn updating_a_saved_reservation_updates_the_event_instead_of_inserting_aga
     assert_eq!(updated.len(), 1, "更新として扱うべき");
     assert_eq!(
         updated[0].1,
-        usage.id().as_str().replace('-', ""),
+        slot.id().as_str().replace('-', ""),
         "同じイベントIDを更新するべき"
     );
 }
@@ -855,7 +855,7 @@ fn weekly_series_event(series_id: &str, first_start: DateTime<Utc>) -> Event {
     let mut event = reservation_event(
         series_id,
         "0",
-        "owner@example.com",
+        "holder@example.com",
         first_start,
         first_start + Duration::hours(2),
     );
@@ -868,7 +868,7 @@ fn occurrence_event(series_id: &str, start: DateTime<Utc>) -> Event {
     let mut event = reservation_event(
         &format!("{series_id}_{}", start.format("%Y%m%dT%H%M%SZ")),
         "0",
-        "owner@example.com",
+        "holder@example.com",
         start,
         start + Duration::hours(2),
     );
@@ -885,7 +885,7 @@ async fn slots_of_a_recurring_event_point_at_their_recurring_reservation() {
         reservation_event(
             "single",
             "1",
-            "owner@example.com",
+            "holder@example.com",
             now + Duration::days(2),
             now + Duration::days(2) + Duration::hours(1),
         ),
@@ -946,7 +946,7 @@ async fn a_recurring_reservation_is_read_from_the_recurring_event_itself() {
     let Reservation::Recurring(recurring) = reservation else {
         panic!("繰り返しの指定を持つイベントは定期予約: {reservation:?}");
     };
-    assert_eq!(recurring.holder_email().as_str(), "owner@example.com");
+    assert_eq!(recurring.holder_email().as_str(), "holder@example.com");
     assert_eq!(
         recurring.first_slot_period().start(),
         first_start,
@@ -978,7 +978,7 @@ async fn a_single_event_is_a_one_time_reservation() {
     let (repository, _gateway) = repository_with(vec![reservation_event(
         "single",
         "0",
-        "owner@example.com",
+        "holder@example.com",
         now,
         now + Duration::hours(1),
     )]);

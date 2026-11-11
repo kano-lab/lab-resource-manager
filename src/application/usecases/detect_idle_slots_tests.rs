@@ -93,10 +93,10 @@ fn gpu(device_number: u32) -> Resource {
     ))
 }
 
-fn reservation_of(owner: &str, resources: Vec<Resource>, ends_in: Duration) -> ReservedSlot {
+fn reservation_of(holder: &str, resources: Vec<Resource>, ends_in: Duration) -> ReservedSlot {
     let now = Utc::now();
     ReservedSlot::new(
-        EmailAddress::new(owner.to_string()).unwrap(),
+        EmailAddress::new(holder.to_string()).unwrap(),
         TimePeriod::new(now - Duration::hours(1), now + ends_in).unwrap(),
         resources,
         None,
@@ -177,13 +177,13 @@ fn unattributed_working_at(peak_utilization_percent: u32) -> ObservationSnapshot
 }
 
 #[tokio::test]
-async fn a_reservation_its_owner_is_using_is_left_alone() {
+async fn a_reservation_its_holder_is_using_is_left_alone() {
     let f = fixture(30);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
 
     f.observer.set_active_usages(vec![observed_by(
-        "owner-os",
+        "holder-os",
         gpu(0),
         Utc::now() - Duration::hours(1),
     )]);
@@ -196,7 +196,7 @@ async fn a_reservation_its_owner_is_using_is_left_alone() {
 #[tokio::test]
 async fn an_unused_reservation_is_reported_once_the_threshold_passes() {
     let f = fixture(0);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
 
@@ -204,13 +204,13 @@ async fn an_unused_reservation_is_reported_once_the_threshold_passes() {
 
     let notices = f.notifier.sent_notices();
     assert_eq!(notices.len(), 1);
-    assert_eq!(notices[0].reservation().id(), reservation.id());
+    assert_eq!(notices[0].slot().id(), reservation.id());
 }
 
 #[tokio::test]
-async fn the_owner_is_not_told_twice_about_the_same_reservation() {
+async fn the_holder_is_not_told_twice_about_the_same_reservation() {
     let f = fixture(0);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
 
@@ -224,7 +224,7 @@ async fn the_owner_is_not_told_twice_about_the_same_reservation() {
 #[tokio::test]
 async fn nothing_is_said_before_the_reservation_has_been_idle_long_enough() {
     let f = fixture(30);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
 
@@ -239,7 +239,7 @@ async fn nothing_is_said_before_the_reservation_has_been_idle_long_enough() {
 #[tokio::test]
 async fn a_server_that_cannot_be_observed_says_nothing_about_its_reservations() {
     let f = fixture(0);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
 
     // レポートが届かない（cron停止）サーバー
@@ -257,10 +257,10 @@ async fn a_server_that_cannot_be_observed_says_nothing_about_its_reservations() 
 }
 
 #[tokio::test]
-async fn an_owner_without_a_linked_os_username_is_still_told() {
+async fn an_holder_without_a_linked_os_username_is_still_told() {
     // OSユーザー名の紐付けは帰属の証拠であって、空き予約を見過ごす理由ではない
     let f = fixture(0);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
 
@@ -276,7 +276,7 @@ async fn an_owner_without_a_linked_os_username_is_still_told() {
 #[tokio::test]
 async fn someone_computing_on_the_reserved_gpu_keeps_it_quiet_whoever_they_are() {
     let f = fixture(0);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
 
     // 予約者に辿れない名義（コンテナ実行の予約者本人かもしれないし、他人かもしれない）
@@ -294,7 +294,7 @@ async fn someone_computing_on_the_reserved_gpu_keeps_it_quiet_whoever_they_are()
 async fn an_unattributed_workload_computing_on_the_gpu_keeps_the_reservation_quiet() {
     // Docker等のコンテナ実行では、プロセスの実UIDから人を辿れない
     let f = fixture(0);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
 
     f.observer.set_snapshot(unattributed_working_at(92));
@@ -310,7 +310,7 @@ async fn an_unattributed_workload_computing_on_the_gpu_keeps_the_reservation_qui
 #[tokio::test]
 async fn an_unattributed_allocation_without_computation_is_reported_as_held() {
     let f = fixture(0);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
 
     f.observer.set_snapshot(unattributed_working_at(1));
@@ -335,7 +335,7 @@ async fn an_unattributed_allocation_without_computation_is_reported_as_held() {
 async fn a_room_reservation_is_out_of_scope() {
     let f = fixture(0);
     let reservation = reservation_of(
-        "owner@example.com",
+        "holder@example.com",
         vec![Resource::Room {
             name: "会議室A".to_string(),
         }],
@@ -355,7 +355,7 @@ async fn a_room_reservation_is_out_of_scope() {
 #[tokio::test]
 async fn a_reservation_that_is_used_again_can_be_reported_again() {
     let f = fixture(0);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
 
     f.observer.set_snapshot(nobody_is_working());
@@ -364,7 +364,7 @@ async fn a_reservation_that_is_used_again_can_be_reported_again() {
 
     // 予約者が使い始めた
     f.observer.set_active_usages(vec![observed_by(
-        "owner-os",
+        "holder-os",
         gpu(0),
         Utc::now() - Duration::minutes(5),
     )]);
@@ -384,7 +384,7 @@ async fn a_reservation_that_is_used_again_can_be_reported_again() {
 #[tokio::test]
 async fn a_failed_notice_is_retried_on_the_next_pass() {
     let f = fixture(0);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
 
@@ -403,9 +403,9 @@ async fn a_failed_notice_is_retried_on_the_next_pass() {
 }
 
 #[tokio::test]
-async fn an_owner_who_cannot_be_reached_is_not_counted_as_a_delivery_failure() {
+async fn an_holder_who_cannot_be_reached_is_not_counted_as_a_delivery_failure() {
     let f = fixture(0);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
 
@@ -429,7 +429,7 @@ async fn an_owner_who_cannot_be_reached_is_not_counted_as_a_delivery_failure() {
 #[tokio::test]
 async fn a_silenced_reservation_stays_quiet() {
     let f = fixture(0);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
 
@@ -444,11 +444,11 @@ async fn a_silenced_reservation_stays_quiet() {
 #[tokio::test]
 async fn a_gpu_held_with_memory_but_no_computation_is_reported() {
     let f = fixture(0);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
 
     // vLLMのように、メモリは確保したまま計算が走っていない状態
-    f.observer.set_snapshot(working_at("owner-os", 1));
+    f.observer.set_snapshot(working_at("holder-os", 1));
 
     f.usecase.poll_once().await.unwrap();
 
@@ -474,7 +474,7 @@ async fn a_gpu_held_with_memory_but_no_computation_is_reported() {
 async fn a_gpu_left_at_rest_is_reported_even_while_another_one_is_computing() {
     let f = fixture(0);
     let reservation = reservation_of(
-        "owner@example.com",
+        "holder@example.com",
         vec![gpu(0), gpu(1)],
         Duration::hours(4),
     );
@@ -482,7 +482,7 @@ async fn a_gpu_left_at_rest_is_reported_even_while_another_one_is_computing() {
 
     // 2枚押さえて1枚しか回していない
     f.observer
-        .set_snapshot(working_on("owner-os", vec![(0, 90), (1, 0)]));
+        .set_snapshot(working_on("holder-os", vec![(0, 90), (1, 0)]));
 
     f.usecase.poll_once().await.unwrap();
 
@@ -499,14 +499,14 @@ async fn a_gpu_left_at_rest_is_reported_even_while_another_one_is_computing() {
 }
 
 #[tokio::test]
-async fn a_watched_criteria_counts_without_telling_the_owner() {
+async fn a_watched_criteria_counts_without_telling_the_holder() {
     let f = fixture_with(IdleCriteria {
         held_notices: NoticePolicy::Observe,
         ..criteria(0)
     });
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
-    f.observer.set_snapshot(working_at("owner-os", 1));
+    f.observer.set_snapshot(working_at("holder-os", 1));
 
     f.usecase.poll_once().await.unwrap();
 
@@ -517,12 +517,12 @@ async fn a_watched_criteria_counts_without_telling_the_owner() {
 }
 
 #[tokio::test]
-async fn a_watched_criteria_still_tells_the_owner_when_no_process_is_there() {
+async fn a_watched_criteria_still_tells_the_holder_when_no_process_is_there() {
     let f = fixture_with(IdleCriteria {
         held_notices: NoticePolicy::Observe,
         ..criteria(0)
     });
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
     f.observer.set_snapshot(nobody_is_working());
 
@@ -538,10 +538,10 @@ async fn a_watched_criteria_still_tells_the_owner_when_no_process_is_there() {
 #[tokio::test]
 async fn a_gpu_that_is_actually_computing_is_left_alone() {
     let f = fixture(0);
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
 
-    f.observer.set_snapshot(working_at("owner-os", 90));
+    f.observer.set_snapshot(working_at("holder-os", 90));
 
     f.usecase.poll_once().await.unwrap();
 
@@ -555,7 +555,7 @@ async fn a_gpu_taken_up_after_a_silent_stretch_is_given_its_own_grace_period() {
         held_threshold: Duration::minutes(30),
         ..criteria(0)
     });
-    let reservation = reservation_of("owner@example.com", vec![gpu(0)], Duration::hours(4));
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
     f.repository.save_slot(&reservation).await.unwrap();
 
     // プロセスが立っていないので、すぐに知らせる
@@ -565,7 +565,7 @@ async fn a_gpu_taken_up_after_a_silent_stretch_is_given_its_own_grace_period() {
 
     // 予約者が推論サーバーを立ち上げた（メモリは確保したが、まだ計算は走っていない）
     f.notices.resume(reservation.id());
-    f.observer.set_snapshot(working_at("owner-os", 0));
+    f.observer.set_snapshot(working_at("holder-os", 0));
     f.usecase.poll_once().await.unwrap();
 
     assert_eq!(

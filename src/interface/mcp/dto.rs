@@ -496,15 +496,15 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2026, 11, 12, 0, 0, 0).unwrap();
         let window = TimePeriod::new(start, start + Duration::hours(6)).unwrap();
         let gpu = Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
-        let usage = ReservedSlot::new(
-            EmailAddress::new("owner@example.com".to_string()).unwrap(),
+        let slot = ReservedSlot::new(
+            EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start + Duration::hours(1), start + Duration::hours(2)).unwrap(),
             vec![gpu.clone()],
             None,
         )
         .unwrap();
 
-        let calculated = availability::calculate(&[gpu], &window, std::slice::from_ref(&usage));
+        let calculated = availability::calculate(&[gpu], &window, std::slice::from_ref(&slot));
         let dto = ResourceAvailabilityDto::from(&calculated[0]);
 
         assert_eq!(dto.server.as_deref(), Some("Thalys"));
@@ -516,8 +516,8 @@ mod tests {
             vec![BusyPeriodDto {
                 start: start + Duration::hours(1),
                 end: start + Duration::hours(2),
-                slot_id: usage.id().as_str().to_string(),
-                holder_email: "owner@example.com".to_string(),
+                slot_id: slot.id().as_str().to_string(),
+                holder_email: "holder@example.com".to_string(),
             }]
         );
         assert_eq!(

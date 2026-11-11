@@ -1,6 +1,6 @@
-//! リソース使用予定に関するドメインサービス
+//! 予約枠に関するドメインサービス
 //!
-//! リソース使用予定（ReservedSlot）に関連するビジネスロジックを提供する。
+//! 予約枠（ReservedSlot）に関連するビジネスロジックを提供する。
 //!
 //! # 概要
 //!
@@ -12,7 +12,7 @@
 //! - `availability` - 対象期間における各リソースの空きを算出
 //! - `conflict_checker` - リソースの時間的競合をチェック
 //! - `errors` - サービス層のエラー型定義
-//! - `slot_activity` - 予約が予約者本人に使われているかの見立て
+//! - `slot_activity` - 予約枠が使われているかの見立て
 
 pub mod availability;
 pub mod conflict_checker;

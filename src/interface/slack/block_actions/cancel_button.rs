@@ -19,8 +19,8 @@ where
     R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
-    let Some(usage_id_str) = &action.value else {
-        error!("cancel button carried no usage id");
+    let Some(slot_id_str) = &action.value else {
+        error!("cancel button carried no slot id");
         return Ok(());
     };
 
@@ -29,7 +29,7 @@ where
         return Ok(());
     };
 
-    debug!(usage_id = %usage_id_str, "cancel requested");
+    debug!(slot_id = %slot_id_str, "cancel requested");
 
     // エフェメラルメッセージの宛先として、このユーザーが最後にいたチャンネルを控える
     let channel_id = interaction_reply::channel_id(block_actions);
@@ -41,34 +41,34 @@ where
     }
 
     // 依存性を取得
-    let delete_usage_usecase = &app.usecases().cancel_slot;
+    let cancel_slot_usecase = &app.usecases().cancel_slot;
     let identity_repo = &app.repositories().identity_link;
 
     // ユーザーのメールアドレスを取得
     let holder_email = user_resolver::resolve_user_email(&user.id, identity_repo).await?;
 
     // 予約を削除
-    let usage_id = ReservedSlotId::from_string(usage_id_str.to_string());
+    let slot_id = ReservedSlotId::from_string(slot_id_str.to_string());
     info!(
-        usage_id = %usage_id.as_str(),
-        owner = %holder_email.as_str(),
+        slot_id = %slot_id.as_str(),
+        holder = %holder_email.as_str(),
         origin = "slack",
         "cancelling a reservation"
     );
 
-    let result = delete_usage_usecase
-        .execute(&usage_id, &EmailAddress::new(holder_email.clone())?)
+    let result = cancel_slot_usecase
+        .execute(&slot_id, &EmailAddress::new(holder_email.clone())?)
         .await;
 
     // ユーザーにフィードバックメッセージを送信
     if let Some(ch_id) = channel_id {
         let message_text = match &result {
-            Ok(_) => {
-                info!(usage_id = %usage_id.as_str(), origin = "slack", "reservation cancelled");
-                "✅ 予約をキャンセルしました".to_string()
+            Ok(cancelled) => {
+                info!(slot_id = %slot_id.as_str(), origin = "slack", "reserved slot cancelled");
+                reservation_failure::cancelled_message(cancelled)
             }
             Err(e) => {
-                error!(usage_id = %usage_id.as_str(), origin = "slack", error = %e, "cancelling the reservation failed");
+                error!(slot_id = %slot_id.as_str(), origin = "slack", error = %e, "cancelling the reservation failed");
                 reservation_failure::cancel_message(e)
             }
         };

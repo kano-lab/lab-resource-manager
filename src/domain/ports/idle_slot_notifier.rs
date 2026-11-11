@@ -4,7 +4,7 @@ use crate::domain::ports::notifier::NotificationError;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 
-/// 予約が使われていないと判断した根拠
+/// 予約枠が使われていないと判断した根拠
 ///
 /// 予約者に手を打ってもらうには、何を見てそう言っているのかまで伝わっている必要がある。
 /// 心当たりのない指摘を受け取った人は、確かめようがないまま放置するほかない。
@@ -42,13 +42,13 @@ impl IdleEvidence {
     }
 }
 
-/// 押さえられているのに使われていない予約
+/// 押さえられているのに使われていない予約枠
 ///
 /// 予約は場所取りではなく使う約束である。使わないまま抱えられていると、
 /// 他の利用者は実際には空いている時間を待つことになる。
 #[derive(Debug, Clone)]
 pub struct IdleSlot {
-    reservation: ReservedSlot,
+    slot: ReservedSlot,
     idle_since: DateTime<Utc>,
     evidence: IdleEvidence,
 }
@@ -57,24 +57,20 @@ impl IdleSlot {
     /// 新しい検知結果を作成
     ///
     /// # Arguments
-    /// * `reservation` - 対象の予約
+    /// * `slot` - 対象の予約枠
     /// * `idle_since` - 使われていないと分かっている最も早い時刻
     /// * `evidence` - そう判断した根拠
-    pub fn new(
-        reservation: ReservedSlot,
-        idle_since: DateTime<Utc>,
-        evidence: IdleEvidence,
-    ) -> Self {
+    pub fn new(slot: ReservedSlot, idle_since: DateTime<Utc>, evidence: IdleEvidence) -> Self {
         Self {
-            reservation,
+            slot,
             idle_since,
             evidence,
         }
     }
 
-    /// 対象の予約を取得
-    pub fn reservation(&self) -> &ReservedSlot {
-        &self.reservation
+    /// 対象の予約枠を取得
+    pub fn slot(&self) -> &ReservedSlot {
+        &self.slot
     }
 
     /// 使われていないと判断した根拠を取得
@@ -96,7 +92,7 @@ impl IdleSlot {
     }
 }
 
-/// 使われていない予約を予約者本人へ知らせるポート
+/// 使われていない予約枠を予約者本人へ知らせるポート
 ///
 /// 予約チャンネルへのブロードキャスト通知（`Notifier`）とは異なり、
 /// 特定の予約者への直接的なやり取り（Slack DM等）を前提とするため別ポートとする。
@@ -104,6 +100,6 @@ impl IdleSlot {
 /// このポートは知らせることにのみ責務を持つ。
 #[async_trait]
 pub trait IdleSlotNotifier: Send + Sync {
-    /// 使われていない予約について予約者へ知らせる
+    /// 使われていない予約枠について予約者へ知らせる
     async fn notify_idle(&self, idle: IdleSlot) -> Result<(), NotificationError>;
 }

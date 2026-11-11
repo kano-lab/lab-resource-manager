@@ -239,12 +239,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let interval = std::time::Duration::from_secs(app_config.polling_interval_secs);
         info!(
             interval_secs = app_config.polling_interval_secs,
-            "usage observation enabled"
+            "slot observation enabled"
         );
         Some(tokio::spawn(async move {
             loop {
                 if let Err(e) = reconcile_usecase.poll_once().await {
-                    error!(error = %e, "usage observation polling failed");
+                    error!(error = %e, "slot observation polling failed");
                 }
                 if let Err(e) = detect_idle_usecase.poll_once().await {
                     error!(error = %e, "idle reservation polling failed");
@@ -253,7 +253,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }))
     } else {
-        info!("usage observation disabled: GPU_USAGE_REPORTS_DIR is not set");
+        info!("slot observation disabled: GPU_USAGE_REPORTS_DIR is not set");
         None
     };
 

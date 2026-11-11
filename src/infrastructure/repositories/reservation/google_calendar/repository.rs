@@ -34,7 +34,7 @@ struct ExternalId {
 }
 
 /// アプリ経由で作成されたイベントのdescriptionに付与される、予約者メールアドレス行の接頭辞
-const OWNER_LINE_PREFIX: &str = "予約者: ";
+const HOLDER_LINE_PREFIX: &str = "予約者: ";
 
 /// アプリが管理するセクションの開始マーカー
 ///
@@ -79,7 +79,7 @@ fn is_active_event(event: &Event) -> bool {
     event.status.as_deref() != Some(EVENT_STATUS_CANCELLED)
 }
 
-/// Google Calendar APIを使用したReservedSlotリポジトリ実装
+/// Google Calendar APIを使用した予約リポジトリ実装
 pub struct GoogleCalendarReservationRepository {
     gateway: Arc<dyn CalendarEventGateway>,
     config: ResourceConfig,
@@ -158,25 +158,25 @@ impl GoogleCalendarReservationRepository {
     /// アプリが管理する行はマーカーで囲む。カレンダーを開いた人が状況を把握できるよう、
     /// 予約者のメールアドレスに加えて、分かる範囲の情報（OSユーザー名・予約ID）を並べる。
     /// 備考はマーカーの外に置き、利用者が自由に編集できる領域として残す。
-    pub(super) async fn build_description(&self, usage: &ReservedSlot) -> String {
+    pub(super) async fn build_description(&self, slot: &ReservedSlot) -> String {
         let mut lines = vec![
             MANAGED_SECTION_BEGIN.to_string(),
-            format!("{OWNER_LINE_PREFIX}{}", usage.holder_email().as_str()),
+            format!("{HOLDER_LINE_PREFIX}{}", slot.holder_email().as_str()),
         ];
 
-        if let Some(os_user) = self.resolve_os_user_name(usage).await {
+        if let Some(os_user) = self.resolve_os_user_name(slot).await {
             lines.push(format!("{OS_USER_LINE_PREFIX}{os_user}"));
         }
 
         lines.push(format!(
             "{RESERVATION_ID_LINE_PREFIX}{}",
-            usage.id().as_str()
+            slot.id().as_str()
         ));
         lines.push(MANAGED_SECTION_END.to_string());
 
         let mut description = lines.join("\n");
 
-        if let Some(notes) = usage.notes() {
+        if let Some(notes) = slot.notes() {
             description.push_str(&format!("\n\n{notes}"));
         }
 
@@ -188,8 +188,8 @@ impl GoogleCalendarReservationRepository {
     /// OSユーザー名の名前空間はサーバーごとに異なりうるため、予約したサーバーの紐付けを見る。
     /// 部屋の予約や紐付けが無い場合はNoneを返す。表示のための情報であり、
     /// 引けないことを理由に予約の保存を失敗させない。
-    async fn resolve_os_user_name(&self, usage: &ReservedSlot) -> Option<String> {
-        let server = usage
+    async fn resolve_os_user_name(&self, slot: &ReservedSlot) -> Option<String> {
+        let server = slot
             .resources()
             .iter()
             .find_map(|resource| match resource {
@@ -199,11 +199,11 @@ impl GoogleCalendarReservationRepository {
 
         let identity_link = self
             .identity_repo
-            .find_by_email(usage.holder_email())
+            .find_by_email(slot.holder_email())
             .await
             .inspect_err(|e| {
                 tracing::warn!(
-                    owner = %usage.holder_email().as_str(),
+                    holder = %slot.holder_email().as_str(),
                     error = %e,
                     "looking up the reserver's identity link failed; omitting the os user name"
                 )
@@ -291,7 +291,7 @@ impl GoogleCalendarReservationRepository {
             .filter_map(|(event, calendar_id, resource_context)| {
                 let event_id = event.id.clone().unwrap_or_default();
                 match self.parse_event(event, &resource_context) {
-                    Ok(usage) => Some(usage),
+                    Ok(slot) => Some(slot),
                     Err(e) => {
                         if self.should_report_parse_failure(&event_id) {
                             tracing::warn!(
@@ -340,7 +340,7 @@ impl GoogleCalendarReservationRepository {
                 .and_then(|desc| {
                     // "予約者: user@example.com" 行をアプリ管理セクション内から探して抽出
                     desc.lines()
-                        .find_map(|line| line.strip_prefix(OWNER_LINE_PREFIX))
+                        .find_map(|line| line.strip_prefix(HOLDER_LINE_PREFIX))
                 })
                 .ok_or_else(|| {
                     RepositoryError::Unknown(
@@ -418,7 +418,7 @@ impl GoogleCalendarReservationRepository {
                 // 安全側に倒してdescription全体を備考として扱う
                 None => description.to_string(),
             }
-        } else if description.starts_with(OWNER_LINE_PREFIX) {
+        } else if description.starts_with(HOLDER_LINE_PREFIX) {
             description
                 .split_once('\n')
                 .map(|(_, rest)| rest.to_string())
@@ -507,10 +507,10 @@ impl GoogleCalendarReservationRepository {
     /// 過去に採番した対応表がある予約はそちらを優先する。
     async fn locate_existing_event(
         &self,
-        usage: &ReservedSlot,
+        slot: &ReservedSlot,
         target_calendar_id: &str,
     ) -> Result<Option<ExternalId>, RepositoryError> {
-        let event_id = event_id_for(usage.id());
+        let event_id = event_id_for(slot.id());
 
         // 配置先を先に確認し、無ければ他のカレンダー（移動元）も探す
         if self
@@ -575,11 +575,11 @@ impl GoogleCalendarReservationRepository {
     /// 予約IDから導出したイベントIDを指定して、カレンダーにイベントを作成する
     async fn insert_event_for(
         &self,
-        usage: &ReservedSlot,
+        slot: &ReservedSlot,
         calendar_id: &str,
     ) -> Result<(), RepositoryError> {
-        let mut event = self.create_event_from_usage(usage).await?;
-        event.id = Some(event_id_for(usage.id()));
+        let mut event = self.create_event_from_slot(slot).await?;
+        event.id = Some(event_id_for(slot.id()));
 
         self.gateway.insert_event(calendar_id, event).await?;
 
@@ -592,8 +592,8 @@ impl GoogleCalendarReservationRepository {
     /// このメソッドは、ReservedSlot内のすべてのリソースが同一のカレンダーに属することを前提としています。
     /// （例: すべてGPU、またはすべて部屋）
     /// 混在している場合はエラーを返します。
-    fn get_calendar_id_for_usage(&self, usage: &ReservedSlot) -> Result<String, RepositoryError> {
-        let resources = usage.resources();
+    fn get_calendar_id_for_slot(&self, slot: &ReservedSlot) -> Result<String, RepositoryError> {
+        let resources = slot.resources();
         if resources.is_empty() {
             return Err(RepositoryError::Unknown("リソースが空です".to_string()));
         }
@@ -665,31 +665,28 @@ impl GoogleCalendarReservationRepository {
     /// ReservedSlotをGoogle Calendar Eventに変換
     ///
     /// # 前提条件
-    /// このメソッドは、get_calendar_id_for_usageで検証済みのReservedSlotを受け取ることを前提としています。
+    /// このメソッドは、get_calendar_id_for_slotで検証済みのReservedSlotを受け取ることを前提としています。
     /// すなわち、すべてのリソースが同一のカレンダーに属していることが保証されています。
-    async fn create_event_from_usage(
-        &self,
-        usage: &ReservedSlot,
-    ) -> Result<Event, RepositoryError> {
-        // 注: get_calendar_id_for_usageで検証済みのため、resources()[0]は安全に使用できる
-        let summary = match &usage.resources()[0] {
-            Resource::Gpu(_) => self.format_gpu_spec(usage.resources()).ok_or_else(|| {
+    async fn create_event_from_slot(&self, slot: &ReservedSlot) -> Result<Event, RepositoryError> {
+        // 注: get_calendar_id_for_slotで検証済みのため、resources()[0]は安全に使用できる
+        let summary = match &slot.resources()[0] {
+            Resource::Gpu(_) => self.format_gpu_spec(slot.resources()).ok_or_else(|| {
                 RepositoryError::Unknown("GPUデバイス仕様の生成に失敗しました".to_string())
             })?,
             Resource::Room { name } => name.clone(),
         };
 
-        let description = self.build_description(usage).await;
+        let description = self.build_description(slot).await;
 
         Ok(Event {
             summary: Some(summary),
             description: Some(description),
             start: Some(google_calendar3::api::EventDateTime {
-                date_time: Some(usage.time_period().start()),
+                date_time: Some(slot.time_period().start()),
                 ..Default::default()
             }),
             end: Some(google_calendar3::api::EventDateTime {
-                date_time: Some(usage.time_period().end()),
+                date_time: Some(slot.time_period().end()),
                 ..Default::default()
             }),
             // NOTE: attendeesを追加するとDomain-Wide Delegationが必要になるため、
@@ -710,8 +707,8 @@ impl GoogleCalendarReservationRepository {
             match self.gateway.get_event(&calendar_id, event_id).await? {
                 Some(event) => {
                     // イベントをパース（この時点で新しいマッピングが作成される）
-                    let usage = self.parse_event(event, &resource_context)?;
-                    return Ok(Some(usage));
+                    let slot = self.parse_event(event, &resource_context)?;
+                    return Ok(Some(slot));
                 }
                 None => {
                     // 次のカレンダーを試す
@@ -769,7 +766,7 @@ impl ReservationRepository for GoogleCalendarReservationRepository {
     ) -> Result<Option<ReservedSlot>, RepositoryError> {
         // 予約IDから導出したイベントIDで全カレンダーを探す
         let found = self.find_by_event_id(&event_id_for(id)).await?;
-        found.map(|usage| Self::with_id(usage, id)).transpose()
+        found.map(|slot| Self::with_id(slot, id)).transpose()
     }
 
     /// 指定期間と重複するReservedSlotを検索
@@ -788,7 +785,7 @@ impl ReservationRepository for GoogleCalendarReservationRepository {
         Ok(self
             .parse_events(events)
             .into_iter()
-            .filter(|usage| usage.time_period().overlaps_with(time_period))
+            .filter(|slot| slot.time_period().overlaps_with(time_period))
             .collect())
     }
 
@@ -801,19 +798,19 @@ impl ReservationRepository for GoogleCalendarReservationRepository {
             .find_slots_overlapping(time_period)
             .await?
             .into_iter()
-            .filter(|usage| usage.holder_email() == holder_email)
+            .filter(|slot| slot.holder_email() == holder_email)
             .collect())
     }
 
-    async fn save_slot(&self, usage: &ReservedSlot) -> Result<(), RepositoryError> {
-        let new_calendar_id = self.get_calendar_id_for_usage(usage)?;
+    async fn save_slot(&self, slot: &ReservedSlot) -> Result<(), RepositoryError> {
+        let new_calendar_id = self.get_calendar_id_for_slot(slot)?;
 
-        if let Some(external_id) = self.locate_existing_event(usage, &new_calendar_id).await? {
+        if let Some(external_id) = self.locate_existing_event(slot, &new_calendar_id).await? {
             // 既存イベント
             if external_id.calendar_id == new_calendar_id {
                 // 同じカレンダー → 更新
                 // IMPORTANT: update API用に id フィールドを含む Event を作成
-                let mut event = self.create_event_from_usage(usage).await?;
+                let mut event = self.create_event_from_slot(slot).await?;
                 event.id = Some(external_id.event_id.clone());
 
                 self.gateway
@@ -830,7 +827,7 @@ impl ReservationRepository for GoogleCalendarReservationRepository {
                     })?;
 
                 // 移動先でも同じイベントIDを使うため、対応表は更新しなくてよい
-                self.insert_event_for(usage, &new_calendar_id)
+                self.insert_event_for(slot, &new_calendar_id)
                     .await
                     .map_err(|e| {
                         RepositoryError::ConnectionError(format!(
@@ -841,7 +838,7 @@ impl ReservationRepository for GoogleCalendarReservationRepository {
             }
         } else {
             // 新規 → 作成
-            self.insert_event_for(usage, &new_calendar_id).await?;
+            self.insert_event_for(slot, &new_calendar_id).await?;
         }
 
         Ok(())

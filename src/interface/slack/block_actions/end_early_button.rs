@@ -22,8 +22,8 @@ where
     R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
-    let Some(usage_id_str) = &action.value else {
-        error!("release button carried no usage id");
+    let Some(slot_id_str) = &action.value else {
+        error!("release button carried no slot id");
         return Ok(());
     };
 
@@ -40,10 +40,10 @@ where
     let requested_by = EmailAddress::new(
         user_resolver::resolve_user_email(&user.id, &app.repositories().identity_link).await?,
     )?;
-    let usage_id = ReservedSlotId::from_string(usage_id_str.to_string());
+    let slot_id = ReservedSlotId::from_string(slot_id_str.to_string());
 
     info!(
-        usage_id = %usage_id.as_str(),
+        slot_id = %slot_id.as_str(),
         requested_by = %requested_by.as_str(),
         origin = "slack",
         "releasing a reservation early"
@@ -52,13 +52,13 @@ where
     let outcome = app
         .usecases()
         .end_slot_early
-        .execute(&usage_id, &requested_by)
+        .execute(&slot_id, &requested_by)
         .await;
 
     let feedback = match &outcome {
         Ok(released) => {
             info!(
-                usage_id = %usage_id.as_str(),
+                slot_id = %slot_id.as_str(),
                 end = %released.time_period().end(),
                 origin = "slack",
                 "reservation released early"
@@ -69,8 +69,8 @@ where
             )
         }
         Err(failure) => {
-            log_failure(&usage_id, failure);
-            reservation_failure::release_message(failure)
+            log_failure(&slot_id, failure);
+            reservation_failure::end_early_message(failure)
         }
     };
 
@@ -94,16 +94,16 @@ where
 /// まだ始まっていない・すでに終わった・他人の予約といった結果は、ボタンを押した
 /// タイミングから生まれる正常な結果であり、運用者に対処できることはない。
 /// `error`に置くと押されるたびに運用者を呼ぶことになるためwarnとする。
-fn log_failure(usage_id: &ReservedSlotId, failure: &ApplicationError) {
+fn log_failure(slot_id: &ReservedSlotId, failure: &ApplicationError) {
     match failure {
-        ApplicationError::ReservedSlot(_) | ApplicationError::Unauthorized(_) => warn!(
-            usage_id = %usage_id.as_str(),
+        ApplicationError::Reservation(_) | ApplicationError::Unauthorized(_) => warn!(
+            slot_id = %slot_id.as_str(),
             reason = %failure,
             origin = "slack",
             "releasing the reservation early was refused"
         ),
         other => error!(
-            usage_id = %usage_id.as_str(),
+            slot_id = %slot_id.as_str(),
             error = %other,
             origin = "slack",
             "releasing the reservation early failed"

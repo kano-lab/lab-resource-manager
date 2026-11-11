@@ -5,7 +5,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::ReservationRepository;
 use std::sync::Arc;
 
-/// ユーザーのリソース使用予定一覧を取得するユースケース
+/// ユーザーの予約枠一覧を取得するユースケース
 pub struct ListSlotsHeldByUseCase<R: ReservationRepository> {
     repository: Arc<R>,
 }
@@ -14,15 +14,15 @@ impl<R: ReservationRepository> ListSlotsHeldByUseCase<R> {
     /// 新しいListSlotsHeldByUseCaseインスタンスを作成
     ///
     /// # Arguments
-    /// * `repository` - ReservedSlotリポジトリ
+    /// * `repository` - 予約リポジトリ
     pub fn new(repository: Arc<R>) -> Self {
         Self { repository }
     }
 
-    /// 指定期間に重なる、特定のユーザーが所有するリソース使用予定の一覧を取得
+    /// 指定期間に重なる、特定のユーザーが所有する予約枠の一覧を取得
     ///
     /// # Arguments
-    /// * `holder_email` - 所有者のメールアドレス
+    /// * `holder_email` - 予約者のメールアドレス
     /// * `time_period` - 一覧する期間。どこまで先を見るかは呼び出し側が決める
     ///
     /// # Returns
@@ -35,14 +35,14 @@ impl<R: ReservationRepository> ListSlotsHeldByUseCase<R> {
         holder_email: &EmailAddress,
         time_period: &TimePeriod,
     ) -> Result<Vec<ReservedSlot>, ApplicationError> {
-        let mut usages = self
+        let mut slots = self
             .repository
             .find_slots_held_by(holder_email, time_period)
             .await?;
 
         // 開始時刻でソート
-        usages.sort_by_key(|a| a.time_period().start());
+        slots.sort_by_key(|a| a.time_period().start());
 
-        Ok(usages)
+        Ok(slots)
     }
 }

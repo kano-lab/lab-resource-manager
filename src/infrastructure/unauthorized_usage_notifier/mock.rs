@@ -29,18 +29,18 @@ impl MockUnauthorizedUsageNotifier {
 impl UnauthorizedUsageNotifier for MockUnauthorizedUsageNotifier {
     async fn notify(
         &self,
-        reserved_usage: &ReservedSlot,
+        reserved_slot: &ReservedSlot,
         actual_user_email: &EmailAddress,
     ) -> Result<(), NotificationError> {
         println!(
             "📤 [MockUnauthorizedUsageNotifier] {} へ {} の無断使用を通知",
             actual_user_email.as_str(),
-            reserved_usage.holder_email().as_str()
+            reserved_slot.holder_email().as_str()
         );
         self.notified
             .lock()
             .unwrap()
-            .push((reserved_usage.clone(), actual_user_email.clone()));
+            .push((reserved_slot.clone(), actual_user_email.clone()));
         Ok(())
     }
 }

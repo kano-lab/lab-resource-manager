@@ -1,7 +1,7 @@
 //! Slack DM経由の未使用予約の通知実装
 
-use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::Gpu;
+use crate::domain::aggregates::reservation::{ReservationKind, ReservedSlot};
 use crate::domain::ports::idle_slot_notifier::{IdleEvidence, IdleSlot, IdleSlotNotifier};
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::repositories::IdentityLinkRepository;
@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tracing::warn;
 
 use crate::interface::slack::constants::{
-    ACTION_IDLE_CANCEL, ACTION_IDLE_KEEP, ACTION_IDLE_RELEASE,
+    ACTION_IDLE_CANCEL, ACTION_IDLE_END_EARLY, ACTION_IDLE_KEEP,
 };
 
 /// Slack DM経由で未使用の予約を予約者へ知らせる実装
@@ -39,7 +39,7 @@ impl SlackIdleSlotNotifier {
 #[async_trait]
 impl IdleSlotNotifier for SlackIdleSlotNotifier {
     async fn notify_idle(&self, idle: IdleSlot) -> Result<(), NotificationError> {
-        let reservation = idle.reservation();
+        let reservation = idle.slot();
         let text = build_idle_message(reservation, idle.idle_since(), idle.evidence());
         let blocks = build_idle_blocks(reservation, &text);
 
@@ -51,7 +51,7 @@ impl IdleSlotNotifier for SlackIdleSlotNotifier {
         tracing::info!(
             channel = %sent.channel,
             ts = %sent.ts,
-            usage_id = %reservation.id().as_str(),
+            slot_id = %reservation.id().as_str(),
             recipient = %reservation.holder_email().as_str(),
             idle_since = %idle.idle_since(),
             evidence = ?idle.evidence(),
@@ -147,8 +147,14 @@ fn format_memory(used_memory_mib: u64) -> String {
 }
 
 /// 未使用の予約を知らせるDMのBlock Kitメッセージを構築する（純粋関数、ユニットテスト対象）
-fn build_idle_blocks(reservation: &ReservedSlot, text: &str) -> Vec<SlackBlock> {
-    let usage_id = reservation.id().as_str();
+fn build_idle_blocks(slot: &ReservedSlot, text: &str) -> Vec<SlackBlock> {
+    let slot_id = slot.id().as_str();
+    // 定期予約の予約枠を取り消しても、定期予約と他の予約枠は残る。ボタンの文言で
+    // 定期予約ごと消えるように読めないよう、取り消す範囲を言い分ける
+    let cancel_label = match slot.reservation_kind() {
+        ReservationKind::OneTime => "❌ 予約を取り消す",
+        ReservationKind::Recurring => "❌ この予約枠だけ取り消す",
+    };
 
     let blocks_json = serde_json::json!([
         {
@@ -168,8 +174,8 @@ fn build_idle_blocks(reservation: &ReservedSlot, text: &str) -> Vec<SlackBlock> 
                         "text": "⏹️ 今で終了する"
                     },
                     "style": "primary",
-                    "action_id": ACTION_IDLE_RELEASE,
-                    "value": usage_id
+                    "action_id": ACTION_IDLE_END_EARLY,
+                    "value": slot_id
                 },
                 {
                     "type": "button",
@@ -178,17 +184,17 @@ fn build_idle_blocks(reservation: &ReservedSlot, text: &str) -> Vec<SlackBlock> 
                         "text": "✅ まだ使う"
                     },
                     "action_id": ACTION_IDLE_KEEP,
-                    "value": usage_id
+                    "value": slot_id
                 },
                 {
                     "type": "button",
                     "text": {
                         "type": "plain_text",
-                        "text": "❌ 予約を取り消す"
+                        "text": cancel_label
                     },
                     "style": "danger",
                     "action_id": ACTION_IDLE_CANCEL,
-                    "value": usage_id
+                    "value": slot_id
                 }
             ]
         }
@@ -207,10 +213,10 @@ mod tests {
     use crate::domain::common::EmailAddress;
     use chrono::Duration;
 
-    fn sample_reservation() -> ReservedSlot {
+    fn sample_slot() -> ReservedSlot {
         let start = Utc::now() - Duration::hours(2);
         ReservedSlot::new(
-            EmailAddress::new("owner@example.com".to_string()).unwrap(),
+            EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start, start + Duration::hours(6)).unwrap(),
             vec![Resource::Gpu(Gpu::new(
                 "Thalys".to_string(),
@@ -224,10 +230,10 @@ mod tests {
 
     #[test]
     fn the_message_names_the_resource_and_when_it_went_quiet() {
-        let reservation = sample_reservation();
+        let slot = sample_slot();
         let idle_since = Utc::now() - Duration::hours(1);
 
-        let message = build_idle_message(&reservation, idle_since, &IdleEvidence::NoProcesses);
+        let message = build_idle_message(&slot, idle_since, &IdleEvidence::NoProcesses);
 
         assert!(message.contains("Thalys"), "{message}");
         assert!(
@@ -238,11 +244,11 @@ mod tests {
 
     #[test]
     fn a_gpu_held_without_computing_is_told_apart_from_one_nobody_touched() {
-        let reservation = sample_reservation();
+        let slot = sample_slot();
         let idle_since = Utc::now() - Duration::hours(1);
 
         let held = build_idle_message(
-            &reservation,
+            &slot,
             idle_since,
             &IdleEvidence::HeldWithoutComputing {
                 at_rest: vec![Gpu::new("Thalys".to_string(), 0, "A100".to_string())],
@@ -251,7 +257,7 @@ mod tests {
                 used_memory_mib: Some(38_000),
             },
         );
-        let absent = build_idle_message(&reservation, idle_since, &IdleEvidence::NoProcesses);
+        let absent = build_idle_message(&slot, idle_since, &IdleEvidence::NoProcesses);
 
         assert_ne!(
             held, absent,
@@ -273,11 +279,35 @@ mod tests {
         assert_eq!(format_memory(512), "512 MiB");
     }
 
-    #[test]
-    fn every_button_carries_the_reservation_it_acts_on() {
-        let reservation = sample_reservation();
+    use crate::domain::aggregates::reservation::ReservationId;
 
-        let blocks = build_idle_blocks(&reservation, "test message");
+    fn cancel_label(slot: &ReservedSlot) -> String {
+        let json = serde_json::to_value(build_idle_blocks(slot, "test message")).unwrap();
+        json[1]["elements"][2]["text"]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn cancelling_a_slot_of_a_recurring_reservation_says_only_that_slot_goes() {
+        let one_time = sample_slot();
+        let recurring = sample_slot()
+            .of_recurring_reservation(ReservationId::from_string("weekly".to_string()));
+
+        assert_eq!(cancel_label(&one_time), "❌ 予約を取り消す");
+        assert_eq!(
+            cancel_label(&recurring),
+            "❌ この予約枠だけ取り消す",
+            "定期予約ごと消えるように読めてはいけない"
+        );
+    }
+
+    #[test]
+    fn every_button_carries_the_slot_it_acts_on() {
+        let slot = sample_slot();
+
+        let blocks = build_idle_blocks(&slot, "test message");
         let json = serde_json::to_value(&blocks).unwrap();
         let elements = json[1]["elements"].as_array().unwrap();
 
@@ -285,17 +315,17 @@ mod tests {
         for element in elements {
             assert_eq!(
                 element["value"].as_str(),
-                Some(reservation.id().as_str()),
-                "どの予約への操作か分からないボタンがある: {element}"
+                Some(slot.id().as_str()),
+                "どの予約枠への操作か分からないボタンがある: {element}"
             );
         }
     }
 
     #[test]
     fn the_buttons_are_distinguishable_from_one_another() {
-        let reservation = sample_reservation();
+        let slot = sample_slot();
 
-        let blocks = build_idle_blocks(&reservation, "test message");
+        let blocks = build_idle_blocks(&slot, "test message");
         let json = serde_json::to_value(&blocks).unwrap();
         let action_ids: Vec<&str> = json[1]["elements"]
             .as_array()

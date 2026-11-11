@@ -1,5 +1,49 @@
 # Migration Guide
 
+## Reservation Vocabulary (v3.0.0)
+
+v3.0.0 rebuilds reservations around the words "reservation" (one-time or recurring) and
+"reserved slot". Reservations stored in the calendar, `resources.toml`, and environment
+variables work unchanged. Three things affect members and operators.
+
+### MCP Tool Names
+
+Agents re-read the tool list on every connection, so usually nothing needs doing. Update any
+configuration or prompt that names tools explicitly.
+
+| Before | v3.0.0 |
+|---|---|
+| `list_all_reservations` | `list_slots` |
+| `list_my_reservations` | `list_my_slots` |
+| `get_reservation` | `get_slot` (gets a reserved slot) |
+| `update_reservation` | `update_slot` |
+| `release_reservation_early` | `end_slot_early` |
+| `cancel_reservation` | `cancel_slot` (cancels one reserved slot) |
+
+`get_reservation` and `cancel_reservation` are new tools that act on a whole reservation
+(one-time or recurring). For the old "cancel this one" behavior of `cancel_reservation`, use
+`cancel_slot`. Reserved slots in tool output now carry the ID (`reservation_id`) and kind
+(`reservation_kind`) of the reservation they belong to.
+
+### Notification Template Keys
+
+The template for cancelling a one-time reservation is renamed from `deleted` to `cancelled`.
+`deleted` is still read, but switching to `cancelled` is recommended. `slot_updated` and
+`slot_cancelled` are added for notifications about one reserved slot of a recurring
+reservation.
+
+### Log Field Names
+
+The log field `usage_id` is now `slot_id` (a reserved slot) or `reservation_id` (a
+reservation), and `owner` is now `holder`. The change detection summary line reads:
+
+```text
+change detection pass finished
+  slots=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
+```
+
+Update any journalctl filters that rely on these fields.
+
 ## Storage Configuration Schema Change (v2.0.0)
 
 v2.0.0 introduces a breaking change to the `resources.toml` configuration format: calendar

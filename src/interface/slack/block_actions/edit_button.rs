@@ -20,8 +20,8 @@ where
     R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
-    let Some(usage_id_str) = &action.value else {
-        error!("cancel button carried no usage id");
+    let Some(slot_id_str) = &action.value else {
+        error!("cancel button carried no slot id");
         return Ok(());
     };
 
@@ -49,7 +49,7 @@ where
         return Ok(());
     }
 
-    // リンク済み: 更新モーダルを開く（usage_idをprivate_metadataに設定）
+    // リンク済み: 更新モーダルを開く（slot_idをprivate_metadataに設定）
     // channel_idを取得してuser_channel_mapに登録（エフェメラルメッセージ送信用）
     if let SlackInteractionActionContainer::Message(msg) = &block_actions.container
         && let Some(channel_id) = &msg.channel_id
@@ -66,7 +66,7 @@ where
         config,
         &reserve::ReserveModalParams {
             selected_server: initial_server,
-            usage_id: Some(usage_id_str),
+            slot_id: Some(slot_id_str),
             callback_id: Some(CALLBACK_RESERVE_UPDATE),
             title: Some("予約更新"),
             submit_text: Some("更新"),

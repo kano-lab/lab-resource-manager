@@ -4,7 +4,7 @@ use crate::domain::aggregates::reservation::value_objects::TimePeriod;
 use crate::domain::ports::repositories::ReservationRepository;
 use std::sync::Arc;
 
-/// 指定期間のリソース使用予定を一覧するユースケース
+/// 指定期間の予約枠を一覧するユースケース
 pub struct ListSlotsUseCase<R: ReservationRepository> {
     repository: Arc<R>,
 }
@@ -13,12 +13,12 @@ impl<R: ReservationRepository> ListSlotsUseCase<R> {
     /// 新しいListSlotsUseCaseインスタンスを作成
     ///
     /// # Arguments
-    /// * `repository` - ReservedSlotリポジトリ
+    /// * `repository` - 予約リポジトリ
     pub fn new(repository: Arc<R>) -> Self {
         Self { repository }
     }
 
-    /// 指定期間に重なるリソース使用予定を取得
+    /// 指定期間に重なる予約枠を取得
     ///
     /// # Arguments
     /// * `time_period` - 一覧する期間。どこまで先を見るかは呼び出し側が決める
@@ -32,11 +32,11 @@ impl<R: ReservationRepository> ListSlotsUseCase<R> {
         &self,
         time_period: &TimePeriod,
     ) -> Result<Vec<ReservedSlot>, ApplicationError> {
-        let mut usages = self.repository.find_slots_overlapping(time_period).await?;
+        let mut slots = self.repository.find_slots_overlapping(time_period).await?;
 
         // 開始時刻でソート
-        usages.sort_by_key(|a| a.time_period().start());
+        slots.sort_by_key(|a| a.time_period().start());
 
-        Ok(usages)
+        Ok(slots)
     }
 }

@@ -12,8 +12,8 @@ use crate::infrastructure::notifier::formatter::{format_resources_styled, format
 ///
 /// 複数リソースをまとめた予約では先頭のリソースの通知設定を使う。
 /// 1件の予約が複数の設定にまたがることは通常なく、見え方を1つに決める必要があるため。
-pub fn build(usage: &ReservedSlot, resource_config: &ResourceConfig) -> String {
-    let notification = usage
+pub fn build(slot: &ReservedSlot, resource_config: &ResourceConfig) -> String {
+    let notification = slot
         .resources()
         .first()
         .map(|resource| resource_config.get_notifications_for_resource(resource))
@@ -32,9 +32,9 @@ pub fn build(usage: &ReservedSlot, resource_config: &ResourceConfig) -> String {
 
     format!(
         "💻 {}\n📅 {}",
-        format_resources_styled(usage.resources(), customization.format.resource_style),
+        format_resources_styled(slot.resources(), customization.format.resource_style),
         format_time_styled(
-            usage.time_period(),
+            slot.time_period(),
             timezone.as_deref(),
             customization.format.time_style,
             customization.format.date_format,
@@ -64,11 +64,11 @@ mod tests {
         }
     }
 
-    fn usage() -> ReservedSlot {
+    fn slot() -> ReservedSlot {
         let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
         ReservedSlot::new(
-            EmailAddress::new("owner@example.com".to_string()).unwrap(),
+            EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start, end).unwrap(),
             vec![Resource::Gpu(Gpu::new(
                 "Thalys".to_string(),
@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn the_summary_names_the_resource_and_the_period() {
-        let summary = build(&usage(), &config());
+        let summary = build(&slot(), &config());
 
         assert!(
             summary.contains("Thalys"),

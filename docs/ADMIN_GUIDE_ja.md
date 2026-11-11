@@ -146,12 +146,14 @@ timezone = "Asia/Tokyo"
 [servers.notifications.templates]
 created = "{user}が{resource}を{time}使います"
 updated = "{user}が予約を変更: {resource} {time}"
-deleted = "{user}が予約をキャンセル: {resource}"
-conflict = "{user}が既に{resource}を{time}で予約済みです"
-conflict_item = "👤 {user}\n📅 {time}\n{resource_label}\n{resource}{notes}"
+cancelled = "{user}が予約を取り消し: {resource}"
 recurring_created = "{user}が{resource}を定期予約: {recurrence} {time}"
 recurring_updated = "{user}が定期予約を変更: {resource} {recurrence}"
 recurring_cancelled = "{user}が定期予約を取り消し: {resource} {recurrence}"
+slot_updated = "{user}が定期予約の予約枠を変更: {resource} {time}"
+slot_cancelled = "{user}が定期予約の予約枠を取り消し: {resource} {time}"
+conflict = "{user}が既に{resource}を{time}で予約済みです"
+conflict_item = "👤 {user}\n📅 {time}\n{resource_label}\n{resource}{notes}"
 
 # フォーマット設定（オプション）
 [servers.notifications.format]
@@ -160,18 +162,23 @@ time_style = "smart"         # 時刻表示スタイル
 date_format = "md"           # 日付フォーマット
 ```
 
-`recurring_created`/`recurring_updated`/`recurring_cancelled`は定期予約
-（カレンダー上で繰り返しを指定して作られた予約）の通知に使われます。
-定期予約は回の数だけ通知されることはなく、1件にまとめて通知されます。
-これらのテンプレートでは`{recurrence}`（「毎週 月・水」などの繰り返しの間隔）も
-使えます。`{time}`は初回の期間です。1回だけの変更・取り消し・早期終了は
-`updated`/`deleted`で通知されます。
+通知は予約（単発予約・定期予約）を単位とし、どのテンプレートを使うかは次のとおりです。
+
+| テンプレート | 使われるとき |
+|---|---|
+| `created`/`updated`/`cancelled` | 単発予約が作られた・変更された（今で終了を含む）・取り消された |
+| `recurring_created`/`recurring_updated`/`recurring_cancelled` | 定期予約が作られた・複数の予約枠に及んで変更された・取り消された |
+| `slot_updated`/`slot_cancelled` | 定期予約の予約枠が1つだけ変更された（今で終了を含む）・取り消された |
+
+定期予約は予約枠の数だけ通知されることはなく、1件にまとめて通知されます。
+定期予約のテンプレートでは`{recurrence}`（「毎週 月・水」などの繰り返しの規則）も使えます。
+このとき`{time}`は初回の予約枠の期間です。以前の設定キー`deleted`は`cancelled`として読み込まれます。
 
 `conflict`は予約リクエストが競合により拒否された際に使われます。
 **単一の競合**の場合のみこのテンプレートが使われます。
-`created`/`updated`/`deleted`とは異なり、プレースホルダーは拒否された
-リクエストではなく、競合の原因となった**既存の**予約を指します。
-`{user}`は既存予約の所有者、`{time}`はその期間、`{resource}`は競合した
+`created`/`updated`/`cancelled`とは異なり、プレースホルダーは拒否された
+リクエストではなく、競合の原因となった**既存の**予約枠を指します。
+`{user}`はその予約者、`{time}`はその期間、`{resource}`は競合した
 リソースそのものです。予約を試みたユーザー本人にのみ表示され、
 競合したリソースに設定された通知設定（テンプレート・フォーマット）が
 使われます（リソース全体への通知配信ではありません）。
@@ -401,7 +408,7 @@ Slackアカウントも紐付いたメールアドレスにリンクされてい
 ### 7. MCPサーバーの設定（オプション）
 
 Claude Codeなどのエージェントから、LRM本体プロセス内に組み込まれたMCP（Model Context
-Protocol）サーバー経由で予約の閲覧・作成・更新・キャンセルができます。新しいバイナリや
+Protocol）サーバー経由で予約の閲覧・作成・変更・今で終了・取り消しができます。新しいバイナリや
 systemdサービスは不要で、既存の`lab-resource-manager`プロセス内にHTTP/SSEリスナーが
 追加のタスクとして起動します。Googleサービスアカウントキーは引き続きLRM本体のホスト
 1箇所にしか存在しません。
@@ -501,19 +508,20 @@ CA証明書を信頼させること自体は受動的な設定で、誰にも新
 
 | ツール名 | 内容 |
 |---------|------|
-| `list_all_reservations` | 今後（進行中含む）の全予約を一覧表示 |
-| `list_my_reservations` | 自分が所有する予約を一覧表示 |
-| `get_reservation` | IDを指定して予約の詳細を取得 |
-| `create_reservation` | 新しい予約を作成（GPUサーバーまたは部屋） |
-| `update_reservation` | 自分が所有する予約の時間・備考を更新 |
-| `release_reservation_early` | 進行中の自分の予約を今の時点で終了し、残り時間を解放 |
-| `cancel_reservation` | 自分が所有する予約をキャンセル |
 | `list_resources` | 予約できるリソース（GPUサーバーとデバイス、部屋）を一覧表示 |
 | `check_availability` | 指定期間における各リソースの空きを調べる（最長60日、サーバー・部屋で絞り込み可） |
+| `list_slots` | 今後60日に重なる（進行中を含む）すべての予約枠を一覧表示 |
+| `list_my_slots` | 今後60日に重なる自分の予約枠を一覧表示 |
+| `get_slot` | 予約枠IDを指定して予約枠の詳細を取得 |
+| `get_reservation` | 予約IDを指定して予約の詳細を取得（定期予約なら繰り返しの規則も） |
+| `create_reservation` | 単発予約を作る（GPUサーバーまたは部屋） |
+| `update_slot` | 自分の予約枠の時間・備考を変更 |
+| `end_slot_early` | 進行中の自分の予約枠を今の時点で終了し、残り時間を解放 |
+| `cancel_slot` | 自分の予約枠を1つ取り消す（定期予約の他の予約枠は残る） |
+| `cancel_reservation` | 自分の予約を丸ごと取り消す（定期予約ならすべての予約枠） |
 
-書き込み系ツール（作成・更新・キャンセル）は、呼び出し元のBearerトークンに紐づく
-メールアドレスを所有者として扱います。他人が所有する予約の更新・キャンセルは、
-`/reserve`と同じ既存の認可ルール（所有者本人のみ）により拒否されます。
+書き込み系ツールは、呼び出し元のBearerトークンに紐づくメールアドレスを予約者として扱います。
+他人の予約の変更・取り消しは、`/reserve`と同じ認可ルール（予約者本人のみ）により拒否されます。
 
 TLSの動作自体（自己署名証明書でのハンドシェイク成立、CA未信頼時の拒否、認証ミドルウェアが
 TLS層とは独立してBearerトークンを要求すること）は開発環境で確認済みです。
@@ -616,16 +624,18 @@ reconcile pass finished
   observed=6 reservations_in_progress=5 matched_to_a_reservation=5
   unreserved_sessions=1 failures=0 elapsed_ms=412
 change detection pass finished
-  reservations=23 created=0 deleted=0 elapsed_ms=380
+  slots=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
 ```
 
 件数が跳ねたり`elapsed_ms`が伸びていれば、目に見える形で壊れる前に問題を捉えられます。
+`appeared`/`disappeared`は予約枠の増減、`notifications`は実際に送った通知の数です。
+定期予約は予約枠の増減を1件にまとめて伝えるため、`notifications`は増減の数より少なくなりえます。
 
 `RUST_LOG=debug`にすると、各処理の詳細（フォームの解析、モーダルの操作、個別のSlack API呼び出し）も出ます。
 量が多いため、特定の問題を調べるときに使うもので、通常運用向けではありません。
 
 **ログに含まれる個人情報**: ログには予約者のメールアドレスとOSユーザー名が含まれます。これは意図的なもので、
-誰が予約し、誰がキャンセルしたかを後から答えられるようにするためです。閲覧できるのはjournaldを読める範囲
+誰が予約し、誰が取り消したかを後から答えられるようにするためです。閲覧できるのはjournaldを読める範囲
 （`adm`および`systemd-journal`グループ）に限られます。外部のログ収集サービスへ転送する場合は、
 この個人情報がホストの外へ出ることになるため、許容できるかを先に判断してください。
 

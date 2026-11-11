@@ -24,11 +24,11 @@ where
 {
     let user_id = view_submission.user.id.clone();
 
-    // private_metadataからusage_idを取得
-    let usage_id_str = extract_form_data::get_private_metadata(view_submission)
-        .ok_or("usage_idがprivate_metadataに設定されていません")?;
+    // private_metadataからslot_idを取得
+    let slot_id_str = extract_form_data::get_private_metadata(view_submission)
+        .ok_or("slot_idがprivate_metadataに設定されていません")?;
 
-    let usage_id = ReservedSlotId::from_string(usage_id_str.clone());
+    let slot_id = ReservedSlotId::from_string(slot_id_str.clone());
 
     // 開始・終了日時を取得
     let start_date =
@@ -65,7 +65,7 @@ where
     let update_result = app
         .usecases()
         .update_slot
-        .execute(&usage_id, &holder_email, Some(time_period), notes)
+        .execute(&slot_id, &holder_email, Some(time_period), notes)
         .await;
 
     // channel_id を取得

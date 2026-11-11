@@ -12,7 +12,7 @@ use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
 use crate::infrastructure::notifier::senders::sender::{NotificationContext, Sender};
 use crate::infrastructure::notifier::template_renderer::{TemplateRenderer, render_event};
 use crate::interface::slack::constants::{
-    ACTION_CANCEL_RESERVATION, ACTION_EDIT_RESERVATION, ACTION_RELEASE_RESERVATION_EARLY,
+    ACTION_CANCEL_SLOT, ACTION_END_SLOT_EARLY, ACTION_UPDATE_SLOT,
 };
 
 /// Slack通知設定
@@ -143,7 +143,7 @@ impl SlackSender {
                                 "text": "🔄 更新"
                             },
                             "style": "primary",
-                            "action_id": ACTION_EDIT_RESERVATION,
+                            "action_id": ACTION_UPDATE_SLOT,
                             "value": slot_id
                         },
                         {
@@ -152,7 +152,7 @@ impl SlackSender {
                                 "type": "plain_text",
                                 "text": "⏹️ 今で終了"
                             },
-                            "action_id": ACTION_RELEASE_RESERVATION_EARLY,
+                            "action_id": ACTION_END_SLOT_EARLY,
                             "value": slot_id
                         },
                         {
@@ -162,7 +162,7 @@ impl SlackSender {
                                 "text": "❌ 取り消す"
                             },
                             "style": "danger",
-                            "action_id": ACTION_CANCEL_RESERVATION,
+                            "action_id": ACTION_CANCEL_SLOT,
                             "value": slot_id
                         }
                     ]

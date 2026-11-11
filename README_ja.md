@@ -5,7 +5,7 @@
 ## 概要
 
 - **リソース予約管理**: GPUサーバーや部屋といった資源利用のスケジュールを管理
-- **変更通知**: 予約の作成・更新・削除時に通知
+- **変更通知**: 予約の作成・変更・取り消し時に通知（定期予約は予約枠ごとではなく1件にまとめて通知）
 - **Identity Linking**: 異なるシステム間でユーザーIDを紐付けて通知を強化
 
 ### デフォルト実装
@@ -29,7 +29,7 @@ Clean Architecture（DDD + ヘキサゴナルアーキテクチャ）で設計:
 ```text
 src/
 ├── domain/                  # ドメイン層（ビジネスロジック）
-│   ├── aggregates/          # 集約（ResourceUsage, IdentityLink）
+│   ├── aggregates/          # 集約（Reservation, IdentityLink）
 │   ├── common/              # Shared Kernel（EmailAddress等）
 │   ├── ports/               # ポート（Repository, Notifierトレイト）
 │   └── errors.rs            # ドメインエラー

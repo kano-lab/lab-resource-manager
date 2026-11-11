@@ -24,7 +24,7 @@ impl<R: ReservationRepository> EndSlotEarlyUseCase<R> {
     /// 新しいEndSlotEarlyUseCaseインスタンスを作成
     ///
     /// # Arguments
-    /// * `repository` - ReservedSlotリポジトリ
+    /// * `repository` - 予約リポジトリ
     pub fn new(repository: Arc<R>) -> Self {
         Self {
             repository,
@@ -35,7 +35,7 @@ impl<R: ReservationRepository> EndSlotEarlyUseCase<R> {
     /// 予約を今の時点で締める
     ///
     /// # Arguments
-    /// * `id` - 使用予定ID
+    /// * `id` - 予約枠ID
     /// * `requested_by` - 操作者のメールアドレス（権限チェック用）
     ///
     /// # Returns
@@ -43,7 +43,7 @@ impl<R: ReservationRepository> EndSlotEarlyUseCase<R> {
     ///
     /// # Errors
     /// - 指定されたIDの予約が見つからない場合
-    /// - 所有者が一致しない場合
+    /// - 予約者が一致しない場合
     /// - 予約がまだ始まっていない、またはすでに終わっている場合
     /// - リポジトリエラー
     pub async fn execute(
@@ -51,31 +51,31 @@ impl<R: ReservationRepository> EndSlotEarlyUseCase<R> {
         id: &ReservedSlotId,
         requested_by: &EmailAddress,
     ) -> Result<ReservedSlot, ApplicationError> {
-        let mut usage = self
+        let mut slot = self
             .repository
             .find_slot(id)
             .await?
             .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?;
 
         self.authorization_policy
-            .authorize_update(requested_by, &usage)
+            .authorize_update(requested_by, &slot)
             .map_err(|e| ApplicationError::Unauthorized(e.to_string()))?;
 
         // 期間を縮める操作のため、新たに占有する時間はなく競合は起こりえない
-        usage.end_early(Utc::now())?;
+        slot.end_early(Utc::now())?;
 
-        self.repository.save_slot(&usage).await?;
+        self.repository.save_slot(&slot).await?;
 
         info!(
-            usage_id = %usage.id().as_str(),
-            owner = %usage.holder_email().as_str(),
+            slot_id = %slot.id().as_str(),
+            holder = %slot.holder_email().as_str(),
             requested_by = %requested_by.as_str(),
-            start = %usage.time_period().start(),
-            end = %usage.time_period().end(),
+            start = %slot.time_period().start(),
+            end = %slot.time_period().end(),
             "reservation released early"
         );
 
-        Ok(usage)
+        Ok(slot)
     }
 }
 
@@ -90,9 +90,9 @@ mod tests {
         EmailAddress::new(address.to_string()).unwrap()
     }
 
-    fn usage_of(owner: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> ReservedSlot {
+    fn slot_of(holder: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> ReservedSlot {
         ReservedSlot::new(
-            email(owner),
+            email(holder),
             TimePeriod::new(start, end).unwrap(),
             vec![Resource::Gpu(Gpu::new(
                 "Thalys".to_string(),
@@ -104,53 +104,53 @@ mod tests {
         .unwrap()
     }
 
-    async fn repository_with(usage: &ReservedSlot) -> Arc<MockReservationRepository> {
+    async fn repository_with(slot: &ReservedSlot) -> Arc<MockReservationRepository> {
         let repository = Arc::new(MockReservationRepository::new());
-        repository.save_slot(usage).await.unwrap();
+        repository.save_slot(slot).await.unwrap();
         repository
     }
 
     #[tokio::test]
     async fn the_reservation_ends_now_and_stays_in_the_repository() {
         let start = Utc::now() - Duration::hours(1);
-        let usage = usage_of("owner@example.com", start, start + Duration::hours(4));
-        let repository = repository_with(&usage).await;
+        let slot = slot_of("holder@example.com", start, start + Duration::hours(4));
+        let repository = repository_with(&slot).await;
         let usecase = EndSlotEarlyUseCase::new(repository.clone());
 
         let released = usecase
-            .execute(usage.id(), &email("owner@example.com"))
+            .execute(slot.id(), &email("holder@example.com"))
             .await
             .unwrap();
 
         assert_eq!(released.time_period().start(), start);
         assert!(released.time_period().end() < start + Duration::hours(4));
 
-        let stored = repository.find_slot(usage.id()).await.unwrap();
+        let stored = repository.find_slot(slot.id()).await.unwrap();
         assert_eq!(
             stored.map(|stored| stored.time_period().end()),
             Some(released.time_period().end()),
-            "早期終了は予約を消さず、終了時刻の更新として残る"
+            "今で終了は予約枠を消さず、終了時刻の更新として残る"
         );
     }
 
     #[tokio::test]
     async fn someone_else_cannot_release_a_reservation() {
         let start = Utc::now() - Duration::hours(1);
-        let usage = usage_of("owner@example.com", start, start + Duration::hours(4));
-        let repository = repository_with(&usage).await;
+        let slot = slot_of("holder@example.com", start, start + Duration::hours(4));
+        let repository = repository_with(&slot).await;
         let usecase = EndSlotEarlyUseCase::new(repository.clone());
 
         let error = usecase
-            .execute(usage.id(), &email("someone@example.com"))
+            .execute(slot.id(), &email("someone@example.com"))
             .await
             .unwrap_err();
 
         assert!(
             matches!(error, ApplicationError::Unauthorized(_)),
-            "所有者以外は締められない: {:?}",
+            "予約者以外は締められない: {:?}",
             error
         );
-        let stored = repository.find_slot(usage.id()).await.unwrap().unwrap();
+        let stored = repository.find_slot(slot.id()).await.unwrap().unwrap();
         assert_eq!(
             stored.time_period().end(),
             start + Duration::hours(4),
@@ -161,17 +161,17 @@ mod tests {
     #[tokio::test]
     async fn a_reservation_that_has_not_started_is_rejected() {
         let start = Utc::now() + Duration::hours(1);
-        let usage = usage_of("owner@example.com", start, start + Duration::hours(2));
-        let repository = repository_with(&usage).await;
+        let slot = slot_of("holder@example.com", start, start + Duration::hours(2));
+        let repository = repository_with(&slot).await;
         let usecase = EndSlotEarlyUseCase::new(repository.clone());
 
         let error = usecase
-            .execute(usage.id(), &email("owner@example.com"))
+            .execute(slot.id(), &email("holder@example.com"))
             .await
             .unwrap_err();
 
         assert!(
-            matches!(error, ApplicationError::ReservedSlot(_)),
+            matches!(error, ApplicationError::Reservation(_)),
             "取り消すべき予約を締めようとした: {:?}",
             error
         );
@@ -185,7 +185,7 @@ mod tests {
         let error = usecase
             .execute(
                 &ReservedSlotId::from_string("unknown".to_string()),
-                &email("owner@example.com"),
+                &email("holder@example.com"),
             )
             .await
             .unwrap_err();

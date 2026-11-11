@@ -23,8 +23,8 @@ pub enum ApplicationError {
     /// 実サーバーの利用状況観測中に発生したエラー
     Observation(ObservationError),
 
-    /// リソース使用に関するドメインエラー
-    ReservedSlot(ReservationError),
+    /// 予約に関するドメインエラー
+    Reservation(ReservationError),
     /// ID紐付けに関するドメインエラー
     IdentityLink(IdentityLinkError),
 
@@ -61,7 +61,7 @@ impl fmt::Display for ApplicationError {
                 write!(f, "リソースコレクションアクセスエラー: {}", e)
             }
             ApplicationError::Observation(e) => write!(f, "利用状況観測エラー: {}", e),
-            ApplicationError::ReservedSlot(e) => write!(f, "リソース使用エラー: {}", e),
+            ApplicationError::Reservation(e) => write!(f, "予約エラー: {}", e),
             ApplicationError::IdentityLink(e) => write!(f, "ID紐付けエラー: {}", e),
             ApplicationError::ExternalSystemAlreadyLinked {
                 email,
@@ -78,13 +78,13 @@ impl fmt::Display for ApplicationError {
                     .iter()
                     .map(|c| {
                         format!(
-                            "リソース {} は既に使用予定 {} で使用されています",
+                            "リソース {} は既に予約枠 {} で使用されています",
                             c.resources
                                 .iter()
                                 .map(|resource| resource.to_string())
                                 .collect::<Vec<_>>()
                                 .join(", "),
-                            c.existing_usage.id().as_str()
+                            c.existing_slot.id().as_str()
                         )
                     })
                     .collect();
@@ -104,7 +104,7 @@ impl std::error::Error for ApplicationError {
             ApplicationError::Notification(e) => Some(e),
             ApplicationError::ResourceCollectionAccess(e) => Some(e),
             ApplicationError::Observation(e) => Some(e),
-            ApplicationError::ReservedSlot(e) => Some(e),
+            ApplicationError::Reservation(e) => Some(e),
             ApplicationError::IdentityLink(e) => Some(e),
             ApplicationError::ExternalSystemAlreadyLinked { .. } => None,
             ApplicationError::ResourceConflict { conflicts } => conflicts
@@ -123,7 +123,7 @@ impl From<RepositoryError> for ApplicationError {
 
 impl From<ReservationError> for ApplicationError {
     fn from(e: ReservationError) -> Self {
-        ApplicationError::ReservedSlot(e)
+        ApplicationError::Reservation(e)
     }
 }
 

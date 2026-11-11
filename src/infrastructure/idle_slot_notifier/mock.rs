@@ -52,8 +52,8 @@ impl IdleSlotNotifier for MockIdleSlotNotifier {
 
         println!(
             "📤 [MockIdleSlotNotifier] {} の予約 {} が {} から使われていない（{:?}）",
-            idle.reservation().holder_email().as_str(),
-            idle.reservation().id().as_str(),
+            idle.slot().holder_email().as_str(),
+            idle.slot().id().as_str(),
             idle.idle_since(),
             idle.evidence()
         );

@@ -37,7 +37,7 @@ pub mod errors;
 pub mod identity_link;
 /// McpTokenリポジトリポート
 pub mod mcp_token;
-/// ReservedSlotリポジトリポート
+/// 予約リポジトリポート
 pub mod reservation;
 
 pub use errors::RepositoryError;

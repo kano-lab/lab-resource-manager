@@ -25,7 +25,7 @@ where
     let user_id = view_submission.user.id.clone();
 
     // Get dependencies
-    let create_usage_usecase = &app.usecases().create_reservation;
+    let create_reservation_usecase = &app.usecases().create_reservation;
     let identity_repo = &app.repositories().identity_link;
     let config = app.resource_config();
 
@@ -58,9 +58,9 @@ where
     )?;
     debug!(start = %start_datetime, end = %end_datetime, "parsed period");
 
-    // Get owner email from user_id
+    // Get holder email from user_id
     let holder_email = user_resolver::resolve_user_email(&user_id, identity_repo).await?;
-    debug!(owner = %holder_email, "resolved owner");
+    debug!(holder = %holder_email, "resolved holder");
 
     // Extract resources based on type
     let resource_type_val = resource_type.as_str();
@@ -133,13 +133,13 @@ where
     debug!(resources = ?resources, "resolved resources");
 
     // 結果のログでも参照するため、ユースケースへ渡す前に控えておく
-    let logged_owner = holder_email.clone();
+    let logged_holder = holder_email.clone();
     let logged_resources = format!("{:?}", resources);
     let logged_start = time_period.start();
     let logged_end = time_period.end();
 
     // Create reservation
-    let reservation_result = create_usage_usecase
+    let reservation_result = create_reservation_usecase
         .execute(
             crate::domain::common::EmailAddress::new(holder_email)?,
             time_period,
@@ -159,10 +159,10 @@ where
 
     // エフェメラルメッセージで結果を送信
     let message_text = match reservation_result {
-        Ok(usage_id) => {
+        Ok(slot_id) => {
             info!(
-                usage_id = %usage_id.as_str(),
-                owner = %logged_owner,
+                slot_id = %slot_id.as_str(),
+                holder = %logged_holder,
                 resources = %logged_resources,
                 start = %logged_start,
                 end = %logged_end,
@@ -171,12 +171,12 @@ where
             );
             format!(
                 "✅ リソースの予約が完了しました\n予約ID: {}",
-                usage_id.as_str()
+                slot_id.as_str()
             )
         }
         Err(ApplicationError::ResourceConflict { conflicts }) => {
             warn!(
-                owner = %logged_owner,
+                holder = %logged_holder,
                 resources = %logged_resources,
                 conflicts = conflicts.len(),
                 origin = "slack",
@@ -187,7 +187,7 @@ where
         }
         Err(e) => {
             error!(
-                owner = %logged_owner,
+                holder = %logged_holder,
                 resources = %logged_resources,
                 origin = "slack",
                 error = %e,

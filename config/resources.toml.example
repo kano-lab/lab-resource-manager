@@ -19,7 +19,7 @@ channel_id = "C01234567..."
 # [servers.notifications.templates]
 # created = "{user}が{resource}を{time}使います"
 # updated = "{user}が予約を変更: {resource} {time}"
-# deleted = "{user}が予約をキャンセル: {resource}"
+# cancelled = "{user}が予約を取り消し: {resource}"
 # conflict = "{user}が既に{resource}を{time}で予約済みです"
 #   - conflict: 単一の競合時に使用。{user}/{time}/{resource}は予約を試みた本人ではなく、
 #     競合した既存予約の所有者・期間・リソースを指す
@@ -27,11 +27,14 @@ channel_id = "C01234567..."
 #   - conflict_item: 複数の競合時に使用。各競合をリスト表示する際の簡潔版テンプレート。
 #     見出しなし。件数行（「N件の予約と重複しています」）はテンプレートではなく
 #     ビルダー側で自動的に付加され、カスタマイズできません。
-# 定期予約（繰り返しを指定して作られた予約）は回ごとではなく1件にまとめて通知される
-# 定期予約のテンプレートでは {recurrence}（繰り返しの間隔）も使える。{time}は初回の期間
+# 定期予約（繰り返しを指定して作られた予約）は予約枠ごとではなく1件にまとめて通知される
+# 定期予約のテンプレートでは {recurrence}（繰り返しの規則）も使える。{time}は初回の予約枠の期間
 # recurring_created = "{user}が{resource}を定期予約: {recurrence} {time}"
 # recurring_updated = "{user}が定期予約を変更: {resource} {recurrence}"
 # recurring_cancelled = "{user}が定期予約を取り消し: {resource} {recurrence}"
+# 定期予約の予約枠が1つだけ変わったとき（今で終了を含む）・取り消されたとき
+# slot_updated = "{user}が定期予約の予約枠を変更: {resource} {time}"
+# slot_cancelled = "{user}が定期予約の予約枠を取り消し: {resource} {time}"
 
 # フォーマット設定（オプション）
 # [servers.notifications.format]

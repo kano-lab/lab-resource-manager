@@ -211,9 +211,9 @@ where
                 Err(e) => {
                     failures += 1;
                     error!(
-                        usage_id = %reservation.id().as_str(),
+                        slot_id = %reservation.id().as_str(),
                         error = %e,
-                        "telling the owner about an idle reservation failed"
+                        "telling the holder about an idle reservation failed"
                     );
                 }
             }
@@ -277,7 +277,7 @@ where
 
         if self.criteria.policy_for(&evidence) == NoticePolicy::Observe {
             info!(
-                usage_id = %reservation.id().as_str(),
+                slot_id = %reservation.id().as_str(),
                 idle_since = %idle_since,
                 evidence = ?evidence,
                 "an idle reservation would have been reported; only watching for now"
@@ -288,11 +288,11 @@ where
         }
 
         info!(
-            usage_id = %reservation.id().as_str(),
-            owner = %reservation.holder_email().as_str(),
+            slot_id = %reservation.id().as_str(),
+            holder = %reservation.holder_email().as_str(),
             idle_since = %idle_since,
             evidence = ?evidence,
-            "telling the owner about an idle reservation"
+            "telling the holder about an idle reservation"
         );
 
         match self
@@ -307,10 +307,10 @@ where
             }
             Err(NotificationError::RecipientUnknown(reason)) => {
                 info!(
-                    usage_id = %reservation.id().as_str(),
-                    owner = %reservation.holder_email().as_str(),
+                    slot_id = %reservation.id().as_str(),
+                    holder = %reservation.holder_email().as_str(),
                     reason = %reason,
-                    "the owner cannot be reached; leaving the reservation quiet"
+                    "the holder cannot be reached; leaving the reservation quiet"
                 );
                 // 宛先を知らないことは、送る手段の不調ではない。次のポーリングで
                 // 確かめ直しても届くようにはならないため、送れたときと同じだけ黙る
@@ -332,13 +332,13 @@ where
     /// 使われていないことの証拠として数え続けることはできない。
     fn idle_since_of(
         &self,
-        usage_id: &ReservedSlotId,
+        slot_id: &ReservedSlotId,
         evidence: &IdleEvidence,
         now: DateTime<Utc>,
     ) -> DateTime<Utc> {
         let mut spells = self.idle_spells.lock().unwrap();
 
-        match spells.get_mut(usage_id.as_str()) {
+        match spells.get_mut(slot_id.as_str()) {
             Some(spell)
                 if carries_on(
                     spell,
@@ -353,7 +353,7 @@ where
             }
             _ => {
                 spells.insert(
-                    usage_id.as_str().to_string(),
+                    slot_id.as_str().to_string(),
                     IdleSpell {
                         since: now,
                         last_confirmed_at: now,
@@ -366,9 +366,9 @@ where
     }
 
     /// 使われ始めた予約を忘れる（次に使われなくなったら改めて知らせる）
-    fn forget(&self, usage_id: &ReservedSlotId) {
-        self.idle_spells.lock().unwrap().remove(usage_id.as_str());
-        self.notices.resume(usage_id);
+    fn forget(&self, slot_id: &ReservedSlotId) {
+        self.idle_spells.lock().unwrap().remove(slot_id.as_str());
+        self.notices.resume(slot_id);
     }
 
     /// 進行中でなくなった予約についての記録を落とす
@@ -384,9 +384,9 @@ where
         self.idle_spells
             .lock()
             .unwrap()
-            .retain(|usage_id, _| still_running.contains(usage_id.as_str()));
+            .retain(|slot_id, _| still_running.contains(slot_id.as_str()));
         self.notices
-            .retain_only(|usage_id| still_running.contains(usage_id));
+            .retain_only(|slot_id| still_running.contains(slot_id));
     }
 }
 
@@ -442,7 +442,7 @@ mod tests {
 
     fn reservation_ending_in(remaining: Duration, now: DateTime<Utc>) -> ReservedSlot {
         ReservedSlot::new(
-            EmailAddress::new("owner@example.com".to_string()).unwrap(),
+            EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(now - Duration::hours(1), now + remaining).unwrap(),
             vec![Resource::Gpu(Gpu::new(
                 "Thalys".to_string(),
@@ -535,7 +535,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reservation_being_used_is_not_something_to_tell_its_owner_about() {
+    fn a_reservation_being_used_is_not_something_to_tell_its_holder_about() {
         assert!(criteria().notice_terms(&SlotActivity::InUse).is_none());
         assert!(
             criteria()

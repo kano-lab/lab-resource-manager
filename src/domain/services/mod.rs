@@ -5,7 +5,7 @@
 //! # モジュール
 //!
 //! - `authorization` - リソース操作の認可を管理
-//! - `reservation` - リソース使用予定に関するビジネスロジック
+//! - `reservation` - 予約枠に関するビジネスロジック
 
 pub mod authorization;
 pub mod reservation;

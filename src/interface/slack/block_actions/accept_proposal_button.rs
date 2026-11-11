@@ -129,7 +129,7 @@ fn conflicts_only_with_own_reservations(
 ) -> bool {
     conflicts
         .iter()
-        .all(|conflict| conflict.existing_usage.holder_email() == accepted_by)
+        .all(|conflict| conflict.existing_slot.holder_email() == accepted_by)
 }
 
 /// 受諾できなかった事実を記録する
@@ -143,7 +143,7 @@ fn log_failure(failure: &AcceptFailure) {
             accepted_by,
             error: ApplicationError::ResourceConflict { conflicts },
         } => warn!(
-            owner = %accepted_by.as_str(),
+            holder = %accepted_by.as_str(),
             conflicts = conflicts.len(),
             origin = "slack",
             "reservation rejected: resources already booked"
@@ -199,7 +199,7 @@ where
     info!(
         server = %payload.server,
         devices = ?payload.device_numbers,
-        owner = %payload.holder_email,
+        holder = %payload.holder_email,
         duration_minutes = payload.duration_minutes,
         "accepting a post-hoc reservation proposal"
     );
@@ -277,10 +277,10 @@ mod tests {
         ))
     }
 
-    fn conflict_with(owner: &str, device_number: u32) -> ResourceConflictError {
+    fn conflict_with(holder: &str, device_number: u32) -> ResourceConflictError {
         let now = Utc::now();
-        let existing_usage = ReservedSlot::new(
-            EmailAddress::new(owner.to_string()).unwrap(),
+        let existing_slot = ReservedSlot::new(
+            EmailAddress::new(holder.to_string()).unwrap(),
             TimePeriod::new(now, now + Duration::hours(2)).unwrap(),
             vec![gpu(device_number)],
             None,
@@ -289,7 +289,7 @@ mod tests {
 
         ResourceConflictError {
             resources: vec![gpu(device_number)],
-            existing_usage,
+            existing_slot,
         }
     }
 
