@@ -284,6 +284,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             list_all_usecase.clone(),
             list_mine_usecase.clone(),
             get_by_id_usecase.clone(),
+            check_availability_usecase.clone(),
             resource_config.clone(),
         );
         let mcp_token_repo_for_serve = mcp_token_repo.clone();

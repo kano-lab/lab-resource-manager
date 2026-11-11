@@ -520,11 +520,14 @@ person).
 
 | Tool | Description |
 |------|--------------|
+| `list_resources` | List the resources that can be reserved (GPU servers with their devices, rooms) |
+| `check_availability` | Check when each resource is free in a period (up to 60 days, filterable by server or room) |
 | `list_all_reservations` | List all future (including ongoing) reservations |
 | `list_my_reservations` | List reservations owned by the caller |
 | `get_reservation` | Get a reservation's details by ID |
 | `create_reservation` | Create a new reservation (GPU server or room) |
 | `update_reservation` | Update the time or notes of a reservation you own |
+| `release_reservation_early` | End a running reservation of yours now, releasing the remaining time |
 | `cancel_reservation` | Cancel a reservation you own |
 
 Write tools (create/update/cancel) treat the email address linked to the caller's Bearer
