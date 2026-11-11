@@ -2,6 +2,7 @@
 //!
 //! 既存のユースケース層をそのまま呼び出す薄いアダプタ。新しい業務ロジックは持たない。
 
+use crate::application::usecases::check_resource_availability::CheckResourceAvailabilityUseCase;
 use crate::application::usecases::create_resource_usage::CreateResourceUsageUseCase;
 use crate::application::usecases::delete_resource_usage::DeleteResourceUsageUseCase;
 use crate::application::usecases::get_resource_usage_by_id::GetResourceUsageByIdUseCase;
@@ -17,8 +18,9 @@ use crate::domain::ports::repositories::ResourceUsageRepository;
 use crate::infrastructure::config::ResourceConfig;
 use crate::interface::mcp::auth::ResolvedCaller;
 use crate::interface::mcp::dto::{
-    CancelReservationParams, CreateReservationParams, GetReservationParams,
-    ReleaseReservationEarlyParams, ReservationDto, UpdateReservationParams,
+    CancelReservationParams, CheckAvailabilityParams, CreateReservationParams,
+    GetReservationParams, ReleaseReservationEarlyParams, ReservationDto, ResourceAvailabilityDto,
+    ResourceCatalogDto, UpdateReservationParams, resources_to_check,
 };
 use rmcp::ErrorData;
 use rmcp::handler::server::tool::Extension;
@@ -39,6 +41,7 @@ pub struct LrmMcpServer<R: ResourceUsageRepository> {
     list_all_usecase: Arc<ListAllFutureResourceUsagesUseCase<R>>,
     list_mine_usecase: Arc<ListUserResourceUsagesUseCase<R>>,
     get_by_id_usecase: Arc<GetResourceUsageByIdUseCase<R>>,
+    check_availability_usecase: Arc<CheckResourceAvailabilityUseCase<R>>,
     resource_config: Arc<ResourceConfig>,
 }
 
@@ -52,6 +55,7 @@ impl<R: ResourceUsageRepository> Clone for LrmMcpServer<R> {
             list_all_usecase: self.list_all_usecase.clone(),
             list_mine_usecase: self.list_mine_usecase.clone(),
             get_by_id_usecase: self.get_by_id_usecase.clone(),
+            check_availability_usecase: self.check_availability_usecase.clone(),
             resource_config: self.resource_config.clone(),
         }
     }
@@ -88,6 +92,11 @@ fn listing_window()
     TimePeriod::new(now, now + chrono::Duration::days(LISTING_WINDOW_DAYS))
 }
 
+/// 空きを一度に調べられる期間の上限
+///
+/// 繰り返し予約は個々の予定へ展開されるため、上限を設けないと際限なく予定を読むことになる。
+const AVAILABILITY_WINDOW_MAX_DAYS: i64 = 60;
+
 fn tool_error(message: impl std::fmt::Display) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(message.to_string())])
 }
@@ -115,6 +124,7 @@ where
         list_all_usecase: Arc<ListAllFutureResourceUsagesUseCase<R>>,
         list_mine_usecase: Arc<ListUserResourceUsagesUseCase<R>>,
         get_by_id_usecase: Arc<GetResourceUsageByIdUseCase<R>>,
+        check_availability_usecase: Arc<CheckResourceAvailabilityUseCase<R>>,
         resource_config: Arc<ResourceConfig>,
     ) -> Self {
         Self {
@@ -125,6 +135,7 @@ where
             list_all_usecase,
             list_mine_usecase,
             get_by_id_usecase,
+            check_availability_usecase,
             resource_config,
         }
     }
@@ -336,6 +347,57 @@ where
             Err(e) => Ok(tool_error(e)),
         }
     }
+
+    #[tool(
+        description = "予約できるリソース（GPUサーバーとそのデバイス番号・モデル、部屋）を一覧表示する。create_reservationに指定できる名前と番号はここで確認できる"
+    )]
+    async fn list_resources(&self) -> Result<CallToolResult, ErrorData> {
+        Ok(success_json(&ResourceCatalogDto::from(
+            self.resource_config.as_ref(),
+        )))
+    }
+
+    #[tool(
+        description = "指定した期間における各リソースの空きを調べる。リソースごとに空いている区間と、予約で埋まっている区間（予約者つき）を返す。serverまたはroomで絞り込める（省略時は全リソース）。調べられる期間は最長60日。予約されないまま使われているリソースは空きとして現れる"
+    )]
+    async fn check_availability(
+        &self,
+        Parameters(params): Parameters<CheckAvailabilityParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let window = match TimePeriod::new(params.start, params.end) {
+            Ok(window) => window,
+            Err(e) => return Ok(tool_error(e)),
+        };
+        if params.end - params.start > chrono::Duration::days(AVAILABILITY_WINDOW_MAX_DAYS) {
+            return Ok(tool_error(format!(
+                "調べられる期間は最長{AVAILABILITY_WINDOW_MAX_DAYS}日です。期間を短くしてください"
+            )));
+        }
+
+        let resources = match resources_to_check(
+            &self.resource_config,
+            params.server.as_deref(),
+            params.room.as_deref(),
+        ) {
+            Ok(resources) => resources,
+            Err(message) => return Ok(tool_error(message)),
+        };
+
+        match self
+            .check_availability_usecase
+            .execute(&resources, &window)
+            .await
+        {
+            Ok(availabilities) => {
+                let dtos: Vec<ResourceAvailabilityDto> = availabilities
+                    .iter()
+                    .map(ResourceAvailabilityDto::from)
+                    .collect();
+                Ok(success_json(&dtos))
+            }
+            Err(e) => Ok(tool_error(e)),
+        }
+    }
 }
 
 #[tool_handler]
@@ -346,7 +408,8 @@ where
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
         info.instructions = Some(
-            "lab-resource-manager の予約を閲覧・作成・更新・早期終了・キャンセルするツール群。\
+            "lab-resource-manager の予約を閲覧・作成・更新・早期終了・キャンセルし、\
+            予約できるリソースとその空きを調べるツール群。\
             書き込み系ツールは呼び出し元のBearerトークンに紐づくメールアドレスを所有者として扱う。"
                 .to_string(),
         );
