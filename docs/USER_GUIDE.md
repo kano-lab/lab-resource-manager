@@ -253,8 +253,6 @@ Ask your admin for the exact URL (host, port, and whether it's `http://` or `htt
 
 ### What You Can Do
 
-- List the resources that can be reserved (GPU servers with their device numbers, meeting rooms)
-- Check when each resource is free in a given period
 - List all upcoming reservations, or just your own
 - Look up a reservation by ID
 - Create a new reservation (GPU server or meeting room)

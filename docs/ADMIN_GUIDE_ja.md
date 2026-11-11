@@ -501,14 +501,11 @@ CA証明書を信頼させること自体は受動的な設定で、誰にも新
 
 | ツール名 | 内容 |
 |---------|------|
-| `list_resources` | 予約できるリソース（GPUサーバーとデバイス、部屋）を一覧表示 |
-| `check_availability` | 指定期間における各リソースの空きを調べる（最長60日、サーバー・部屋で絞り込み可） |
 | `list_all_reservations` | 今後（進行中含む）の全予約を一覧表示 |
 | `list_my_reservations` | 自分が所有する予約を一覧表示 |
 | `get_reservation` | IDを指定して予約の詳細を取得 |
 | `create_reservation` | 新しい予約を作成（GPUサーバーまたは部屋） |
 | `update_reservation` | 自分が所有する予約の時間・備考を更新 |
-| `release_reservation_early` | 進行中の自分の予約を今の時点で終了し、残り時間を解放 |
 | `cancel_reservation` | 自分が所有する予約をキャンセル |
 
 書き込み系ツール（作成・更新・キャンセル）は、呼び出し元のBearerトークンに紐づく

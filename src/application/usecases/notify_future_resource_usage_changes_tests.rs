@@ -372,3 +372,32 @@ async fn single_reservations_are_still_announced_one_by_one() {
         "{deleted:?}"
     );
 }
+
+#[tokio::test]
+async fn a_reservation_that_ran_its_course_is_not_announced() {
+    let repository = Arc::new(MockUsageRepository::new());
+    // 既に終わりかけの予約。次のポーリングまでに予定どおり終わる
+    let ending = ResourceUsage::reconstruct(
+        UsageId::from_string("ending".to_string()),
+        EmailAddress::new("owner@example.com".to_string()).unwrap(),
+        TimePeriod::new(
+            Utc::now() - Duration::hours(1),
+            Utc::now() + Duration::milliseconds(50),
+        )
+        .unwrap(),
+        vec![Resource::Gpu(Gpu::new(
+            "Thalys".to_string(),
+            0,
+            "A100".to_string(),
+        ))],
+        None,
+    )
+    .unwrap();
+    repository.save(&ending).await.unwrap();
+    let (usecase, notifier) = watching(&repository).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    usecase.poll_once().await.unwrap();
+
+    assert!(notifier.take().is_empty());
+}
