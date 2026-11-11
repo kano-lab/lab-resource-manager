@@ -517,6 +517,7 @@ person).
 | `release_reservation_early` | End a running reservation of yours now, releasing the remaining time |
 | `cancel_reservation` | Cancel a reservation you own |
 | `list_resources` | List the resources that can be reserved (GPU servers with their devices, rooms) |
+| `check_availability` | Check when each resource is free in a period (up to 60 days, filterable by server or room) |
 
 Write tools (create/update/cancel) treat the email address linked to the caller's Bearer
 token as the owner. Updating or cancelling someone else's reservation is rejected by the
