@@ -1,5 +1,6 @@
 use super::errors::ResourceUsageError;
 use super::value_objects::*;
+use crate::domain::aggregates::recurring_reservation::RecurringReservationId;
 use crate::domain::common::EmailAddress;
 use chrono::{DateTime, Utc};
 
@@ -13,6 +14,8 @@ pub struct ResourceUsage {
     time_period: TimePeriod,
     resources: Vec<Resource>,
     notes: Option<String>,
+    /// この使用予定が定期予約の1回である場合、その定期予約
+    recurring_reservation_id: Option<RecurringReservationId>,
 }
 
 impl ResourceUsage {
@@ -42,6 +45,7 @@ impl ResourceUsage {
             time_period,
             resources,
             notes,
+            recurring_reservation_id: None,
         })
     }
 
@@ -73,6 +77,7 @@ impl ResourceUsage {
             time_period,
             resources,
             notes,
+            recurring_reservation_id: None,
         })
     }
 
@@ -99,6 +104,22 @@ impl ResourceUsage {
     /// 備考を取得
     pub fn notes(&self) -> Option<&String> {
         self.notes.as_ref()
+    }
+
+    /// この使用予定が定期予約の1回である場合、その定期予約のIDを取得
+    ///
+    /// 単発の予約では`None`。
+    pub fn recurring_reservation_id(&self) -> Option<&RecurringReservationId> {
+        self.recurring_reservation_id.as_ref()
+    }
+
+    /// 定期予約の1回として位置づける（リポジトリからの再構築用）
+    ///
+    /// # Arguments
+    /// * `recurring_reservation_id` - この回が属する定期予約のID
+    pub fn as_occurrence_of(mut self, recurring_reservation_id: RecurringReservationId) -> Self {
+        self.recurring_reservation_id = Some(recurring_reservation_id);
+        self
     }
 
     /// 使用期間を更新する
@@ -213,6 +234,22 @@ mod tests {
             matches!(error, ResourceUsageError::AlreadyEnded { .. }),
             "開く残り時間がない: {:?}",
             error
+        );
+    }
+
+    #[test]
+    fn releasing_one_occurrence_early_keeps_it_part_of_its_recurring_reservation() {
+        let start = Utc::now() - Duration::hours(1);
+        let series = RecurringReservationId::from_string("weekly-meeting".to_string());
+        let mut usage =
+            usage_running_from(start, start + Duration::hours(4)).as_occurrence_of(series.clone());
+
+        usage.release_early(start + Duration::minutes(30)).unwrap();
+
+        assert_eq!(
+            usage.recurring_reservation_id(),
+            Some(&series),
+            "締めるのはこの回だけで、定期予約から外れるわけではない"
         );
     }
 

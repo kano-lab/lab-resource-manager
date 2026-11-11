@@ -7,7 +7,11 @@ use super::event_gateway::CalendarEventGateway;
 use super::repository::GoogleCalendarUsageRepository;
 use crate::domain::aggregates::identity_link::entity::IdentityLink;
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
+use crate::domain::aggregates::recurring_reservation::{
+    RecurrenceFrequency, RecurringReservationId,
+};
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
+use crate::domain::aggregates::resource_usage::value_objects::UsageId;
 use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod};
 use crate::domain::ports::repositories::{
     IdentityLinkRepository, RepositoryError, ResourceUsageRepository,
@@ -833,4 +837,161 @@ async fn updating_a_saved_reservation_updates_the_event_instead_of_inserting_aga
         usage.id().as_str().replace('-', ""),
         "同じイベントIDを更新するべき"
     );
+}
+
+/// 利用者がカレンダー上で直接作った毎週の繰り返しイベント（展開前の本体）
+fn weekly_series_event(series_id: &str, first_start: DateTime<Utc>) -> Event {
+    let mut event = reservation_event(
+        series_id,
+        "0",
+        "owner@example.com",
+        first_start,
+        first_start + Duration::hours(2),
+    );
+    event.recurrence = Some(vec!["RRULE:FREQ=WEEKLY;BYDAY=MO".to_string()]);
+    event
+}
+
+/// 繰り返しイベントから展開された1回
+fn occurrence_event(series_id: &str, start: DateTime<Utc>) -> Event {
+    let mut event = reservation_event(
+        &format!("{series_id}_{}", start.format("%Y%m%dT%H%M%SZ")),
+        "0",
+        "owner@example.com",
+        start,
+        start + Duration::hours(2),
+    );
+    event.recurring_event_id = Some(series_id.to_string());
+    event
+}
+
+#[tokio::test]
+async fn occurrences_of_a_recurring_event_point_at_their_recurring_reservation() {
+    let now = Utc::now();
+    let (repository, _gateway) = repository_with(vec![
+        occurrence_event("weekly", now + Duration::days(1)),
+        occurrence_event("weekly", now + Duration::days(8)),
+        reservation_event(
+            "single",
+            "1",
+            "owner@example.com",
+            now + Duration::days(2),
+            now + Duration::days(2) + Duration::hours(1),
+        ),
+    ]);
+    let period = TimePeriod::new(now, now + Duration::days(30)).unwrap();
+
+    let usages = repository.find_overlapping(&period).await.unwrap();
+
+    let series = RecurringReservationId::from_string("weekly".to_string());
+    assert_eq!(
+        usages
+            .iter()
+            .filter(|usage| usage.recurring_reservation_id() == Some(&series))
+            .count(),
+        2,
+        "展開された各回は同じ定期予約を指す"
+    );
+    assert_eq!(
+        usages
+            .iter()
+            .filter(|usage| usage.recurring_reservation_id().is_none())
+            .count(),
+        1,
+        "単発の予約は定期予約に属さない"
+    );
+}
+
+#[tokio::test]
+async fn an_occurrence_found_by_id_still_points_at_its_recurring_reservation() {
+    let start = Utc::now() + Duration::days(1);
+    let occurrence = occurrence_event("weekly", start);
+    let id = UsageId::from_string(occurrence.id.clone().unwrap());
+    let (repository, _gateway) = repository_with(vec![occurrence]);
+
+    let found = repository.find_by_id(&id).await.unwrap().unwrap();
+
+    assert_eq!(
+        found.recurring_reservation_id().map(|id| id.as_str()),
+        Some("weekly")
+    );
+}
+
+#[tokio::test]
+async fn a_recurring_reservation_is_read_from_the_recurring_event_itself() {
+    let first_start = Utc::now() - Duration::days(14);
+    let (repository, _gateway) = repository_with(vec![weekly_series_event("weekly", first_start)]);
+
+    let reservation = repository
+        .find_recurring_reservation(&RecurringReservationId::from_string("weekly".to_string()))
+        .await
+        .unwrap()
+        .expect("繰り返しイベントは定期予約として読める");
+
+    assert_eq!(reservation.owner_email().as_str(), "owner@example.com");
+    assert_eq!(
+        reservation.representative_period().start(),
+        first_start,
+        "初回の時刻が各回の時間帯を代表する"
+    );
+    assert_eq!(
+        reservation.rule().map(|rule| rule.frequency()),
+        Some(RecurrenceFrequency::Weekly)
+    );
+}
+
+#[tokio::test]
+async fn a_deleted_recurring_event_is_no_longer_a_recurring_reservation() {
+    let mut deleted = weekly_series_event("weekly", Utc::now());
+    deleted.status = Some("cancelled".to_string());
+    let (repository, _gateway) = repository_with(vec![deleted]);
+
+    let reservation = repository
+        .find_recurring_reservation(&RecurringReservationId::from_string("weekly".to_string()))
+        .await
+        .unwrap();
+
+    assert!(reservation.is_none());
+}
+
+#[tokio::test]
+async fn a_single_event_is_not_a_recurring_reservation() {
+    let now = Utc::now();
+    let (repository, _gateway) = repository_with(vec![reservation_event(
+        "single",
+        "0",
+        "owner@example.com",
+        now,
+        now + Duration::hours(1),
+    )]);
+
+    let reservation = repository
+        .find_recurring_reservation(&RecurringReservationId::from_string("single".to_string()))
+        .await
+        .unwrap();
+
+    assert!(reservation.is_none());
+}
+
+#[tokio::test]
+async fn ending_one_occurrence_early_rewrites_only_that_occurrence() {
+    let start = Utc::now() - Duration::hours(1);
+    let occurrence = occurrence_event("weekly", start);
+    let occurrence_id = occurrence.id.clone().unwrap();
+    let id = UsageId::from_string(occurrence_id.clone());
+    let (repository, gateway) = repository_with(vec![
+        weekly_series_event("weekly", start - Duration::days(7)),
+        occurrence,
+    ]);
+
+    let mut usage = repository.find_by_id(&id).await.unwrap().unwrap();
+    usage.release_early(Utc::now()).unwrap();
+    repository.save(&usage).await.unwrap();
+
+    assert_eq!(
+        gateway.updated(),
+        vec![(CALENDAR_ID.to_string(), occurrence_id)],
+        "繰り返しイベント本体には触れず、その回だけを書き換える"
+    );
+    assert!(gateway.inserted().is_empty(), "別の予約を作ってはいけない");
 }

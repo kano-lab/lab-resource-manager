@@ -1,5 +1,9 @@
 use super::event_gateway::{CalendarEventGateway, GoogleCalendarEventGateway};
+use super::recurrence::parse_recurrence;
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
+use crate::domain::aggregates::recurring_reservation::{
+    RecurringReservation, RecurringReservationId,
+};
 use crate::domain::aggregates::resource_usage::{
     entity::ResourceUsage,
     factory::ResourceFactory,
@@ -370,8 +374,16 @@ impl GoogleCalendarUsageRepository {
             .as_ref()
             .and_then(|desc| Self::extract_notes(desc));
 
-        ResourceUsage::reconstruct(id, user, time_period, items, notes)
-            .map_err(RepositoryError::from)
+        let usage = ResourceUsage::reconstruct(id, user, time_period, items, notes)
+            .map_err(RepositoryError::from)?;
+
+        // 繰り返しイベントから展開された回は、元の繰り返しイベントを定期予約として指す
+        Ok(match event.recurring_event_id {
+            Some(series_id) => {
+                usage.as_occurrence_of(RecurringReservationId::from_string(series_id))
+            }
+            None => usage,
+        })
     }
 
     /// descriptionから備考（アプリ管理セクションの外側）を取り出す
@@ -537,14 +549,19 @@ impl GoogleCalendarUsageRepository {
             return Ok(usage);
         }
 
-        ResourceUsage::reconstruct(
+        let renamed = ResourceUsage::reconstruct(
             id.clone(),
             usage.owner_email().clone(),
             usage.time_period().clone(),
             usage.resources().to_vec(),
             usage.notes().cloned(),
         )
-        .map_err(RepositoryError::from)
+        .map_err(RepositoryError::from)?;
+
+        Ok(match usage.recurring_reservation_id() {
+            Some(series_id) => renamed.as_occurrence_of(series_id.clone()),
+            None => renamed,
+        })
     }
 
     /// 予約IDから導出したイベントIDを指定して、カレンダーにイベントを作成する
@@ -822,5 +839,38 @@ impl ResourceUsageRepository for GoogleCalendarUsageRepository {
     async fn delete(&self, id: &UsageId) -> Result<(), RepositoryError> {
         // 予約IDから導出したイベントIDで全カレンダーを探して削除
         self.delete_by_event_id(&event_id_for(id)).await
+    }
+
+    /// 定期予約を、展開前の繰り返しイベントから読み取る
+    ///
+    /// 繰り返しイベントそのものは最初の回の時刻と繰り返しの指定を持つ。
+    /// 削除された繰り返しイベントは`status: cancelled`として返ることがあり、
+    /// これは取り消された定期予約として`None`を返す。
+    async fn find_recurring_reservation(
+        &self,
+        id: &RecurringReservationId,
+    ) -> Result<Option<RecurringReservation>, RepositoryError> {
+        for (calendar_id, resource_context) in self.calendars() {
+            let Some(event) = self.gateway.get_event(&calendar_id, id.as_str()).await? else {
+                continue;
+            };
+
+            if !is_active_event(&event) {
+                return Ok(None);
+            }
+            let Some(recurrence) = event.recurrence.clone() else {
+                // 繰り返しの指定を持たないイベントは定期予約ではない
+                return Ok(None);
+            };
+
+            let first_occurrence = self.parse_event(event, &resource_context)?;
+            return Ok(Some(RecurringReservation::from_occurrence(
+                id.clone(),
+                &first_occurrence,
+                parse_recurrence(&recurrence),
+            )));
+        }
+
+        Ok(None)
     }
 }

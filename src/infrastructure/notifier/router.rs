@@ -38,14 +38,8 @@ impl NotificationRouter {
     }
 
     fn collect_notification_configs(&self, event: &NotificationEvent) -> Vec<NotificationConfig> {
-        let resources = match event {
-            NotificationEvent::ResourceUsageCreated(usage)
-            | NotificationEvent::ResourceUsageUpdated(usage)
-            | NotificationEvent::ResourceUsageDeleted(usage) => usage.resources(),
-        };
-
         let mut configs = HashSet::new();
-        for resource in resources {
+        for resource in event.resources() {
             let resource_configs = self.config.get_notifications_for_resource(resource);
             configs.extend(resource_configs);
         }
@@ -58,13 +52,7 @@ impl NotificationRouter {
         config: &NotificationConfig,
         event: &NotificationEvent,
     ) -> Result<(), NotificationError> {
-        let usage = match event {
-            NotificationEvent::ResourceUsageCreated(u)
-            | NotificationEvent::ResourceUsageUpdated(u)
-            | NotificationEvent::ResourceUsageDeleted(u) => u,
-        };
-
-        let user_email = usage.owner_email();
+        let user_email = event.owner_email();
 
         // IdentityLinkを取得
         // Ok(None) = IdentityLinkが未登録（正常ケース）

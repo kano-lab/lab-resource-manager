@@ -16,6 +16,11 @@ pub struct ReservationDto {
     pub end: DateTime<Utc>,
     pub resources: Vec<String>,
     pub notes: Option<String>,
+    /// 定期予約の1回である場合、その定期予約のID（単発の予約では`null`）
+    ///
+    /// 同じ値を持つ予約は同じ定期予約の別の回である。更新・早期終了・キャンセルは
+    /// 指定した回だけに作用し、他の回には及ばない。
+    pub recurring_reservation_id: Option<String>,
 }
 
 impl From<&ResourceUsage> for ReservationDto {
@@ -27,6 +32,9 @@ impl From<&ResourceUsage> for ReservationDto {
             end: usage.time_period().end(),
             resources: usage.resources().iter().map(|r| r.to_string()).collect(),
             notes: usage.notes().cloned(),
+            recurring_reservation_id: usage
+                .recurring_reservation_id()
+                .map(|id| id.as_str().to_string()),
         }
     }
 }

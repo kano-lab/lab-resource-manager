@@ -122,6 +122,10 @@ pub mod prelude {
     pub use crate::application::error::ApplicationError;
 
     // Domain types
+    pub use crate::domain::aggregates::recurring_reservation::{
+        RecurrenceEnd, RecurrenceFrequency, RecurrenceRule, RecurringReservation,
+        RecurringReservationId,
+    };
     pub use crate::domain::aggregates::resource_usage::{
         entity::ResourceUsage,
         errors::ResourceUsageError,

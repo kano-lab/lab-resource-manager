@@ -158,6 +158,23 @@ Reservation notifications carry buttons for acting on your own reservations.
 Use "⏹️ End now" when you finish earlier than planned, and "❌ Cancel" when you are not
 going to use the resource at all. You can only act on reservations you own.
 
+### Notifications for Recurring Reservations
+
+A reservation created in your calendar app with a repeat setting such as "weekly" is
+treated as a recurring reservation. It is announced as one recurring reservation in a
+single message, not once per occurrence.
+
+- **Creating a recurring reservation**: one "🔁 新規定期予約" message, with the interval
+  (such as "毎週 月・水")
+- **Cancelling a recurring reservation**: one "🗑️ 定期予約取り消し" message
+- **A change reaching several occurrences** (a new time slot, cutting the series short):
+  one "🔁 定期予約変更" message
+- **Changing, cancelling, or ending early a single occurrence**: the usual notification
+  for that occurrence
+
+Recurring reservation notifications carry no buttons. "End now" and cancel act on one
+occurrence only, and leave the following occurrences in place.
+
 ### When a Reservation Goes Unused
 
 When GPU usage monitoring is enabled, the bot sends you a direct message when a

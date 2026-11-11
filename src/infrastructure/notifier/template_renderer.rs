@@ -2,10 +2,14 @@
 //!
 //! 通知メッセージのテンプレートとプレースホルダー置換を処理します。
 
+use crate::domain::aggregates::recurring_reservation::RecurringReservation;
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod};
+use crate::domain::ports::notifier::NotificationEvent;
 use crate::infrastructure::config::{FormatConfig, TemplateConfig};
-use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
+use crate::infrastructure::notifier::formatter::{
+    format_recurrence, format_resources_styled, format_time_styled,
+};
 
 /// プレースホルダー定義
 pub mod placeholders {
@@ -19,6 +23,8 @@ pub mod placeholders {
     pub const NOTES: &str = "{notes}";
     /// リソースラベル（💻 予約GPU等）
     pub const RESOURCE_LABEL: &str = "{resource_label}";
+    /// 繰り返しの間隔（定期予約のテンプレートでのみ値を持つ）
+    pub const RECURRENCE: &str = "{recurrence}";
 }
 
 /// デフォルトテンプレート（現在のハードコード値と同等）
@@ -34,8 +40,42 @@ pub mod defaults {
         "🗑️ 予約削除\n👤 {user}\n\n📅 期間\n{time}\n\n{resource_label}\n{resource}{notes}";
     /// 予約競合時のデフォルトテンプレート（1件の競合）
     pub const CONFLICT: &str = "⚠️ 予約が重複しています\n👤 予約者\n{user}\n\n📅 競合する期間\n{time}\n\n{resource_label}\n{resource}{notes}";
+    /// 定期予約作成時のデフォルトテンプレート
+    pub const RECURRING_CREATED: &str = "🔁 新規定期予約\n👤 {user}\n\n🗓️ 繰り返し\n{recurrence}\n\n📅 時間帯（初回）\n{time}\n\n{resource_label}\n{resource}{notes}";
+    /// 定期予約変更時のデフォルトテンプレート
+    pub const RECURRING_UPDATED: &str = "🔁 定期予約変更\n👤 {user}\n\n🗓️ 繰り返し\n{recurrence}\n\n📅 時間帯（初回）\n{time}\n\n{resource_label}\n{resource}{notes}";
+    /// 定期予約取り消し時のデフォルトテンプレート
+    pub const RECURRING_CANCELLED: &str = "🗑️ 定期予約取り消し\n👤 {user}\n\n🗓️ 繰り返し\n{recurrence}\n\n📅 時間帯（初回）\n{time}\n\n{resource_label}\n{resource}{notes}";
     /// 複数競合時の各項目テンプレート（見出しなし）
     pub const CONFLICT_ITEM: &str = "👤 {user}\n\n📅 {time}\n\n{resource_label}\n{resource}{notes}";
+}
+
+/// イベントの種類に応じたテンプレートでメッセージをレンダリング
+pub fn render_event(
+    renderer: &TemplateRenderer<'_>,
+    event: &NotificationEvent,
+    user_display: &str,
+) -> String {
+    match event {
+        NotificationEvent::ResourceUsageCreated(usage) => {
+            renderer.render_created(usage, user_display)
+        }
+        NotificationEvent::ResourceUsageUpdated(usage) => {
+            renderer.render_updated(usage, user_display)
+        }
+        NotificationEvent::ResourceUsageDeleted(usage) => {
+            renderer.render_deleted(usage, user_display)
+        }
+        NotificationEvent::RecurringReservationCreated(reservation) => {
+            renderer.render_recurring_created(reservation, user_display)
+        }
+        NotificationEvent::RecurringReservationUpdated(reservation) => {
+            renderer.render_recurring_updated(reservation, user_display)
+        }
+        NotificationEvent::RecurringReservationCancelled(reservation) => {
+            renderer.render_recurring_cancelled(reservation, user_display)
+        }
+    }
 }
 
 /// テンプレートレンダラー
@@ -72,6 +112,7 @@ impl<'a> TemplateRenderer<'a> {
             usage.time_period(),
             usage.notes().map(String::as_str),
             user_display,
+            None,
         )
     }
 
@@ -88,6 +129,7 @@ impl<'a> TemplateRenderer<'a> {
             usage.time_period(),
             usage.notes().map(String::as_str),
             user_display,
+            None,
         )
     }
 
@@ -104,6 +146,67 @@ impl<'a> TemplateRenderer<'a> {
             usage.time_period(),
             usage.notes().map(String::as_str),
             user_display,
+            None,
+        )
+    }
+
+    /// 定期予約作成メッセージをレンダリング
+    pub fn render_recurring_created(
+        &self,
+        reservation: &RecurringReservation,
+        user_display: &str,
+    ) -> String {
+        let template = self
+            .templates
+            .recurring_created
+            .as_deref()
+            .unwrap_or(defaults::RECURRING_CREATED);
+        self.render_recurring(template, reservation, user_display)
+    }
+
+    /// 定期予約変更メッセージをレンダリング
+    pub fn render_recurring_updated(
+        &self,
+        reservation: &RecurringReservation,
+        user_display: &str,
+    ) -> String {
+        let template = self
+            .templates
+            .recurring_updated
+            .as_deref()
+            .unwrap_or(defaults::RECURRING_UPDATED);
+        self.render_recurring(template, reservation, user_display)
+    }
+
+    /// 定期予約取り消しメッセージをレンダリング
+    pub fn render_recurring_cancelled(
+        &self,
+        reservation: &RecurringReservation,
+        user_display: &str,
+    ) -> String {
+        let template = self
+            .templates
+            .recurring_cancelled
+            .as_deref()
+            .unwrap_or(defaults::RECURRING_CANCELLED);
+        self.render_recurring(template, reservation, user_display)
+    }
+
+    fn render_recurring(
+        &self,
+        template: &str,
+        reservation: &RecurringReservation,
+        user_display: &str,
+    ) -> String {
+        let recurrence =
+            format_recurrence(reservation.rule(), self.timezone, self.format.date_format);
+        self.render(
+            template,
+            reservation.resources(),
+            reservation.representative_period(),
+            reservation.notes().map(String::as_str),
+            user_display,
+            Some(&recurrence),
         )
     }
 
@@ -128,6 +231,7 @@ impl<'a> TemplateRenderer<'a> {
             existing_usage.time_period(),
             existing_usage.notes().map(String::as_str),
             user_display,
+            None,
         )
     }
 
@@ -152,6 +256,7 @@ impl<'a> TemplateRenderer<'a> {
             existing_usage.time_period(),
             existing_usage.notes().map(String::as_str),
             user_display,
+            None,
         )
     }
 
@@ -166,6 +271,7 @@ impl<'a> TemplateRenderer<'a> {
         time_period: &TimePeriod,
         notes: Option<&str>,
         user_display: &str,
+        recurrence: Option<&str>,
     ) -> String {
         let resources_formatted = format_resources_styled(resources, self.format.resource_style);
 
@@ -196,6 +302,12 @@ impl<'a> TemplateRenderer<'a> {
                 result.push_str(resource_label);
                 // プレースホルダー分の文字をスキップ（先頭1文字は既に読み込み済み）
                 for _ in 1..placeholders::RESOURCE_LABEL.len() {
+                    chars.next();
+                }
+            } else if rest.starts_with(placeholders::RECURRENCE) {
+                // 単発の予約には繰り返しが無いため、空として扱う
+                result.push_str(recurrence.unwrap_or_default());
+                for _ in 1..placeholders::RECURRENCE.len() {
                     chars.next();
                 }
             } else if rest.starts_with(placeholders::RESOURCE) {
@@ -295,6 +407,7 @@ mod tests {
             deleted: None,
             conflict: None,
             conflict_item: None,
+            ..Default::default()
         };
         let format = FormatConfig {
             resource_style: ResourceStyle::Compact,
@@ -403,6 +516,7 @@ mod tests {
             deleted: None,
             conflict: Some("{user}が既に{resource}を{time}で予約済みです".to_string()),
             conflict_item: None,
+            ..Default::default()
         };
         let format = FormatConfig::default();
 
@@ -481,6 +595,7 @@ mod tests {
             deleted: None,
             conflict: None,
             conflict_item: Some("{user} : {time} に {resource}".to_string()),
+            ..Default::default()
         };
         let format = FormatConfig::default();
 
@@ -498,5 +613,85 @@ mod tests {
         assert!(result.contains("田中太郎 : "));
         assert!(result.contains("に"));
         assert!(result.contains("GPU:1"));
+    }
+
+    fn create_test_recurring_reservation(
+        rule: Option<crate::domain::aggregates::recurring_reservation::RecurrenceRule>,
+    ) -> RecurringReservation {
+        use crate::domain::aggregates::recurring_reservation::RecurringReservationId;
+
+        RecurringReservation::from_occurrence(
+            RecurringReservationId::from_string("weekly".to_string()),
+            &create_test_usage(),
+            rule,
+        )
+    }
+
+    #[test]
+    fn a_recurring_reservation_is_announced_with_its_interval() {
+        use crate::domain::aggregates::recurring_reservation::{
+            RecurrenceEnd, RecurrenceFrequency, RecurrenceRule,
+        };
+
+        let templates = TemplateConfig::default();
+        let format = FormatConfig::default();
+        let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
+        let reservation = create_test_recurring_reservation(Some(RecurrenceRule::new(
+            RecurrenceFrequency::Weekly,
+            1,
+            vec![chrono::Weekday::Mon],
+            RecurrenceEnd::Never,
+        )));
+
+        let created = renderer.render_recurring_created(&reservation, "<@U12345>");
+
+        assert!(created.contains("🔁 新規定期予約"), "{created}");
+        assert!(created.contains("毎週 月"), "{created}");
+        assert!(created.contains("<@U12345>"));
+        assert!(created.contains("Thalys"));
+        assert!(created.contains("テスト用予約"));
+
+        assert!(
+            renderer
+                .render_recurring_updated(&reservation, "<@U12345>")
+                .contains("🔁 定期予約変更")
+        );
+        assert!(
+            renderer
+                .render_recurring_cancelled(&reservation, "<@U12345>")
+                .contains("🗑️ 定期予約取り消し")
+        );
+    }
+
+    #[test]
+    fn a_custom_recurring_template_can_place_the_interval() {
+        let templates = TemplateConfig {
+            recurring_created: Some("{user}: {recurrence} / {resource}".to_string()),
+            ..Default::default()
+        };
+        let format = FormatConfig {
+            resource_style: ResourceStyle::Compact,
+            ..Default::default()
+        };
+        let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
+
+        let result = renderer
+            .render_recurring_created(&create_test_recurring_reservation(None), "<@U12345>");
+
+        assert_eq!(result, "<@U12345>: 繰り返し（間隔は不明） / Thalys 0,1");
+    }
+
+    #[test]
+    fn the_recurrence_placeholder_is_empty_for_a_single_reservation() {
+        let templates = TemplateConfig {
+            created: Some("{user}[{recurrence}]".to_string()),
+            ..Default::default()
+        };
+        let format = FormatConfig::default();
+        let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
+
+        let result = renderer.render_created(&create_test_usage(), "<@U12345>");
+
+        assert_eq!(result, "<@U12345>[]");
     }
 }

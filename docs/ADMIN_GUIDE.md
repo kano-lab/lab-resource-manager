@@ -152,6 +152,9 @@ updated = "{user} changed reservation: {resource} {time}"
 deleted = "{user} cancelled reservation: {resource}"
 conflict = "{user} already reserved {resource} at {time}"
 conflict_item = "👤 {user}\n📅 {time}\n{resource_label}\n{resource}{notes}"
+recurring_created = "{user} set up a recurring reservation: {resource} {recurrence} {time}"
+recurring_updated = "{user} changed a recurring reservation: {resource} {recurrence}"
+recurring_cancelled = "{user} cancelled a recurring reservation: {resource} {recurrence}"
 
 # Format settings (optional)
 [servers.notifications.format]
@@ -159,6 +162,14 @@ resource_style = "compact"   # Resource display style
 time_style = "smart"         # Time display style
 date_format = "md"           # Date format
 ```
+
+`recurring_created`/`recurring_updated`/`recurring_cancelled` are used for
+recurring reservations (events created in the calendar with a repeat
+setting). A recurring reservation is announced in a single message, not
+once per occurrence. These templates can also use `{recurrence}` (the
+interval, such as "毎週 月・水"); `{time}` is the period of the first
+occurrence. Changing, cancelling, or ending early a single occurrence is
+still announced with `updated`/`deleted`.
 
 `conflict` is used when a reservation request is rejected due to a conflict.
 It is used **only when there is a single conflict**. Unlike

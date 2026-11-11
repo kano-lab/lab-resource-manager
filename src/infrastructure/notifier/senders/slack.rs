@@ -6,11 +6,10 @@ use slack_morphism::prelude::*;
 use tracing::error;
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
-use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
 use crate::infrastructure::notifier::senders::sender::{NotificationContext, Sender};
-use crate::infrastructure::notifier::template_renderer::TemplateRenderer;
+use crate::infrastructure::notifier::template_renderer::{TemplateRenderer, render_event};
 use crate::interface::slack::constants::{
     ACTION_CANCEL_RESERVATION, ACTION_EDIT_RESERVATION, ACTION_RELEASE_RESERVATION_EARLY,
 };
@@ -100,44 +99,26 @@ impl SlackSender {
             context.timezone,
         );
 
-        match context.event {
-            NotificationEvent::ResourceUsageCreated(usage) => {
-                let user_display = Self::format_user(usage.owner_email(), context.identity_link);
-                renderer.render_created(usage, &user_display)
-            }
-            NotificationEvent::ResourceUsageUpdated(usage) => {
-                let user_display = Self::format_user(usage.owner_email(), context.identity_link);
-                renderer.render_updated(usage, &user_display)
-            }
-            NotificationEvent::ResourceUsageDeleted(usage) => {
-                let user_display = Self::format_user(usage.owner_email(), context.identity_link);
-                renderer.render_deleted(usage, &user_display)
-            }
-        }
-    }
-
-    /// イベントからResourceUsageを抽出
-    fn extract_usage_from_event(event: &NotificationEvent) -> &ResourceUsage {
-        match event {
-            NotificationEvent::ResourceUsageCreated(u)
-            | NotificationEvent::ResourceUsageUpdated(u)
-            | NotificationEvent::ResourceUsageDeleted(u) => u,
-        }
+        let user_display = Self::format_user(context.event.owner_email(), context.identity_link);
+        render_event(&renderer, context.event, &user_display)
     }
 
     /// メッセージブロックを構築（イベントに応じてボタンを追加）
     fn build_message_blocks(message: &str, context: &NotificationContext) -> Vec<SlackBlock> {
-        let usage = Self::extract_usage_from_event(context.event);
-        let usage_id = usage.id().as_str();
-        tracing::debug!(usage_id = %usage_id, "attached action buttons to the notification");
+        // 操作できる予約が残っている場合にだけボタンを付ける。削除済みの予約には
+        // 操作する対象が無い。定期予約のボタンも付けない。更新・早期終了・キャンセルは
+        // 回ごとの操作であり、定期予約全体を指す通知からは対象の回を決められない
+        let actionable_usage_id = match context.event {
+            NotificationEvent::ResourceUsageCreated(usage)
+            | NotificationEvent::ResourceUsageUpdated(usage) => Some(usage.id().as_str()),
+            NotificationEvent::ResourceUsageDeleted(_)
+            | NotificationEvent::RecurringReservationCreated(_)
+            | NotificationEvent::RecurringReservationUpdated(_)
+            | NotificationEvent::RecurringReservationCancelled(_) => None,
+        };
 
-        // Deleted イベントの場合はボタンなし
-        let should_add_buttons = matches!(
-            context.event,
-            NotificationEvent::ResourceUsageCreated(_) | NotificationEvent::ResourceUsageUpdated(_)
-        );
-
-        let blocks_json = if should_add_buttons {
+        let blocks_json = if let Some(usage_id) = actionable_usage_id {
+            tracing::debug!(usage_id = %usage_id, "attached action buttons to the notification");
             // ボタン付きブロック
             json!([
                 {
@@ -183,7 +164,7 @@ impl SlackSender {
                 }
             ])
         } else {
-            // シンプルなブロック（Deletedイベント用）
+            // シンプルなブロック（操作する対象が無いイベント用）
             json!([
                 {
                     "type": "section",
@@ -215,11 +196,7 @@ impl Sender for SlackSender {
         let message = Self::format_message(&context);
         let blocks = Self::build_message_blocks(&message, &context);
 
-        let usage_id = match context.event {
-            NotificationEvent::ResourceUsageCreated(usage)
-            | NotificationEvent::ResourceUsageUpdated(usage)
-            | NotificationEvent::ResourceUsageDeleted(usage) => usage.id().as_str().to_string(),
-        };
+        let usage_id = context.event.subject_id().to_string();
 
         // Bot Token方式
         self.send_via_bot_token(

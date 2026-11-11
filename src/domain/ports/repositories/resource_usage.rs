@@ -1,4 +1,5 @@
 use crate::domain::{
+    aggregates::recurring_reservation::{RecurringReservation, RecurringReservationId},
     aggregates::resource_usage::{
         entity::ResourceUsage,
         value_objects::{TimePeriod, UsageId},
@@ -15,6 +16,12 @@ use async_trait::async_trait;
 /// 用意していない。繰り返し予約は個々の予定へ展開されるため、終わりのない検索は
 /// カレンダーが展開できる限りの予定を返してしまう。どこまでを対象とするかは
 /// 用途によって異なるため、呼び出し側が決める。
+///
+/// # 定期予約
+/// 定期予約の各回は、他の予約と同じく`ResourceUsage`として検索結果に現れ、
+/// `recurring_reservation_id`で自分の属する定期予約を指す。保存や削除も回ごとに行われ、
+/// 1回を変更しても他の回には及ばない。定期予約そのもの（繰り返しの間隔など）は
+/// `find_recurring_reservation`で引く。
 ///
 /// # 予約として扱う範囲
 /// 永続化層のレコードのうち、`ResourceUsage`として解釈できるものだけが予約である。
@@ -61,4 +68,13 @@ pub trait ResourceUsageRepository {
 
     /// ResourceUsageを削除
     async fn delete(&self, id: &UsageId) -> Result<(), RepositoryError>;
+
+    /// IDで定期予約を検索
+    ///
+    /// 取り消された定期予約は`None`を返す。定期予約を持たない永続化層は
+    /// 常に`None`を返せばよい。
+    async fn find_recurring_reservation(
+        &self,
+        id: &RecurringReservationId,
+    ) -> Result<Option<RecurringReservation>, RepositoryError>;
 }

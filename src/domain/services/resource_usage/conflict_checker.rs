@@ -143,6 +143,16 @@ mod tests {
         async fn delete(&self, _id: &UsageId) -> Result<(), RepositoryError> {
             unimplemented!("このテストでは使用しない")
         }
+
+        async fn find_recurring_reservation(
+            &self,
+            _id: &crate::domain::aggregates::recurring_reservation::RecurringReservationId,
+        ) -> Result<
+            Option<crate::domain::aggregates::recurring_reservation::RecurringReservation>,
+            RepositoryError,
+        > {
+            Ok(None)
+        }
     }
 
     fn test_period() -> TimePeriod {

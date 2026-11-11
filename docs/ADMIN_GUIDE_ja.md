@@ -149,6 +149,9 @@ updated = "{user}が予約を変更: {resource} {time}"
 deleted = "{user}が予約をキャンセル: {resource}"
 conflict = "{user}が既に{resource}を{time}で予約済みです"
 conflict_item = "👤 {user}\n📅 {time}\n{resource_label}\n{resource}{notes}"
+recurring_created = "{user}が{resource}を定期予約: {recurrence} {time}"
+recurring_updated = "{user}が定期予約を変更: {resource} {recurrence}"
+recurring_cancelled = "{user}が定期予約を取り消し: {resource} {recurrence}"
 
 # フォーマット設定（オプション）
 [servers.notifications.format]
@@ -156,6 +159,13 @@ resource_style = "compact"   # リソース表示スタイル
 time_style = "smart"         # 時刻表示スタイル
 date_format = "md"           # 日付フォーマット
 ```
+
+`recurring_created`/`recurring_updated`/`recurring_cancelled`は定期予約
+（カレンダー上で繰り返しを指定して作られた予約）の通知に使われます。
+定期予約は回の数だけ通知されることはなく、1件にまとめて通知されます。
+これらのテンプレートでは`{recurrence}`（「毎週 月・水」などの繰り返しの間隔）も
+使えます。`{time}`は初回の期間です。1回だけの変更・取り消し・早期終了は
+`updated`/`deleted`で通知されます。
 
 `conflict`は予約リクエストが競合により拒否された際に使われます。
 **単一の競合**の場合のみこのテンプレートが使われます。

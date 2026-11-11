@@ -1,4 +1,5 @@
 use crate::domain::{
+    aggregates::recurring_reservation::{RecurringReservation, RecurringReservationId},
     aggregates::resource_usage::{
         entity::ResourceUsage,
         value_objects::{TimePeriod, UsageId},
@@ -13,6 +14,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone)]
 pub struct MockUsageRepository {
     storage: Arc<Mutex<HashMap<String, ResourceUsage>>>,
+    recurring_reservations: Arc<Mutex<HashMap<String, RecurringReservation>>>,
 }
 
 impl Default for MockUsageRepository {
@@ -26,7 +28,24 @@ impl MockUsageRepository {
     pub fn new() -> Self {
         Self {
             storage: Arc::new(Mutex::new(HashMap::new())),
+            recurring_reservations: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// 定期予約を登録する（各回の`ResourceUsage`は別途`save`する）
+    pub fn put_recurring_reservation(&self, reservation: RecurringReservation) {
+        self.recurring_reservations
+            .lock()
+            .unwrap()
+            .insert(reservation.id().as_str().to_string(), reservation);
+    }
+
+    /// 定期予約を取り除く（各回の`ResourceUsage`は別途`delete`する）
+    pub fn remove_recurring_reservation(&self, id: &RecurringReservationId) {
+        self.recurring_reservations
+            .lock()
+            .unwrap()
+            .remove(id.as_str());
     }
 }
 
@@ -77,5 +96,13 @@ impl ResourceUsageRepository for MockUsageRepository {
             .remove(id.as_str())
             .ok_or(RepositoryError::NotFound)?;
         Ok(())
+    }
+
+    async fn find_recurring_reservation(
+        &self,
+        id: &RecurringReservationId,
+    ) -> Result<Option<RecurringReservation>, RepositoryError> {
+        let reservations = self.recurring_reservations.lock().unwrap();
+        Ok(reservations.get(id.as_str()).cloned())
     }
 }

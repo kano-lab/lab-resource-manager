@@ -8,6 +8,7 @@ use serde::Deserialize;
 ///
 /// 各イベントタイプ（作成・更新・削除・競合）のメッセージテンプレートを定義。
 /// プレースホルダー: `{user}`, `{resource}`, `{time}`, `{notes}`, `{resource_label}`
+/// （定期予約のテンプレートでは加えて`{recurrence}`）
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq, Hash, Default)]
 pub struct TemplateConfig {
     /// 予約作成時のテンプレート
@@ -31,6 +32,21 @@ pub struct TemplateConfig {
     /// `{user}`/`{time}`/`{resource}`等は各競合の既存予約の情報。
     #[serde(default)]
     pub conflict_item: Option<String>,
+
+    /// 定期予約作成時のテンプレート
+    ///
+    /// 定期予約のテンプレートでは`{recurrence}`（繰り返しの間隔）も使える。
+    /// `{time}`は各回の時間帯を示す代表の回（把握できるかぎり初回）の期間。
+    #[serde(default)]
+    pub recurring_created: Option<String>,
+
+    /// 定期予約変更時のテンプレート（複数の回に及ぶ変更）
+    #[serde(default)]
+    pub recurring_updated: Option<String>,
+
+    /// 定期予約取り消し時のテンプレート
+    #[serde(default)]
+    pub recurring_cancelled: Option<String>,
 }
 
 /// リソース表示スタイル
@@ -128,6 +144,9 @@ mod tests {
         assert!(config.deleted.is_none());
         assert!(config.conflict.is_none());
         assert!(config.conflict_item.is_none());
+        assert!(config.recurring_created.is_none());
+        assert!(config.recurring_updated.is_none());
+        assert!(config.recurring_cancelled.is_none());
     }
 
     #[test]

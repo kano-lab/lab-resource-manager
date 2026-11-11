@@ -188,7 +188,9 @@ where
         }
     }
 
-    #[tool(description = "今後（進行中含む）の全ての予約を一覧表示する")]
+    #[tool(
+        description = "今後（進行中含む）の全ての予約を一覧表示する。定期予約は回ごとに並び、同じrecurring_reservation_idを持つ"
+    )]
     async fn list_all_reservations(&self) -> Result<CallToolResult, ErrorData> {
         let window = match listing_window() {
             Ok(window) => window,
@@ -300,7 +302,7 @@ where
     }
 
     #[tool(
-        description = "進行中の自分の予約を今の時点で終了し、残り時間を解放する。使った分は予約として残るため、予約そのものを無かったことにしたい場合はcancel_reservationを使う"
+        description = "進行中の自分の予約を今の時点で終了し、残り時間を解放する。使った分は予約として残るため、予約そのものを無かったことにしたい場合はcancel_reservationを使う。定期予約の1回を指定した場合はその回だけを終了し、次回以降はそのまま残る"
     )]
     async fn release_reservation_early(
         &self,
@@ -316,7 +318,9 @@ where
         }
     }
 
-    #[tool(description = "自分が所有する予約をキャンセルする")]
+    #[tool(
+        description = "自分が所有する予約をキャンセルする。定期予約の1回を指定した場合はその回だけをキャンセルする"
+    )]
     async fn cancel_reservation(
         &self,
         Extension(parts): Extension<http::request::Parts>,
