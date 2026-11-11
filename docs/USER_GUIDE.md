@@ -242,6 +242,7 @@ Ask your admin for the exact URL (host, port, and whether it's `http://` or `htt
 - Update the time or notes on a reservation you own
 - End a running reservation of yours early, releasing the remaining time
 - Cancel a reservation you own
+- List the resources that can be reserved (GPU servers with their device numbers, meeting rooms)
 
 Ending early shortens the reservation to the current time, so the time you used stays on
 record. Cancel instead when the reservation should not have existed at all.

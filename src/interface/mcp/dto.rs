@@ -3,6 +3,7 @@
 //! ドメインエンティティはserde非依存のため、JSON出力専用のDTOをここに定義する。
 
 use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
+use crate::infrastructure::config::ResourceConfig;
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -89,4 +90,99 @@ pub struct CancelReservationParams {
 pub struct ReleaseReservationEarlyParams {
     /// 予約ID
     pub id: String,
+}
+
+/// `list_resources`の出力：予約できるリソースの一覧
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct ResourceCatalogDto {
+    /// GPUサーバー（`create_reservation`の`server`と`device_numbers`に指定できる値）
+    pub servers: Vec<ServerDto>,
+    /// 部屋（`create_reservation`の`room`に指定できる値）
+    pub rooms: Vec<String>,
+}
+
+/// GPUサーバーと、その予約できるデバイス
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct ServerDto {
+    pub name: String,
+    pub devices: Vec<DeviceDto>,
+}
+
+/// GPUデバイス
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct DeviceDto {
+    pub device_number: u32,
+    pub model: String,
+}
+
+impl From<&ResourceConfig> for ResourceCatalogDto {
+    fn from(config: &ResourceConfig) -> Self {
+        Self {
+            servers: config
+                .servers
+                .iter()
+                .map(|server| ServerDto {
+                    name: server.name.clone(),
+                    devices: server
+                        .devices
+                        .iter()
+                        .map(|device| DeviceDto {
+                            device_number: device.id,
+                            model: device.model.clone(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+            rooms: config.rooms.iter().map(|room| room.name.clone()).collect(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::infrastructure::config::{DeviceConfig, RoomConfig, ServerConfig};
+
+    fn config() -> ResourceConfig {
+        let server = |name: &str, devices: &[u32]| ServerConfig {
+            name: name.to_string(),
+            devices: devices
+                .iter()
+                .map(|id| DeviceConfig {
+                    id: *id,
+                    model: "A100".to_string(),
+                })
+                .collect(),
+            notifications: vec![],
+        };
+        ResourceConfig {
+            servers: vec![server("Thalys", &[0, 1]), server("Freccia", &[0])],
+            rooms: vec![RoomConfig {
+                name: "会議室A".to_string(),
+                notifications: vec![],
+            }],
+        }
+    }
+
+    #[test]
+    fn the_catalog_lists_what_can_be_named_when_reserving() {
+        let catalog = ResourceCatalogDto::from(&config());
+
+        assert_eq!(
+            catalog
+                .servers
+                .iter()
+                .map(|server| (
+                    server.name.as_str(),
+                    server
+                        .devices
+                        .iter()
+                        .map(|device| device.device_number)
+                        .collect::<Vec<_>>()
+                ))
+                .collect::<Vec<_>>(),
+            vec![("Thalys", vec![0, 1]), ("Freccia", vec![0])]
+        );
+        assert_eq!(catalog.rooms, vec!["会議室A".to_string()]);
+    }
 }

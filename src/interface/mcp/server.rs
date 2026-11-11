@@ -18,7 +18,7 @@ use crate::infrastructure::config::ResourceConfig;
 use crate::interface::mcp::auth::ResolvedCaller;
 use crate::interface::mcp::dto::{
     CancelReservationParams, CreateReservationParams, GetReservationParams,
-    ReleaseReservationEarlyParams, ReservationDto, UpdateReservationParams,
+    ReleaseReservationEarlyParams, ReservationDto, ResourceCatalogDto, UpdateReservationParams,
 };
 use rmcp::ErrorData;
 use rmcp::handler::server::tool::Extension;
@@ -332,6 +332,15 @@ where
             Err(e) => Ok(tool_error(e)),
         }
     }
+
+    #[tool(
+        description = "予約できるリソース（GPUサーバーとそのデバイス番号・モデル、部屋）を一覧表示する。create_reservationに指定できる名前と番号はここで確認できる"
+    )]
+    async fn list_resources(&self) -> Result<CallToolResult, ErrorData> {
+        Ok(success_json(&ResourceCatalogDto::from(
+            self.resource_config.as_ref(),
+        )))
+    }
 }
 
 #[tool_handler]
@@ -342,7 +351,8 @@ where
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
         info.instructions = Some(
-            "lab-resource-manager の予約を閲覧・作成・更新・早期終了・キャンセルするツール群。\
+            "lab-resource-manager の予約を閲覧・作成・更新・早期終了・キャンセルし、\
+            予約できるリソースを調べるツール群。\
             書き込み系ツールは呼び出し元のBearerトークンに紐づくメールアドレスを所有者として扱う。"
                 .to_string(),
         );
