@@ -2,10 +2,8 @@
 //!
 //! リソースと時刻のスタイル別フォーマット関数を提供します。
 
-use crate::domain::aggregates::recurring_reservation::{
-    RecurrenceEnd, RecurrenceFrequency, RecurrenceRule,
-};
-use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::{RecurrenceEnd, RecurrenceFrequency, RecurrenceRule};
 use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
 use chrono::{Local, Utc, Weekday};
 use chrono_tz::Tz;
@@ -22,7 +20,7 @@ pub fn format_resources_styled(resources: &[Resource], style: ResourceStyle) -> 
 
 /// フル形式: "Thalys / A100 80GB PCIe / GPU:0"
 fn format_resources_full(resources: &[Resource]) -> String {
-    crate::domain::aggregates::resource_usage::service::format_resources(resources)
+    crate::domain::aggregates::reservation::service::format_resources(resources)
 }
 
 /// コンパクト形式: "Thalys 0,1,2"（サーバーごとにグループ化）
@@ -159,7 +157,7 @@ pub fn format_time_styled(
 
 /// フル形式: "2024-01-15 19:00 - 2024-01-15 21:00 (Asia/Tokyo)"
 fn format_time_full(period: &TimePeriod, timezone_str: Option<&str>) -> String {
-    crate::domain::aggregates::resource_usage::service::format_time_period(period, timezone_str)
+    crate::domain::aggregates::reservation::service::format_time_period(period, timezone_str)
 }
 
 /// スマート形式: 同日なら終了日省略 "1/15 19:00 - 21:00"
@@ -395,7 +393,7 @@ mod tests {
             "繰り返し（間隔は不明）"
         );
     }
-    use crate::domain::aggregates::resource_usage::value_objects::Gpu;
+    use crate::domain::aggregates::reservation::value_objects::Gpu;
     use chrono::TimeZone;
 
     fn create_test_period(start_hour: u32, end_hour: u32) -> TimePeriod {

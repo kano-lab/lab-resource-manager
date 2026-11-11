@@ -1,9 +1,9 @@
 //! 予約キャンセルボタンハンドラ
 
-use crate::domain::aggregates::resource_usage::value_objects::UsageId;
+use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ResourceUsageRepository;
+use crate::domain::ports::repositories::ReservationRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::utility::{interaction_reply, reservation_failure, user_resolver};
 use slack_morphism::prelude::*;
@@ -16,7 +16,7 @@ pub async fn handle<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let Some(usage_id_str) = &action.value else {
@@ -41,23 +41,23 @@ where
     }
 
     // 依存性を取得
-    let delete_usage_usecase = &app.usecases().delete_resource_usage;
+    let delete_usage_usecase = &app.usecases().cancel_slot;
     let identity_repo = &app.repositories().identity_link;
 
     // ユーザーのメールアドレスを取得
-    let owner_email = user_resolver::resolve_user_email(&user.id, identity_repo).await?;
+    let holder_email = user_resolver::resolve_user_email(&user.id, identity_repo).await?;
 
     // 予約を削除
-    let usage_id = UsageId::from_string(usage_id_str.to_string());
+    let usage_id = ReservedSlotId::from_string(usage_id_str.to_string());
     info!(
         usage_id = %usage_id.as_str(),
-        owner = %owner_email.as_str(),
+        owner = %holder_email.as_str(),
         origin = "slack",
         "cancelling a reservation"
     );
 
     let result = delete_usage_usecase
-        .execute(&usage_id, &EmailAddress::new(owner_email.clone())?)
+        .execute(&usage_id, &EmailAddress::new(holder_email.clone())?)
         .await;
 
     // ユーザーにフィードバックメッセージを送信

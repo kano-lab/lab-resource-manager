@@ -1,4 +1,4 @@
-use crate::domain::aggregates::resource_usage::errors::ResourceUsageError;
+use crate::domain::aggregates::reservation::errors::ReservationError;
 use crate::domain::common::value_objects::errors::EmailAddressError;
 use crate::domain::errors::DomainError;
 use crate::domain::ports::error::PortError;
@@ -14,8 +14,8 @@ pub enum RepositoryError {
     ConnectionError(String),
     /// 無効なメールアドレス
     InvalidEmail(EmailAddressError),
-    /// ResourceUsageのドメインルール違反
-    InvalidResourceUsage(ResourceUsageError),
+    /// ReservedSlotのドメインルール違反
+    InvalidResourceUsage(ReservationError),
     /// 不明なエラー
     Unknown(String),
 }
@@ -50,8 +50,8 @@ impl From<EmailAddressError> for RepositoryError {
     }
 }
 
-impl From<ResourceUsageError> for RepositoryError {
-    fn from(e: ResourceUsageError) -> Self {
+impl From<ReservationError> for RepositoryError {
+    fn from(e: ReservationError) -> Self {
         RepositoryError::InvalidResourceUsage(e)
     }
 }

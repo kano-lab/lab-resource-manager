@@ -28,7 +28,7 @@ impl MockSender {
             context.timezone,
         );
 
-        let user_display = context.event.owner_email().as_str();
+        let user_display = context.event.holder_email().as_str();
         render_event(&renderer, context.event, user_display)
     }
 }

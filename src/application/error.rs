@@ -1,11 +1,11 @@
 use crate::domain::aggregates::identity_link::errors::IdentityLinkError;
-use crate::domain::aggregates::resource_usage::errors::ResourceUsageError;
+use crate::domain::aggregates::reservation::errors::ReservationError;
 use crate::domain::ports::{
     notifier::NotificationError, repositories::RepositoryError,
     resource_collection_access::ResourceCollectionAccessError,
     resource_usage_observer::ObservationError,
 };
-use crate::domain::services::resource_usage::errors::{ConflictCheckError, ResourceConflictError};
+use crate::domain::services::reservation::errors::{ConflictCheckError, ResourceConflictError};
 use std::fmt;
 
 /// Application層で発生するエラーの列挙型
@@ -24,7 +24,7 @@ pub enum ApplicationError {
     Observation(ObservationError),
 
     /// リソース使用に関するドメインエラー
-    ResourceUsage(ResourceUsageError),
+    ReservedSlot(ReservationError),
     /// ID紐付けに関するドメインエラー
     IdentityLink(IdentityLinkError),
 
@@ -61,7 +61,7 @@ impl fmt::Display for ApplicationError {
                 write!(f, "リソースコレクションアクセスエラー: {}", e)
             }
             ApplicationError::Observation(e) => write!(f, "利用状況観測エラー: {}", e),
-            ApplicationError::ResourceUsage(e) => write!(f, "リソース使用エラー: {}", e),
+            ApplicationError::ReservedSlot(e) => write!(f, "リソース使用エラー: {}", e),
             ApplicationError::IdentityLink(e) => write!(f, "ID紐付けエラー: {}", e),
             ApplicationError::ExternalSystemAlreadyLinked {
                 email,
@@ -104,7 +104,7 @@ impl std::error::Error for ApplicationError {
             ApplicationError::Notification(e) => Some(e),
             ApplicationError::ResourceCollectionAccess(e) => Some(e),
             ApplicationError::Observation(e) => Some(e),
-            ApplicationError::ResourceUsage(e) => Some(e),
+            ApplicationError::ReservedSlot(e) => Some(e),
             ApplicationError::IdentityLink(e) => Some(e),
             ApplicationError::ExternalSystemAlreadyLinked { .. } => None,
             ApplicationError::ResourceConflict { conflicts } => conflicts
@@ -121,9 +121,9 @@ impl From<RepositoryError> for ApplicationError {
     }
 }
 
-impl From<ResourceUsageError> for ApplicationError {
-    fn from(e: ResourceUsageError) -> Self {
-        ApplicationError::ResourceUsage(e)
+impl From<ReservationError> for ApplicationError {
+    fn from(e: ReservationError) -> Self {
+        ApplicationError::ReservedSlot(e)
     }
 }
 

@@ -1,9 +1,9 @@
 //! リソース予約モーダル送信ハンドラ
 
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::resource_usage::value_objects::resource::{Gpu, Resource};
+use crate::domain::aggregates::reservation::value_objects::resource::{Gpu, Resource};
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ResourceUsageRepository;
+use crate::domain::ports::repositories::ReservationRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use crate::interface::slack::utility::conflict_message;
@@ -19,13 +19,13 @@ pub async fn handle<R, N>(
     view_submission: &SlackInteractionViewSubmissionEvent,
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let user_id = view_submission.user.id.clone();
 
     // Get dependencies
-    let create_usage_usecase = &app.usecases().create_resource_usage;
+    let create_usage_usecase = &app.usecases().create_reservation;
     let identity_repo = &app.repositories().identity_link;
     let config = app.resource_config();
 
@@ -52,15 +52,15 @@ where
     // Parse datetime
     let start_datetime = parse_datetime(&start_date, &start_time)?;
     let end_datetime = parse_datetime(&end_date, &end_time)?;
-    let time_period = crate::domain::aggregates::resource_usage::value_objects::TimePeriod::new(
+    let time_period = crate::domain::aggregates::reservation::value_objects::TimePeriod::new(
         start_datetime,
         end_datetime,
     )?;
     debug!(start = %start_datetime, end = %end_datetime, "parsed period");
 
     // Get owner email from user_id
-    let owner_email = user_resolver::resolve_user_email(&user_id, identity_repo).await?;
-    debug!(owner = %owner_email, "resolved owner");
+    let holder_email = user_resolver::resolve_user_email(&user_id, identity_repo).await?;
+    debug!(owner = %holder_email, "resolved owner");
 
     // Extract resources based on type
     let resource_type_val = resource_type.as_str();
@@ -133,7 +133,7 @@ where
     debug!(resources = ?resources, "resolved resources");
 
     // 結果のログでも参照するため、ユースケースへ渡す前に控えておく
-    let logged_owner = owner_email.clone();
+    let logged_owner = holder_email.clone();
     let logged_resources = format!("{:?}", resources);
     let logged_start = time_period.start();
     let logged_end = time_period.end();
@@ -141,7 +141,7 @@ where
     // Create reservation
     let reservation_result = create_usage_usecase
         .execute(
-            crate::domain::common::EmailAddress::new(owner_email)?,
+            crate::domain::common::EmailAddress::new(holder_email)?,
             time_period,
             resources,
             notes,

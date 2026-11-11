@@ -11,5 +11,4 @@
 //! 各サブディレクトリは一つの集約を表します。
 //! それぞれ集約に関連するエンティティ、値オブジェクト、リポジトリインターフェース、ドメインサービスを含みます。
 pub mod identity_link;
-pub mod recurring_reservation;
-pub mod resource_usage;
+pub mod reservation;

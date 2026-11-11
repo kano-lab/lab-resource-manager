@@ -1,5 +1,5 @@
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
-use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
+use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::ports::resource_usage_observer::{
     GpuActivity, ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver,
     ServerObservation, UnattributedUsage,

@@ -1,6 +1,6 @@
 //! Slack DM経由の事後予約提案実装
 
-use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
+use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::repositories::IdentityLinkRepository;
 use crate::domain::ports::reservation_proposal::{
@@ -31,7 +31,7 @@ pub struct ProposalAcceptPayload {
     /// GPUデバイス番号（同じ機会に使い始めた分をまとめて持つ）
     pub device_numbers: Vec<u32>,
     /// 提案先のメールアドレス
-    pub owner_email: String,
+    pub holder_email: String,
     /// 利用開始時刻（予約の開始時刻としてそのまま使う）
     pub active_since: chrono::DateTime<chrono::Utc>,
     /// 提案された利用時間（分）
@@ -69,13 +69,13 @@ impl ReservationProposalNotifier for SlackReservationProposalNotifier {
 
         let sent = self
             .messenger
-            .send(proposal.owner_email(), text, blocks)
+            .send(proposal.holder_email(), text, blocks)
             .await?;
 
         tracing::info!(
             channel = %sent.channel,
             ts = %sent.ts,
-            recipient = %proposal.owner_email().as_str(),
+            recipient = %proposal.holder_email().as_str(),
             active_since = %proposal.active_since(),
             "sent a reservation proposal dm"
         );
@@ -128,7 +128,7 @@ fn build_proposal_blocks(
             let payload = ProposalAcceptPayload {
                 server: server.clone(),
                 device_numbers: device_numbers.clone(),
-                owner_email: proposal.owner_email().as_str().to_string(),
+                holder_email: proposal.holder_email().as_str().to_string(),
                 active_since: proposal.active_since(),
                 duration_minutes: duration.num_minutes(),
             };
@@ -190,7 +190,7 @@ mod tests {
     use crate::domain::aggregates::identity_link::value_objects::{
         ExternalIdentity, ExternalSystem,
     };
-    use crate::domain::aggregates::resource_usage::value_objects::Gpu;
+    use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::common::EmailAddress;
     use chrono::Utc;
 
@@ -285,7 +285,7 @@ mod tests {
         let payload = ProposalAcceptPayload {
             server: "Thalys".to_string(),
             device_numbers: vec![0, 1, 4],
-            owner_email: "user@example.com".to_string(),
+            holder_email: "user@example.com".to_string(),
             active_since: Utc::now(),
             duration_minutes: 120,
         };

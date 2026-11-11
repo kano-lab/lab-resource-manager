@@ -1,4 +1,4 @@
-use crate::domain::aggregates::resource_usage::value_objects::Resource;
+use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::ports::resource_usage_observer::{
     ObservationError, ObservationSnapshot, ObservedUsage, ResourceUsageObserver, ServerObservation,
 };

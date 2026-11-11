@@ -1,7 +1,6 @@
 // NOTE: これ以上肥大化するようであればnotifierディレクトリを作成してその中に適宜分割する
 use crate::domain::{
-    aggregates::recurring_reservation::RecurringReservation,
-    aggregates::resource_usage::{entity::ResourceUsage, value_objects::Resource},
+    aggregates::reservation::{Reservation, ReservedSlot, value_objects::Resource},
     common::EmailAddress,
     errors::DomainError,
     ports::PortError,
@@ -10,58 +9,55 @@ use async_trait::async_trait;
 use std::fmt;
 
 /// 通知イベントの種類
+///
+/// 予約は作る・取り消すの単位であり、通知も予約を単位とする。定期予約を1件作れば、
+/// 予約枠がいくつあっても1件として伝える。定期予約の予約枠が1つだけ変わったときに限り、
+/// その予約枠を単位として伝える。
 #[derive(Debug, Clone)]
 pub enum NotificationEvent {
-    /// リソース使用予定が作成された
-    ResourceUsageCreated(ResourceUsage),
-    /// リソース使用予定が更新された
-    ResourceUsageUpdated(ResourceUsage),
-    /// リソース使用予定が削除された
-    ResourceUsageDeleted(ResourceUsage),
-    /// 定期予約が作成された
+    /// 予約が作られた
+    ReservationCreated(Reservation),
+    /// 予約が変更された
     ///
-    /// 定期予約は回の数だけの予約ではなく1つの取り決めであり、1件として伝える。
-    RecurringReservationCreated(RecurringReservation),
-    /// 定期予約が変更された（時間帯や間隔の変更、途中からの打ち切りなど、複数の回に及ぶ変更）
-    RecurringReservationUpdated(RecurringReservation),
-    /// 定期予約が取り消された
-    RecurringReservationCancelled(RecurringReservation),
+    /// 単発予約では、その予約枠の変更や今で終了を含む。定期予約では、時間帯や
+    /// 繰り返しの規則の変更、途中からの打ち切りなど、複数の予約枠に及ぶ変更を指す。
+    ReservationUpdated(Reservation),
+    /// 予約が取り消された
+    ReservationCancelled(Reservation),
+    /// 定期予約の予約枠が1つだけ変更された（今で終了を含む）
+    SlotUpdated(ReservedSlot),
+    /// 定期予約の予約枠が1つだけ取り消された
+    SlotCancelled(ReservedSlot),
 }
 
 impl NotificationEvent {
-    /// イベントの対象となった予約の所有者
-    pub fn owner_email(&self) -> &EmailAddress {
+    /// イベントの対象の予約者
+    pub fn holder_email(&self) -> &EmailAddress {
         match self {
-            Self::ResourceUsageCreated(usage)
-            | Self::ResourceUsageUpdated(usage)
-            | Self::ResourceUsageDeleted(usage) => usage.owner_email(),
-            Self::RecurringReservationCreated(reservation)
-            | Self::RecurringReservationUpdated(reservation)
-            | Self::RecurringReservationCancelled(reservation) => reservation.owner_email(),
+            Self::ReservationCreated(reservation)
+            | Self::ReservationUpdated(reservation)
+            | Self::ReservationCancelled(reservation) => reservation.holder_email(),
+            Self::SlotUpdated(slot) | Self::SlotCancelled(slot) => slot.holder_email(),
         }
     }
 
-    /// イベントの対象となった予約が使用するリソース
+    /// イベントの対象が押さえるリソース
     pub fn resources(&self) -> &[Resource] {
         match self {
-            Self::ResourceUsageCreated(usage)
-            | Self::ResourceUsageUpdated(usage)
-            | Self::ResourceUsageDeleted(usage) => usage.resources(),
-            Self::RecurringReservationCreated(reservation)
-            | Self::RecurringReservationUpdated(reservation)
-            | Self::RecurringReservationCancelled(reservation) => reservation.resources(),
+            Self::ReservationCreated(reservation)
+            | Self::ReservationUpdated(reservation)
+            | Self::ReservationCancelled(reservation) => reservation.resources(),
+            Self::SlotUpdated(slot) | Self::SlotCancelled(slot) => slot.resources(),
         }
     }
 
-    /// イベントの対象となった予約（単発の予約・定期予約の1回、または定期予約）のID
+    /// イベントの対象（予約または予約枠）のID
     pub fn subject_id(&self) -> &str {
         match self {
-            Self::ResourceUsageCreated(usage)
-            | Self::ResourceUsageUpdated(usage)
-            | Self::ResourceUsageDeleted(usage) => usage.id().as_str(),
-            Self::RecurringReservationCreated(reservation)
-            | Self::RecurringReservationUpdated(reservation)
-            | Self::RecurringReservationCancelled(reservation) => reservation.id().as_str(),
+            Self::ReservationCreated(reservation)
+            | Self::ReservationUpdated(reservation)
+            | Self::ReservationCancelled(reservation) => reservation.id().as_str(),
+            Self::SlotUpdated(slot) | Self::SlotCancelled(slot) => slot.id().as_str(),
         }
     }
 }

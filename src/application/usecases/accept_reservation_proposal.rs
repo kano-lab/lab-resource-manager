@@ -1,10 +1,10 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::resource_usage::{
-    entity::ResourceUsage,
-    value_objects::{Resource, TimePeriod, UsageId},
+use crate::domain::aggregates::reservation::{
+    ReservedSlot,
+    value_objects::{ReservedSlotId, Resource, TimePeriod},
 };
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::ResourceUsageRepository;
+use crate::domain::ports::repositories::ReservationRepository;
 use crate::domain::services::ResourceConflictChecker;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::{HashMap, HashSet};
@@ -21,17 +21,17 @@ type SessionKey = (String, DateTime<Utc>, Vec<String>);
 /// 提案の受諾は「予約を新しく作る」ではなく「この観測セッションの予約を、この長さにする」
 /// という意味を持つ。利用者は提案メッセージの時間候補ボタンを押し直せるため、
 /// 同じ観測セッションに対する受諾が複数回起きても予約は1件に保たれる必要がある。
-pub struct AcceptReservationProposalUseCase<R: ResourceUsageRepository> {
+pub struct AcceptReservationProposalUseCase<R: ReservationRepository> {
     repository: Arc<R>,
     conflict_checker: ResourceConflictChecker,
     /// この機会について確定した予約のID
     ///
     /// 受諾ボタンは押し直せるため、同じ機会への受諾が連続して届く。ロックを兼ねており、
     /// ひとつの機会に対する処理は同時に1つしか進まない。
-    settled_sessions: tokio::sync::Mutex<HashMap<SessionKey, UsageId>>,
+    settled_sessions: tokio::sync::Mutex<HashMap<SessionKey, ReservedSlotId>>,
 }
 
-impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
+impl<R: ReservationRepository> AcceptReservationProposalUseCase<R> {
     /// 新しいユースケースインスタンスを作成
     pub fn new(repository: Arc<R>) -> Self {
         Self {
@@ -47,7 +47,7 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
     /// 既に存在する場合は、その期間を指定された長さに更新する。存在しない場合は新規作成する。
     ///
     /// # Arguments
-    /// * `owner_email` - 予約者
+    /// * `holder_email` - 予約者
     /// * `resources` - 実利用が観測されたリソース
     /// * `active_since` - 実利用の開始時刻。どの機会への受諾かを見分けるために使う
     /// * `duration` - 受諾された利用時間
@@ -60,17 +60,17 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
     /// - リポジトリエラー
     pub async fn execute(
         &self,
-        owner_email: EmailAddress,
+        holder_email: EmailAddress,
         resources: Vec<Resource>,
         active_since: DateTime<Utc>,
         duration: Duration,
-    ) -> Result<UsageId, ApplicationError> {
+    ) -> Result<ReservedSlotId, ApplicationError> {
         // 予約は受諾した時点から始める。実利用の開始時刻を起点にすると、長く使い続けて
         // いる利用者では作った瞬間に終わっている予約になり、リソースを押さえられない。
         // 事後予約が果たす役割は、これから先を他の人に使われないようにすることである。
         let accepted_at = Utc::now();
         let time_period = TimePeriod::new(accepted_at, accepted_at + duration)?;
-        let session_key = Self::session_key(&owner_email, &resources, active_since);
+        let session_key = Self::session_key(&holder_email, &resources, active_since);
 
         // 同じ機会への受諾を直列化する。連打で書き込みが検索へ反映される前に次の受諾が
         // 走ると、同じ機会の予約が二重に作られてしまう。
@@ -78,10 +78,10 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
 
         let existing = match settled_sessions.get(&session_key) {
             // このプロセスで既に確定させた予約は、検索の反映を待たずIDで引く
-            Some(settled_id) => self.repository.find_by_id(settled_id).await?,
+            Some(settled_id) => self.repository.find_slot(settled_id).await?,
             // プロセスが入れ替わった場合に備え、進行中の事後予約から同じ機会のものを探す
             None => {
-                self.find_settled_reservation_in_progress(&owner_email, &resources, accepted_at)
+                self.find_settled_reservation_in_progress(&holder_email, &resources, accepted_at)
                     .await?
             }
         };
@@ -97,22 +97,22 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
             .await?;
 
         let usage = match existing {
-            Some(existing) => ResourceUsage::reconstruct(
+            Some(existing) => ReservedSlot::reconstruct(
                 existing.id().clone(),
-                owner_email,
+                holder_email,
                 time_period,
                 resources,
                 existing.notes().cloned(),
             )?,
-            None => ResourceUsage::new(
-                owner_email,
+            None => ReservedSlot::new(
+                holder_email,
                 time_period,
                 resources,
                 Some(POST_HOC_RESERVATION_NOTES.to_string()),
             )?,
         };
 
-        self.repository.save(&usage).await?;
+        self.repository.save_slot(&usage).await?;
         settled_sessions.insert(session_key, usage.id().clone());
 
         Ok(usage.id().clone())
@@ -122,7 +122,7 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
     ///
     /// リソースの並びは呼び出し側に依存するため、表示名で並べ替えて正規化する。
     fn session_key(
-        owner_email: &EmailAddress,
+        holder_email: &EmailAddress,
         resources: &[Resource],
         active_since: DateTime<Utc>,
     ) -> SessionKey {
@@ -132,7 +132,7 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
             .collect();
         normalized.sort();
 
-        (owner_email.as_str().to_string(), active_since, normalized)
+        (holder_email.as_str().to_string(), active_since, normalized)
     }
 
     /// 同じ機会について既に確定している事後予約を探す
@@ -143,17 +143,17 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
     /// これで取り違えは起こらない。
     async fn find_settled_reservation_in_progress(
         &self,
-        owner_email: &EmailAddress,
+        holder_email: &EmailAddress,
         resources: &[Resource],
         now: DateTime<Utc>,
-    ) -> Result<Option<ResourceUsage>, ApplicationError> {
+    ) -> Result<Option<ReservedSlot>, ApplicationError> {
         let requested: HashSet<&Resource> = resources.iter().collect();
 
         // 進行中かどうかを見るため、現在時刻を含む最小の期間を問う
         let in_progress = TimePeriod::new(now, now + Duration::seconds(1))?;
         let candidates = self
             .repository
-            .find_by_owner(owner_email, &in_progress)
+            .find_slots_held_by(holder_email, &in_progress)
             .await?;
 
         Ok(candidates.into_iter().find(|usage| {
@@ -166,9 +166,9 @@ impl<R: ResourceUsageRepository> AcceptReservationProposalUseCase<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::resource_usage::value_objects::Gpu;
+    use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::ports::repositories::RepositoryError;
-    use crate::infrastructure::repositories::resource_usage::mock::MockUsageRepository;
+    use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
     use async_trait::async_trait;
     use std::sync::Mutex as StdMutex;
 
@@ -186,36 +186,36 @@ mod tests {
 
     /// 事後予約として保存済みの予約を作る
     async fn save_post_hoc_reservation(
-        repository: &MockUsageRepository,
+        repository: &MockReservationRepository,
         owner: &str,
         resources: Vec<Resource>,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
-    ) -> UsageId {
-        let usage = ResourceUsage::new(
+    ) -> ReservedSlotId {
+        let usage = ReservedSlot::new(
             email(owner),
             TimePeriod::new(start, end).unwrap(),
             resources,
             Some(POST_HOC_RESERVATION_NOTES.to_string()),
         )
         .unwrap();
-        repository.save(&usage).await.unwrap();
+        repository.save_slot(&usage).await.unwrap();
         usage.id().clone()
     }
 
     /// 保存されている全予約（終了済みを含む）
-    async fn all_reservations(repository: &MockUsageRepository) -> Vec<ResourceUsage> {
+    async fn all_reservations(repository: &MockReservationRepository) -> Vec<ReservedSlot> {
         let far_past = Utc::now() - Duration::days(365);
         let far_future = Utc::now() + Duration::days(365);
         repository
-            .find_overlapping(&TimePeriod::new(far_past, far_future).unwrap())
+            .find_slots_overlapping(&TimePeriod::new(far_past, far_future).unwrap())
             .await
             .unwrap()
     }
 
     #[tokio::test]
     async fn accepting_twice_for_the_same_session_updates_the_period_instead_of_adding() {
-        let repository = Arc::new(MockUsageRepository::new());
+        let repository = Arc::new(MockReservationRepository::new());
         let active_since = Utc::now() - Duration::hours(1);
         let existing_id = save_post_hoc_reservation(
             &repository,
@@ -251,7 +251,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_ended_post_hoc_reservation_is_left_alone_and_a_new_one_is_created() {
-        let repository = Arc::new(MockUsageRepository::new());
+        let repository = Arc::new(MockReservationRepository::new());
         // 以前の受諾で作った予約が既に終わっている状況
         let active_since = Utc::now() - Duration::hours(5);
         save_post_hoc_reservation(
@@ -281,7 +281,7 @@ mod tests {
 
     #[tokio::test]
     async fn accepting_shorter_duration_shrinks_the_existing_reservation() {
-        let repository = Arc::new(MockUsageRepository::new());
+        let repository = Arc::new(MockReservationRepository::new());
         let active_since = Utc::now() - Duration::hours(1);
         save_post_hoc_reservation(
             &repository,
@@ -315,7 +315,7 @@ mod tests {
 
     #[tokio::test]
     async fn creates_a_new_reservation_when_no_session_matches() {
-        let repository = Arc::new(MockUsageRepository::new());
+        let repository = Arc::new(MockReservationRepository::new());
         let active_since = Utc::now() - Duration::minutes(30);
 
         let usecase = AcceptReservationProposalUseCase::new(repository.clone());
@@ -345,7 +345,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_when_another_user_holds_an_overlapping_reservation() {
-        let repository = Arc::new(MockUsageRepository::new());
+        let repository = Arc::new(MockReservationRepository::new());
         let active_since = Utc::now() - Duration::hours(1);
         save_post_hoc_reservation(
             &repository,
@@ -379,7 +379,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_different_resource_set_is_treated_as_a_separate_session() {
-        let repository = Arc::new(MockUsageRepository::new());
+        let repository = Arc::new(MockReservationRepository::new());
         let active_since = Utc::now() - Duration::hours(1);
         save_post_hoc_reservation(
             &repository,
@@ -410,9 +410,9 @@ mod tests {
     /// ボタン連打で実際に重複予約が生まれたのはこの性質が原因なので、テストでも再現する。
     struct EventuallyConsistentRepository {
         /// 検索から見える予約
-        visible: StdMutex<Vec<ResourceUsage>>,
+        visible: StdMutex<Vec<ReservedSlot>>,
         /// 保存されたがまだ検索から見えない予約
-        pending: StdMutex<Vec<ResourceUsage>>,
+        pending: StdMutex<Vec<ReservedSlot>>,
     }
 
     impl EventuallyConsistentRepository {
@@ -423,7 +423,7 @@ mod tests {
             }
         }
 
-        fn all(&self) -> Vec<ResourceUsage> {
+        fn all(&self) -> Vec<ReservedSlot> {
             let mut all = self.visible.lock().unwrap().clone();
             all.extend(self.pending.lock().unwrap().iter().cloned());
             all
@@ -431,16 +431,19 @@ mod tests {
     }
 
     #[async_trait]
-    impl ResourceUsageRepository for EventuallyConsistentRepository {
-        async fn find_by_id(&self, id: &UsageId) -> Result<Option<ResourceUsage>, RepositoryError> {
+    impl ReservationRepository for EventuallyConsistentRepository {
+        async fn find_slot(
+            &self,
+            id: &ReservedSlotId,
+        ) -> Result<Option<ReservedSlot>, RepositoryError> {
             // IDを指定した取得は書き込み直後でも一貫して読める
             Ok(self.all().into_iter().find(|usage| usage.id() == id))
         }
 
-        async fn find_overlapping(
+        async fn find_slots_overlapping(
             &self,
             time_period: &TimePeriod,
-        ) -> Result<Vec<ResourceUsage>, RepositoryError> {
+        ) -> Result<Vec<ReservedSlot>, RepositoryError> {
             Ok(self
                 .visible
                 .lock()
@@ -451,23 +454,23 @@ mod tests {
                 .collect())
         }
 
-        async fn find_by_owner(
+        async fn find_slots_held_by(
             &self,
-            owner_email: &EmailAddress,
+            holder_email: &EmailAddress,
             time_period: &TimePeriod,
-        ) -> Result<Vec<ResourceUsage>, RepositoryError> {
+        ) -> Result<Vec<ReservedSlot>, RepositoryError> {
             Ok(self
                 .visible
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|usage| usage.owner_email() == owner_email)
+                .filter(|usage| usage.holder_email() == holder_email)
                 .filter(|usage| usage.time_period().overlaps_with(time_period))
                 .cloned()
                 .collect())
         }
 
-        async fn save(&self, usage: &ResourceUsage) -> Result<(), RepositoryError> {
+        async fn save_slot(&self, usage: &ReservedSlot) -> Result<(), RepositoryError> {
             let mut pending = self.pending.lock().unwrap();
             if let Some(existing) = pending.iter_mut().find(|p| p.id() == usage.id()) {
                 *existing = usage.clone();
@@ -477,18 +480,23 @@ mod tests {
             Ok(())
         }
 
-        async fn delete(&self, _id: &UsageId) -> Result<(), RepositoryError> {
+        async fn delete_slot(&self, _id: &ReservedSlotId) -> Result<(), RepositoryError> {
             unimplemented!("このテストでは使用しない")
         }
 
-        async fn find_recurring_reservation(
+        async fn find_reservation(
             &self,
-            _id: &crate::domain::aggregates::recurring_reservation::RecurringReservationId,
-        ) -> Result<
-            Option<crate::domain::aggregates::recurring_reservation::RecurringReservation>,
-            RepositoryError,
-        > {
+            _id: &crate::domain::aggregates::reservation::ReservationId,
+        ) -> Result<Option<crate::domain::aggregates::reservation::Reservation>, RepositoryError>
+        {
             Ok(None)
+        }
+
+        async fn delete_reservation(
+            &self,
+            _id: &crate::domain::aggregates::reservation::ReservationId,
+        ) -> Result<(), RepositoryError> {
+            unimplemented!("このテストでは使用しない")
         }
     }
 
@@ -576,7 +584,7 @@ mod tests {
     }
     #[tokio::test]
     async fn the_reservation_starts_when_the_button_is_pressed_not_when_the_usage_began() {
-        let repository = Arc::new(MockUsageRepository::new());
+        let repository = Arc::new(MockReservationRepository::new());
         let usecase = AcceptReservationProposalUseCase::new(repository.clone());
         // 6日間使い続けている状況。利用開始を起点にすると、押した時点で既に終わった予約になる
         let active_since = Utc::now() - Duration::days(6);
@@ -610,7 +618,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_earlier_reservation_of_the_same_user_does_not_block_acceptance() {
-        let repository = Arc::new(MockUsageRepository::new());
+        let repository = Arc::new(MockReservationRepository::new());
         // 利用開始から現在までの間に、自分の予約が既にあった（切れた直後に提案が来る状況）
         let active_since = Utc::now() - Duration::days(6);
         save_post_hoc_reservation(

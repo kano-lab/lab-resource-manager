@@ -1,6 +1,6 @@
 //! 使われていない予約について、同じ予約で繰り返し声をかけないための記録
 
-use crate::domain::aggregates::resource_usage::value_objects::UsageId;
+use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -33,7 +33,7 @@ impl IdleNoticeLog {
     }
 
     /// この予約について、しばらく声をかけないようにする
-    pub fn silence(&self, usage_id: &UsageId, now: DateTime<Utc>) {
+    pub fn silence(&self, usage_id: &ReservedSlotId, now: DateTime<Utc>) {
         self.silenced_until
             .lock()
             .unwrap()
@@ -41,7 +41,7 @@ impl IdleNoticeLog {
     }
 
     /// この予約について、いま声をかけずにいるか
-    pub fn is_silenced(&self, usage_id: &UsageId, now: DateTime<Utc>) -> bool {
+    pub fn is_silenced(&self, usage_id: &ReservedSlotId, now: DateTime<Utc>) -> bool {
         self.silenced_until
             .lock()
             .unwrap()
@@ -50,7 +50,7 @@ impl IdleNoticeLog {
     }
 
     /// ふたたび声をかける対象に戻す
-    pub fn resume(&self, usage_id: &UsageId) {
+    pub fn resume(&self, usage_id: &ReservedSlotId) {
         self.silenced_until
             .lock()
             .unwrap()
@@ -80,8 +80,8 @@ mod tests {
     #[test]
     fn a_notice_log_keeps_only_what_is_worth_remembering() {
         let now = Utc::now();
-        let kept = UsageId::from_string("running".to_string());
-        let dropped = UsageId::from_string("finished".to_string());
+        let kept = ReservedSlotId::from_string("running".to_string());
+        let dropped = ReservedSlotId::from_string("finished".to_string());
         let log = log();
         log.silence(&kept, now);
         log.silence(&dropped, now);
@@ -98,7 +98,7 @@ mod tests {
     #[test]
     fn silencing_and_resuming_are_reversible() {
         let now = Utc::now();
-        let usage_id = UsageId::from_string("running".to_string());
+        let usage_id = ReservedSlotId::from_string("running".to_string());
         let log = log();
 
         assert!(!log.is_silenced(&usage_id, now));
@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn silence_wears_off_so_a_promise_to_use_it_is_looked_at_again() {
         let now = Utc::now();
-        let usage_id = UsageId::from_string("running".to_string());
+        let usage_id = ReservedSlotId::from_string("running".to_string());
         let log = log();
 
         log.silence(&usage_id, now);

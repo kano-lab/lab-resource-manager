@@ -1,9 +1,9 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::identity_link::value_objects::ExternalIdentity;
-use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::ReservedSlot;
+use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::{IdentityLinkRepository, ResourceUsageRepository};
+use crate::domain::ports::repositories::{IdentityLinkRepository, ReservationRepository};
 use crate::domain::ports::{
     ObservedUsage, ReservationProposal, ReservationProposalNotifier, ResourceUsageObserver,
     UnauthorizedUsageNotifier,
@@ -46,7 +46,7 @@ type NotifiedUnauthorizedKey = (ExternalIdentity, String, DateTime<Utc>);
 /// プロセス内メモリのみで保持し、永続化しない。
 pub struct ReconcileObservedUsagesUseCase<R, O, I, P, U>
 where
-    R: ResourceUsageRepository,
+    R: ReservationRepository,
     O: ResourceUsageObserver,
     I: IdentityLinkRepository,
     P: ReservationProposalNotifier,
@@ -65,7 +65,7 @@ where
 
 impl<R, O, I, P, U> ReconcileObservedUsagesUseCase<R, O, I, P, U>
 where
-    R: ResourceUsageRepository,
+    R: ReservationRepository,
     O: ResourceUsageObserver,
     I: IdentityLinkRepository,
     P: ReservationProposalNotifier,
@@ -109,7 +109,7 @@ where
         let now = started_at;
         // 突合の相手は「今この瞬間に進行中の予約」だけなので、現在時刻を含む最小の期間を問う
         let in_progress = TimePeriod::new(now, now + Duration::seconds(1))?;
-        let current_usages = self.repository.find_overlapping(&in_progress).await?;
+        let current_usages = self.repository.find_slots_overlapping(&in_progress).await?;
 
         let mut unreserved = Vec::new();
         let mut reserved = 0_usize;
@@ -213,7 +213,7 @@ where
     /// 終わった予約についての「通知済み」を忘れる
     ///
     /// 予約が終われば、その予約を巡って知らせることはもうない。
-    async fn forget_reservations_that_ended(&self, in_progress: &[ResourceUsage]) {
+    async fn forget_reservations_that_ended(&self, in_progress: &[ReservedSlot]) {
         let still_running: HashSet<&str> = in_progress
             .iter()
             .map(|reservation| reservation.id().as_str())
@@ -267,10 +267,10 @@ where
     }
 
     fn find_active_reservation<'a>(
-        usages: &'a [ResourceUsage],
+        usages: &'a [ReservedSlot],
         resource: &Resource,
         now: DateTime<Utc>,
-    ) -> Option<&'a ResourceUsage> {
+    ) -> Option<&'a ReservedSlot> {
         usages.iter().find(|usage| {
             usage.time_period().start() <= now
                 && now < usage.time_period().end()
@@ -282,14 +282,14 @@ where
     async fn reconcile_reserved(
         &self,
         observed: &ObservedUsage,
-        reservation: &ResourceUsage,
+        reservation: &ReservedSlot,
     ) -> Result<(), ApplicationError> {
         // 利用者の身元が不明な場合、無断使用かどうか原理的に判定できないためスキップする
         let Some(actual_email) = self.resolve_email(observed).await? else {
             return Ok(());
         };
 
-        if &actual_email == reservation.owner_email() {
+        if &actual_email == reservation.holder_email() {
             return Ok(());
         }
 
@@ -307,7 +307,7 @@ where
         info!(
             resource = %observed.resource(),
             actual_user = %actual_email.as_str(),
-            reserved_by = %reservation.owner_email().as_str(),
+            reserved_by = %reservation.holder_email().as_str(),
             usage_id = %reservation.id().as_str(),
             "notifying unauthorized usage"
         );
@@ -327,7 +327,7 @@ where
         };
 
         // IdentityLink未登録の間は「提案済み」にせず、リンク後の次回ポーリングで再試行できるようにする
-        let Some(owner_email) = self.resolve_email(first).await? else {
+        let Some(holder_email) = self.resolve_email(first).await? else {
             return Ok(());
         };
 
@@ -342,7 +342,7 @@ where
         }
 
         info!(
-            owner = %owner_email.as_str(),
+            owner = %holder_email.as_str(),
             resources = %resources
                 .iter()
                 .map(|resource| resource.to_string())
@@ -354,7 +354,7 @@ where
 
         let proposal = ReservationProposal::new(
             resources,
-            owner_email,
+            holder_email,
             first.external_identity().clone(),
             first.active_since(),
             self.duration_candidates.clone(),

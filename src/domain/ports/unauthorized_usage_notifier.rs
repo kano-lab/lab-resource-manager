@@ -1,4 +1,4 @@
-use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
+use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::NotificationError;
 use async_trait::async_trait;
@@ -13,7 +13,7 @@ pub trait UnauthorizedUsageNotifier: Send + Sync {
     /// 無断使用を行った本人へ通知する
     async fn notify(
         &self,
-        reserved_usage: &ResourceUsage,
+        reserved_usage: &ReservedSlot,
         actual_user_email: &EmailAddress,
     ) -> Result<(), NotificationError>;
 }

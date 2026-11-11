@@ -6,6 +6,7 @@ use slack_morphism::prelude::*;
 use tracing::error;
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
+use crate::domain::aggregates::reservation::Reservation;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
 use crate::infrastructure::notifier::senders::sender::{NotificationContext, Sender};
@@ -49,7 +50,7 @@ impl SlackSender {
         channel_id: &str,
         message: String,
         blocks: Vec<SlackBlock>,
-        usage_id: &str,
+        subject_id: &str,
     ) -> Result<(), NotificationError> {
         let token = SlackApiToken::new(bot_token.into());
         let session = self.slack_client.open_session(&token);
@@ -71,7 +72,7 @@ impl SlackSender {
         tracing::info!(
             channel = %sent.channel,
             ts = %sent.ts,
-            usage_id,
+            subject_id,
             "sent a reservation notification"
         );
 
@@ -99,26 +100,30 @@ impl SlackSender {
             context.timezone,
         );
 
-        let user_display = Self::format_user(context.event.owner_email(), context.identity_link);
+        let user_display = Self::format_user(context.event.holder_email(), context.identity_link);
         render_event(&renderer, context.event, &user_display)
     }
 
     /// メッセージブロックを構築（イベントに応じてボタンを追加）
     fn build_message_blocks(message: &str, context: &NotificationContext) -> Vec<SlackBlock> {
-        // 操作できる予約が残っている場合にだけボタンを付ける。削除済みの予約には
-        // 操作する対象が無い。定期予約のボタンも付けない。更新・早期終了・キャンセルは
-        // 回ごとの操作であり、定期予約全体を指す通知からは対象の回を決められない
-        let actionable_usage_id = match context.event {
-            NotificationEvent::ResourceUsageCreated(usage)
-            | NotificationEvent::ResourceUsageUpdated(usage) => Some(usage.id().as_str()),
-            NotificationEvent::ResourceUsageDeleted(_)
-            | NotificationEvent::RecurringReservationCreated(_)
-            | NotificationEvent::RecurringReservationUpdated(_)
-            | NotificationEvent::RecurringReservationCancelled(_) => None,
+        // ボタンは予約枠に対する操作（更新・今で終了・取り消し）なので、対象の予約枠が
+        // ちょうど1つに決まり、まだ残っている場合にだけ付ける。単発予約は予約枠を1つだけ
+        // 持つので、予約のIDがそのまま予約枠のIDになる。定期予約全体を指す通知からは
+        // 対象の予約枠を決められないため付けない
+        let actionable_slot_id = match context.event {
+            NotificationEvent::ReservationCreated(Reservation::OneTime(reservation))
+            | NotificationEvent::ReservationUpdated(Reservation::OneTime(reservation)) => {
+                Some(reservation.id().as_str())
+            }
+            NotificationEvent::SlotUpdated(slot) => Some(slot.id().as_str()),
+            NotificationEvent::ReservationCreated(Reservation::Recurring(_))
+            | NotificationEvent::ReservationUpdated(Reservation::Recurring(_))
+            | NotificationEvent::ReservationCancelled(_)
+            | NotificationEvent::SlotCancelled(_) => None,
         };
 
-        let blocks_json = if let Some(usage_id) = actionable_usage_id {
-            tracing::debug!(usage_id = %usage_id, "attached action buttons to the notification");
+        let blocks_json = if let Some(slot_id) = actionable_slot_id {
+            tracing::debug!(slot_id = %slot_id, "attached action buttons to the notification");
             // ボタン付きブロック
             json!([
                 {
@@ -139,7 +144,7 @@ impl SlackSender {
                             },
                             "style": "primary",
                             "action_id": ACTION_EDIT_RESERVATION,
-                            "value": usage_id
+                            "value": slot_id
                         },
                         {
                             "type": "button",
@@ -148,17 +153,17 @@ impl SlackSender {
                                 "text": "⏹️ 今で終了"
                             },
                             "action_id": ACTION_RELEASE_RESERVATION_EARLY,
-                            "value": usage_id
+                            "value": slot_id
                         },
                         {
                             "type": "button",
                             "text": {
                                 "type": "plain_text",
-                                "text": "❌ キャンセル"
+                                "text": "❌ 取り消す"
                             },
                             "style": "danger",
                             "action_id": ACTION_CANCEL_RESERVATION,
-                            "value": usage_id
+                            "value": slot_id
                         }
                     ]
                 }
@@ -196,7 +201,7 @@ impl Sender for SlackSender {
         let message = Self::format_message(&context);
         let blocks = Self::build_message_blocks(&message, &context);
 
-        let usage_id = context.event.subject_id().to_string();
+        let subject_id = context.event.subject_id().to_string();
 
         // Bot Token方式
         self.send_via_bot_token(
@@ -204,7 +209,7 @@ impl Sender for SlackSender {
             &config.channel_id,
             message,
             blocks,
-            &usage_id,
+            &subject_id,
         )
         .await
     }

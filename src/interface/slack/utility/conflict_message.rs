@@ -12,7 +12,7 @@
 //! 一貫した表示になります。
 
 use crate::domain::ports::repositories::IdentityLinkRepository;
-use crate::domain::services::resource_usage::errors::ResourceConflictError;
+use crate::domain::services::reservation::errors::ResourceConflictError;
 use crate::infrastructure::config::{NotificationCustomization, ResourceConfig};
 use crate::infrastructure::notifier::template_renderer::TemplateRenderer;
 use crate::interface::slack::utility::user_resolver;
@@ -92,7 +92,7 @@ async fn build_one(
     identity_repo: &Arc<dyn IdentityLinkRepository>,
 ) -> String {
     let owner_display =
-        user_resolver::resolve_display_name(conflict.existing_usage.owner_email(), identity_repo)
+        user_resolver::resolve_display_name(conflict.existing_usage.holder_email(), identity_repo)
             .await;
 
     let (customization, timezone_owned) =
@@ -118,7 +118,7 @@ async fn build_item(
     identity_repo: &Arc<dyn IdentityLinkRepository>,
 ) -> String {
     let owner_display =
-        user_resolver::resolve_display_name(conflict.existing_usage.owner_email(), identity_repo)
+        user_resolver::resolve_display_name(conflict.existing_usage.holder_email(), identity_repo)
             .await;
 
     let (customization, timezone_owned) =
@@ -142,8 +142,8 @@ mod tests {
     use super::*;
     use crate::domain::aggregates::identity_link::entity::IdentityLink;
     use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
-    use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-    use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod};
+    use crate::domain::aggregates::reservation::ReservedSlot;
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, TimePeriod};
     use crate::domain::common::EmailAddress;
     use crate::domain::ports::repositories::RepositoryError;
     use crate::infrastructure::config::{DeviceConfig, ServerConfig};
@@ -199,9 +199,9 @@ mod tests {
         }
     }
 
-    fn reservation(owner: &str, resources: Vec<Resource>) -> ResourceUsage {
+    fn reservation(owner: &str, resources: Vec<Resource>) -> ReservedSlot {
         let now = Utc::now();
-        ResourceUsage::new(
+        ReservedSlot::new(
             EmailAddress::new(owner.to_string()).unwrap(),
             TimePeriod::new(now, now + Duration::hours(2)).unwrap(),
             resources,

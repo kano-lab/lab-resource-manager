@@ -52,7 +52,7 @@ impl NotificationRouter {
         config: &NotificationConfig,
         event: &NotificationEvent,
     ) -> Result<(), NotificationError> {
-        let user_email = event.owner_email();
+        let user_email = event.holder_email();
 
         // IdentityLinkを取得
         // Ok(None) = IdentityLinkが未登録（正常ケース）

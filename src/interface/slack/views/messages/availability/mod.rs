@@ -18,11 +18,9 @@ pub mod day;
 pub mod days;
 mod grid;
 
-use crate::domain::aggregates::resource_usage::value_objects::{Resource, UsageId};
+use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource};
 use crate::domain::common::EmailAddress;
-use crate::domain::services::resource_usage::availability::{
-    AvailabilityState, ResourceAvailability,
-};
+use crate::domain::services::reservation::availability::{AvailabilityState, ResourceAvailability};
 use crate::infrastructure::config::ResourceStyle;
 use crate::infrastructure::notifier::formatter::{format_resources_styled, to_zoned};
 use crate::interface::slack::constants::{
@@ -286,7 +284,7 @@ fn room_lines(
                 AvailabilityState::Busy(busy) => format!(
                     "🔴 {} — {} 〜{}",
                     name,
-                    display_name(busy.owner_email(), owner_displays),
+                    display_name(busy.holder_email(), owner_displays),
                     format_moment(busy.period().end(), now, timezone)
                 ),
             })
@@ -322,7 +320,7 @@ fn ongoing_gpu_lines(
                 "🔴 {} — {} 〜{}",
                 format_resources_styled(&reservation.resources, ResourceStyle::Compact)
                     .replace('\n', " / "),
-                display_name(&reservation.owner_email, owner_displays),
+                display_name(&reservation.holder_email, owner_displays),
                 format_moment(reservation.ends_at, now, timezone)
             )
         })
@@ -333,8 +331,8 @@ fn ongoing_gpu_lines(
 
 /// 内訳に並べる、いま動いている予約
 struct OngoingReservation {
-    usage_id: UsageId,
-    owner_email: EmailAddress,
+    usage_id: ReservedSlotId,
+    holder_email: EmailAddress,
     resources: Vec<Resource>,
     ends_at: DateTime<Utc>,
 }
@@ -359,12 +357,12 @@ fn ongoing_gpu_reservations(
 
         match reservations
             .iter_mut()
-            .find(|reservation| reservation.usage_id == *busy.usage_id())
+            .find(|reservation| reservation.usage_id == *busy.slot_id())
         {
             Some(reservation) => reservation.resources.push(availability.resource().clone()),
             None => reservations.push(OngoingReservation {
-                usage_id: busy.usage_id().clone(),
-                owner_email: busy.owner_email().clone(),
+                usage_id: busy.slot_id().clone(),
+                holder_email: busy.holder_email().clone(),
                 resources: vec![availability.resource().clone()],
                 ends_at: busy.period().end(),
             }),

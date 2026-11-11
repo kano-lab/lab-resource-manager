@@ -1,6 +1,6 @@
 //! Slack DM経由の無断使用検知通知実装
 
-use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
+use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::repositories::IdentityLinkRepository;
@@ -34,7 +34,7 @@ impl SlackUnauthorizedUsageNotifier {
 impl UnauthorizedUsageNotifier for SlackUnauthorizedUsageNotifier {
     async fn notify(
         &self,
-        reserved_usage: &ResourceUsage,
+        reserved_usage: &ReservedSlot,
         actual_user_email: &EmailAddress,
     ) -> Result<(), NotificationError> {
         let text = build_unauthorized_message(reserved_usage);
@@ -57,7 +57,7 @@ impl UnauthorizedUsageNotifier for SlackUnauthorizedUsageNotifier {
 }
 
 /// 無断使用検知のDMメッセージを構築する（純粋関数、ユニットテスト対象）
-fn build_unauthorized_message(reserved_usage: &ResourceUsage) -> String {
+fn build_unauthorized_message(reserved_usage: &ReservedSlot) -> String {
     let resources = format_resources_styled(reserved_usage.resources(), ResourceStyle::Full);
     let time = format_time_styled(
         reserved_usage.time_period(),
@@ -68,7 +68,7 @@ fn build_unauthorized_message(reserved_usage: &ResourceUsage) -> String {
 
     format!(
         "🚫 他の人が予約中のリソースを使用しています\n\nあなたが使用中のリソースには、現在以下の予約が入っています。\n\n👤 予約者\n{}\n\n📅 予約期間\n{}\n\n💻 予約リソース\n{}\n\n心当たりがある場合は、処理を停止するか予約者と調整してください。",
-        reserved_usage.owner_email().as_str(),
+        reserved_usage.holder_email().as_str(),
         time,
         resources
     )
@@ -77,14 +77,14 @@ fn build_unauthorized_message(reserved_usage: &ResourceUsage) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod};
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, TimePeriod};
     use chrono::{TimeZone, Utc};
 
-    fn sample_usage() -> ResourceUsage {
+    fn sample_usage() -> ReservedSlot {
         let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
         let period = TimePeriod::new(start, end).unwrap();
-        ResourceUsage::new(
+        ReservedSlot::new(
             EmailAddress::new("owner@example.com".to_string()).unwrap(),
             period,
             vec![Resource::Gpu(Gpu::new(

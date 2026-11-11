@@ -3,13 +3,11 @@
 //! `/free`コマンドと、その応答に置いたボタンの両方から使います。
 //! どちらの入口から来ても同じ見え方になるよう、調べる範囲と表示の組み立てを1箇所に置きます。
 
-use crate::domain::aggregates::resource_usage::value_objects::TimePeriod;
+use crate::domain::aggregates::reservation::value_objects::TimePeriod;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::{IdentityLinkRepository, ResourceUsageRepository};
-use crate::domain::services::resource_usage::availability::{
-    AvailabilityState, ResourceAvailability,
-};
+use crate::domain::ports::repositories::{IdentityLinkRepository, ReservationRepository};
+use crate::domain::services::reservation::availability::{AvailabilityState, ResourceAvailability};
 use crate::infrastructure::config::ResourceConfig;
 use crate::infrastructure::notifier::formatter::{start_of_day, to_zoned};
 use crate::interface::slack::app::SlackApp;
@@ -33,7 +31,7 @@ pub async fn now_view<R, N>(
     app: &SlackApp<R, N>,
 ) -> Result<SlackMessageContent, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
@@ -61,7 +59,7 @@ pub async fn day_view<R, N>(
     date: NaiveDate,
 ) -> Result<SlackMessageContent, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
@@ -87,7 +85,7 @@ pub async fn availabilities_in<R, N>(
     window: &TimePeriod,
 ) -> Result<Vec<ResourceAvailability>, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let resources = app.resource_config().all_resources();
@@ -131,9 +129,9 @@ pub async fn resolve_owner_displays(
 
     for availability in availabilities {
         if let AvailabilityState::Busy(busy) = availability.state_at(now)
-            && !owners.contains(busy.owner_email())
+            && !owners.contains(busy.holder_email())
         {
-            owners.push(busy.owner_email().clone());
+            owners.push(busy.holder_email().clone());
         }
     }
 

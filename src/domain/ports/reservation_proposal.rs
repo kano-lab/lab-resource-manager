@@ -1,5 +1,5 @@
 use crate::domain::aggregates::identity_link::value_objects::ExternalIdentity;
-use crate::domain::aggregates::resource_usage::value_objects::Resource;
+use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::NotificationError;
 use async_trait::async_trait;
@@ -14,7 +14,7 @@ use chrono::{DateTime, Duration, Utc};
 #[derive(Debug, Clone)]
 pub struct ReservationProposal {
     resources: Vec<Resource>,
-    owner_email: EmailAddress,
+    holder_email: EmailAddress,
     external_identity: ExternalIdentity,
     active_since: DateTime<Utc>,
     duration_candidates: Vec<Duration>,
@@ -24,14 +24,14 @@ impl ReservationProposal {
     /// 新しい提案を作成
     pub fn new(
         resources: Vec<Resource>,
-        owner_email: EmailAddress,
+        holder_email: EmailAddress,
         external_identity: ExternalIdentity,
         active_since: DateTime<Utc>,
         duration_candidates: Vec<Duration>,
     ) -> Self {
         Self {
             resources,
-            owner_email,
+            holder_email,
             external_identity,
             active_since,
             duration_candidates,
@@ -44,8 +44,8 @@ impl ReservationProposal {
     }
 
     /// 提案先のメールアドレスを取得
-    pub fn owner_email(&self) -> &EmailAddress {
-        &self.owner_email
+    pub fn holder_email(&self) -> &EmailAddress {
+        &self.holder_email
     }
 
     /// 利用者の外部識別情報を取得
@@ -66,7 +66,7 @@ impl ReservationProposal {
 
 /// 未予約利用の検知時に、利用者へ事後予約を提案するポート
 ///
-/// 実装（Slack DM送信等）と、提案受諾後の予約作成（`CreateResourceUsageUseCase`）は分離される。
+/// 実装（Slack DM送信等）と、提案受諾後の予約作成（`CreateReservationUseCase`）は分離される。
 /// このポートは提案の送信にのみ責務を持つ。
 #[async_trait]
 pub trait ReservationProposalNotifier: Send + Sync {

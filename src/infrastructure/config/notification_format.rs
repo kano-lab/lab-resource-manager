@@ -19,9 +19,11 @@ pub struct TemplateConfig {
     #[serde(default)]
     pub updated: Option<String>,
 
-    /// 予約削除時のテンプレート
-    #[serde(default)]
-    pub deleted: Option<String>,
+    /// 単発予約の取り消し時のテンプレート
+    ///
+    /// 以前の設定キー`deleted`も受け付ける。
+    #[serde(default, alias = "deleted")]
+    pub cancelled: Option<String>,
 
     /// 予約競合時のテンプレート（`{user}`/`{time}`/`{resource}`等は競合した既存予約の情報）
     #[serde(default)]
@@ -47,6 +49,14 @@ pub struct TemplateConfig {
     /// 定期予約取り消し時のテンプレート
     #[serde(default)]
     pub recurring_cancelled: Option<String>,
+
+    /// 定期予約の予約枠が1つだけ変更されたときのテンプレート（今で終了を含む）
+    #[serde(default)]
+    pub slot_updated: Option<String>,
+
+    /// 定期予約の予約枠が1つだけ取り消されたときのテンプレート
+    #[serde(default)]
+    pub slot_cancelled: Option<String>,
 }
 
 /// リソース表示スタイル
@@ -141,12 +151,14 @@ mod tests {
         let config: TemplateConfig = Default::default();
         assert!(config.created.is_none());
         assert!(config.updated.is_none());
-        assert!(config.deleted.is_none());
+        assert!(config.cancelled.is_none());
         assert!(config.conflict.is_none());
         assert!(config.conflict_item.is_none());
         assert!(config.recurring_created.is_none());
         assert!(config.recurring_updated.is_none());
         assert!(config.recurring_cancelled.is_none());
+        assert!(config.slot_updated.is_none());
+        assert!(config.slot_cancelled.is_none());
     }
 
     #[test]

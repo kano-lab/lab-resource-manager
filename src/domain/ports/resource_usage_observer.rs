@@ -1,5 +1,5 @@
 use crate::domain::aggregates::identity_link::value_objects::ExternalIdentity;
-use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
+use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::errors::DomainError;
 use crate::domain::ports::error::PortError;
 use async_trait::async_trait;
@@ -9,7 +9,7 @@ use std::fmt;
 
 /// 実サーバー上で観測されたリソース利用の事実
 ///
-/// 予約（`ResourceUsage`）とは異なり、実際に利用が観測された結果を表す。
+/// 予約（`ReservedSlot`）とは異なり、実際に利用が観測された結果を表す。
 /// `active_since`は観測アダプタ側が把握する利用開始時刻であり、
 /// ポーリング間隔に依存せず継続時間を判定できるようにする。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -6,10 +6,10 @@
 //! 日を切り替えたときは、新しいメッセージを積まずに元のメッセージを差し替えます。
 //! 積み上がると、どれがいまの状態なのか読み手が判断できなくなります。
 
-use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ResourceUsageRepository;
-use crate::domain::services::resource_usage::availability::ResourceAvailability;
+use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::slack_client::{messages, modals};
 use crate::interface::slack::utility::availability_report;
@@ -26,7 +26,7 @@ pub async fn handle_day_change<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let Some(response_url) = &block_actions.response_url else {
@@ -87,7 +87,7 @@ pub async fn handle_reserve<R, N>(
     block_actions: &SlackInteractionBlockActionsEvent,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
@@ -176,10 +176,10 @@ fn server_with_most_free_devices(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-    use crate::domain::aggregates::resource_usage::value_objects::Gpu;
+    use crate::domain::aggregates::reservation::ReservedSlot;
+    use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::common::EmailAddress;
-    use crate::domain::services::resource_usage::availability::calculate;
+    use crate::domain::services::reservation::availability::calculate;
     use chrono::{DateTime, TimeZone};
 
     fn at(hour: u32) -> DateTime<Utc> {
@@ -198,8 +198,8 @@ mod tests {
         ))
     }
 
-    fn reservation(resources: Vec<Resource>) -> ResourceUsage {
-        ResourceUsage::new(
+    fn reservation(resources: Vec<Resource>) -> ReservedSlot {
+        ReservedSlot::new(
             EmailAddress::new("sato@example.com".to_string()).unwrap(),
             TimePeriod::new(at(9), at(18)).unwrap(),
             resources,
@@ -210,7 +210,7 @@ mod tests {
 
     fn availabilities(
         resources: &[Resource],
-        usages: &[ResourceUsage],
+        usages: &[ReservedSlot],
     ) -> Vec<ResourceAvailability> {
         calculate(resources, &window(), usages)
     }

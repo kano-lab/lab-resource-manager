@@ -2,50 +2,178 @@
 //!
 //! ドメインエンティティはserde非依存のため、JSON出力専用のDTOをここに定義する。
 
-use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod};
-use crate::domain::services::resource_usage::availability::ResourceAvailability;
+use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::{
+    RecurrenceEnd, RecurrenceFrequency, RecurrenceRule, Reservation, ReservationKind, ReservedSlot,
+};
+use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::infrastructure::config::ResourceConfig;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, Weekday};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// 予約情報の出力用DTO
-#[derive(Debug, Serialize)]
-pub struct ReservationDto {
-    pub id: String,
-    pub owner_email: String,
-    pub start: DateTime<Utc>,
-    pub end: DateTime<Utc>,
-    pub resources: Vec<String>,
-    pub notes: Option<String>,
-    /// 定期予約の1回である場合、その定期予約のID（単発の予約では`null`）
-    ///
-    /// 同じ値を持つ予約は同じ定期予約の別の回である。更新・早期終了・キャンセルは
-    /// 指定した回だけに作用し、他の回には及ばない。
-    pub recurring_reservation_id: Option<String>,
+/// 予約の種類の出力用表現
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReservationKindDto {
+    /// 単発予約
+    OneTime,
+    /// 定期予約
+    Recurring,
 }
 
-impl From<&ResourceUsage> for ReservationDto {
-    fn from(usage: &ResourceUsage) -> Self {
-        Self {
-            id: usage.id().as_str().to_string(),
-            owner_email: usage.owner_email().as_str().to_string(),
-            start: usage.time_period().start(),
-            end: usage.time_period().end(),
-            resources: usage.resources().iter().map(|r| r.to_string()).collect(),
-            notes: usage.notes().cloned(),
-            recurring_reservation_id: usage
-                .recurring_reservation_id()
-                .map(|id| id.as_str().to_string()),
+impl From<ReservationKind> for ReservationKindDto {
+    fn from(kind: ReservationKind) -> Self {
+        match kind {
+            ReservationKind::OneTime => Self::OneTime,
+            ReservationKind::Recurring => Self::Recurring,
         }
     }
 }
 
-/// `get_reservation`の引数
+/// 予約枠の出力用DTO
+#[derive(Debug, Serialize)]
+pub struct SlotDto {
+    /// 予約枠ID（`get_slot`・`update_slot`・`end_slot_early`・`cancel_slot`に指定できる）
+    pub id: String,
+    /// この予約枠が属する予約のID（`get_reservation`・`cancel_reservation`に指定できる）
+    ///
+    /// 単発予約では予約枠IDと同じ値になる。同じ値を持つ予約枠は、同じ定期予約に属する。
+    pub reservation_id: String,
+    /// この予約枠が属する予約の種類
+    pub reservation_kind: ReservationKindDto,
+    pub holder_email: String,
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    pub resources: Vec<String>,
+    pub notes: Option<String>,
+}
+
+impl From<&ReservedSlot> for SlotDto {
+    fn from(slot: &ReservedSlot) -> Self {
+        Self {
+            id: slot.id().as_str().to_string(),
+            reservation_id: slot.reservation_id().as_str().to_string(),
+            reservation_kind: slot.reservation_kind().into(),
+            holder_email: slot.holder_email().as_str().to_string(),
+            start: slot.time_period().start(),
+            end: slot.time_period().end(),
+            resources: slot.resources().iter().map(|r| r.to_string()).collect(),
+            notes: slot.notes().cloned(),
+        }
+    }
+}
+
+/// 繰り返しの規則の出力用DTO
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct RecurrenceDto {
+    /// 繰り返しの単位（"daily"・"weekly"・"monthly"・"yearly"）
+    pub frequency: &'static str,
+    /// 何単位ごとに繰り返すか
+    pub interval: u32,
+    /// 繰り返す曜日（"mon"〜"sun"、指定がなければ空）
+    pub weekdays: Vec<&'static str>,
+    /// この時刻まで繰り返す（終わりが回数で決まる、または決まっていない場合は`null`）
+    pub until: Option<DateTime<Utc>>,
+    /// この回数まで繰り返す（終わりが時刻で決まる、または決まっていない場合は`null`）
+    pub count: Option<u32>,
+}
+
+impl From<&RecurrenceRule> for RecurrenceDto {
+    fn from(rule: &RecurrenceRule) -> Self {
+        let (until, count) = match rule.end() {
+            RecurrenceEnd::Never => (None, None),
+            RecurrenceEnd::Until(until) => (Some(until), None),
+            RecurrenceEnd::AfterOccurrences(count) => (None, Some(count)),
+        };
+        Self {
+            frequency: match rule.frequency() {
+                RecurrenceFrequency::Daily => "daily",
+                RecurrenceFrequency::Weekly => "weekly",
+                RecurrenceFrequency::Monthly => "monthly",
+                RecurrenceFrequency::Yearly => "yearly",
+            },
+            interval: rule.interval(),
+            weekdays: rule.weekdays().iter().map(weekday_name).collect(),
+            until,
+            count,
+        }
+    }
+}
+
+fn weekday_name(weekday: &Weekday) -> &'static str {
+    match weekday {
+        Weekday::Mon => "mon",
+        Weekday::Tue => "tue",
+        Weekday::Wed => "wed",
+        Weekday::Thu => "thu",
+        Weekday::Fri => "fri",
+        Weekday::Sat => "sat",
+        Weekday::Sun => "sun",
+    }
+}
+
+/// 予約の出力用DTO
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ReservationDto {
+    /// 単発予約
+    OneTime {
+        id: String,
+        holder_email: String,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        resources: Vec<String>,
+        notes: Option<String>,
+    },
+    /// 定期予約
+    Recurring {
+        id: String,
+        holder_email: String,
+        resources: Vec<String>,
+        notes: Option<String>,
+        /// 初回の予約枠の期間（各予約枠の時刻と長さはこれに従う）
+        first_slot: PeriodDto,
+        /// 繰り返しの規則（カレンダーの指定を読み取れなかった場合は`null`）
+        recurrence: Option<RecurrenceDto>,
+    },
+}
+
+impl From<&Reservation> for ReservationDto {
+    fn from(reservation: &Reservation) -> Self {
+        let resources = |resources: &[Resource]| resources.iter().map(|r| r.to_string()).collect();
+        match reservation {
+            Reservation::OneTime(one_time) => Self::OneTime {
+                id: one_time.id().as_str().to_string(),
+                holder_email: one_time.holder_email().as_str().to_string(),
+                start: one_time.time_period().start(),
+                end: one_time.time_period().end(),
+                resources: resources(one_time.resources()),
+                notes: one_time.notes().cloned(),
+            },
+            Reservation::Recurring(recurring) => Self::Recurring {
+                id: recurring.id().as_str().to_string(),
+                holder_email: recurring.holder_email().as_str().to_string(),
+                resources: resources(recurring.resources()),
+                notes: recurring.notes().cloned(),
+                first_slot: PeriodDto::from(recurring.first_slot_period()),
+                recurrence: recurring.rule().map(RecurrenceDto::from),
+            },
+        }
+    }
+}
+
+/// 予約枠IDだけを受け取るツールの引数
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct GetReservationParams {
-    /// 予約ID
+pub struct SlotIdParams {
+    /// 予約枠ID
+    pub id: String,
+}
+
+/// 予約IDだけを受け取るツールの引数
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReservationIdParams {
+    /// 予約ID（予約枠の`reservation_id`）
     pub id: String,
 }
 
@@ -72,10 +200,10 @@ pub struct CreateReservationParams {
     pub notes: Option<String>,
 }
 
-/// `update_reservation`の引数
+/// `update_slot`の引数
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct UpdateReservationParams {
-    /// 予約ID
+pub struct UpdateSlotParams {
+    /// 予約枠ID
     pub id: String,
     /// 新しい開始時刻（endと同時に指定、省略時は時間変更なし）
     #[serde(default)]
@@ -86,20 +214,6 @@ pub struct UpdateReservationParams {
     /// 新しい備考
     #[serde(default)]
     pub notes: Option<String>,
-}
-
-/// `cancel_reservation`の引数
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct CancelReservationParams {
-    /// 予約ID
-    pub id: String,
-}
-
-/// `release_reservation_early`の引数
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct ReleaseReservationEarlyParams {
-    /// 予約ID
-    pub id: String,
 }
 
 /// `list_resources`の出力：予約できるリソースの一覧
@@ -215,15 +329,15 @@ impl From<&TimePeriod> for PeriodDto {
     }
 }
 
-/// 予約で埋まっている区間の出力用DTO
+/// 予約枠で埋まっている区間の出力用DTO
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct BusyPeriodDto {
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
-    /// 押さえている予約のID
-    pub reservation_id: String,
-    /// 押さえている予約の所有者
-    pub owner_email: String,
+    /// 押さえている予約枠のID
+    pub slot_id: String,
+    /// 押さえている予約枠の予約者
+    pub holder_email: String,
 }
 
 /// あるリソースの、調べた期間における空きの出力用DTO
@@ -241,7 +355,7 @@ pub struct ResourceAvailabilityDto {
     pub entirely_free: bool,
     /// 空いている区間（開始順）
     pub free_periods: Vec<PeriodDto>,
-    /// 予約で埋まっている区間（開始順）。期間の外にはみ出す予約は期間内の部分だけを示す
+    /// 予約枠で埋まっている区間（開始順）。期間の外にはみ出す予約枠は期間内の部分だけを示す
     pub busy_periods: Vec<BusyPeriodDto>,
 }
 
@@ -273,8 +387,8 @@ impl From<&ResourceAvailability> for ResourceAvailabilityDto {
                 .map(|busy| BusyPeriodDto {
                     start: busy.period().start(),
                     end: busy.period().end(),
-                    reservation_id: busy.usage_id().as_str().to_string(),
-                    owner_email: busy.owner_email().as_str().to_string(),
+                    slot_id: busy.slot_id().as_str().to_string(),
+                    holder_email: busy.holder_email().as_str().to_string(),
                 })
                 .collect(),
         }
@@ -284,9 +398,9 @@ impl From<&ResourceAvailability> for ResourceAvailabilityDto {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::resource_usage::value_objects::Gpu;
+    use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::common::EmailAddress;
-    use crate::domain::services::resource_usage::availability;
+    use crate::domain::services::reservation::availability;
     use crate::infrastructure::config::{DeviceConfig, RoomConfig, ServerConfig};
     use chrono::{Duration, TimeZone};
 
@@ -382,7 +496,7 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2026, 11, 12, 0, 0, 0).unwrap();
         let window = TimePeriod::new(start, start + Duration::hours(6)).unwrap();
         let gpu = Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
-        let usage = ResourceUsage::new(
+        let usage = ReservedSlot::new(
             EmailAddress::new("owner@example.com".to_string()).unwrap(),
             TimePeriod::new(start + Duration::hours(1), start + Duration::hours(2)).unwrap(),
             vec![gpu.clone()],
@@ -402,8 +516,8 @@ mod tests {
             vec![BusyPeriodDto {
                 start: start + Duration::hours(1),
                 end: start + Duration::hours(2),
-                reservation_id: usage.id().as_str().to_string(),
-                owner_email: "owner@example.com".to_string(),
+                slot_id: usage.id().as_str().to_string(),
+                holder_email: "owner@example.com".to_string(),
             }]
         );
         assert_eq!(

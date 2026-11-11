@@ -1,7 +1,7 @@
 use super::*;
-use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-use crate::domain::aggregates::resource_usage::value_objects::{Gpu, TimePeriod};
-use crate::domain::services::resource_usage::availability::calculate;
+use crate::domain::aggregates::reservation::ReservedSlot;
+use crate::domain::aggregates::reservation::value_objects::{Gpu, TimePeriod};
+use crate::domain::services::reservation::availability::calculate;
 use chrono::TimeZone;
 
 /// 表示のテストは日本時間で行う（時刻の見え方が環境に左右されないように）
@@ -43,8 +43,8 @@ fn reservation(
     resources: Vec<Resource>,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
-) -> ResourceUsage {
-    ResourceUsage::new(
+) -> ReservedSlot {
+    ReservedSlot::new(
         email(owner),
         TimePeriod::new(from, to).unwrap(),
         resources,
@@ -53,7 +53,7 @@ fn reservation(
     .unwrap()
 }
 
-fn availabilities(resources: &[Resource], usages: &[ResourceUsage]) -> Vec<ResourceAvailability> {
+fn availabilities(resources: &[Resource], usages: &[ReservedSlot]) -> Vec<ResourceAvailability> {
     calculate(resources, &window(), usages)
 }
 

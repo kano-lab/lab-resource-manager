@@ -5,17 +5,17 @@
 //! 内部のエラー文字列をそのまま見せず、次に何をすればよいかが分かる言葉にする。
 
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::resource_usage::errors::ResourceUsageError;
+use crate::domain::aggregates::reservation::errors::ReservationError;
 use crate::domain::ports::repositories::RepositoryError;
 
 /// 予約を今の時点で終了できなかった理由
 pub fn release_message(failure: &ApplicationError) -> String {
     match failure {
-        ApplicationError::ResourceUsage(ResourceUsageError::NotYetStarted { .. }) => {
+        ApplicationError::ReservedSlot(ReservationError::NotYetStarted { .. }) => {
             "ℹ️ この予約はまだ始まっていません。使わないのであれば「❌ キャンセル」で取り消してください。"
                 .to_string()
         }
-        ApplicationError::ResourceUsage(ResourceUsageError::AlreadyEnded { .. }) => {
+        ApplicationError::ReservedSlot(ReservationError::AlreadyEnded { .. }) => {
             "ℹ️ この予約はすでに終わっています。".to_string()
         }
         ApplicationError::Repository(RepositoryError::NotFound) => {
@@ -44,8 +44,8 @@ mod tests {
 
     #[test]
     fn a_reservation_that_has_not_started_points_at_cancelling() {
-        let message = release_message(&ApplicationError::ResourceUsage(
-            ResourceUsageError::NotYetStarted {
+        let message = release_message(&ApplicationError::ReservedSlot(
+            ReservationError::NotYetStarted {
                 start: Utc::now(),
                 at: Utc::now(),
             },
@@ -59,8 +59,8 @@ mod tests {
 
     #[test]
     fn a_reservation_that_has_ended_is_reported_as_settled() {
-        let message = release_message(&ApplicationError::ResourceUsage(
-            ResourceUsageError::AlreadyEnded {
+        let message = release_message(&ApplicationError::ReservedSlot(
+            ReservationError::AlreadyEnded {
                 end: Utc::now(),
                 at: Utc::now(),
             },

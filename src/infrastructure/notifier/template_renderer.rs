@@ -2,9 +2,10 @@
 //!
 //! 通知メッセージのテンプレートとプレースホルダー置換を処理します。
 
-use crate::domain::aggregates::recurring_reservation::RecurringReservation;
-use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::{
+    OneTimeReservation, RecurringReservation, Reservation, ReservedSlot,
+};
 use crate::domain::ports::notifier::NotificationEvent;
 use crate::infrastructure::config::{FormatConfig, TemplateConfig};
 use crate::infrastructure::notifier::formatter::{
@@ -35,9 +36,9 @@ pub mod defaults {
     /// 予約更新時のデフォルトテンプレート
     pub const UPDATED: &str =
         "🔄 予約更新\n👤 {user}\n\n📅 期間\n{time}\n\n{resource_label}\n{resource}{notes}";
-    /// 予約削除時のデフォルトテンプレート
-    pub const DELETED: &str =
-        "🗑️ 予約削除\n👤 {user}\n\n📅 期間\n{time}\n\n{resource_label}\n{resource}{notes}";
+    /// 予約取り消し時のデフォルトテンプレート
+    pub const CANCELLED: &str =
+        "🗑️ 予約取り消し\n👤 {user}\n\n📅 期間\n{time}\n\n{resource_label}\n{resource}{notes}";
     /// 予約競合時のデフォルトテンプレート（1件の競合）
     pub const CONFLICT: &str = "⚠️ 予約が重複しています\n👤 予約者\n{user}\n\n📅 競合する期間\n{time}\n\n{resource_label}\n{resource}{notes}";
     /// 定期予約作成時のデフォルトテンプレート
@@ -46,6 +47,10 @@ pub mod defaults {
     pub const RECURRING_UPDATED: &str = "🔁 定期予約変更\n👤 {user}\n\n🗓️ 繰り返し\n{recurrence}\n\n📅 時間帯（初回）\n{time}\n\n{resource_label}\n{resource}{notes}";
     /// 定期予約取り消し時のデフォルトテンプレート
     pub const RECURRING_CANCELLED: &str = "🗑️ 定期予約取り消し\n👤 {user}\n\n🗓️ 繰り返し\n{recurrence}\n\n📅 時間帯（初回）\n{time}\n\n{resource_label}\n{resource}{notes}";
+    /// 定期予約の予約枠が1つだけ変更されたときのデフォルトテンプレート
+    pub const SLOT_UPDATED: &str = "🔄 定期予約の予約枠を変更\n👤 {user}\n\n📅 期間\n{time}\n\n{resource_label}\n{resource}{notes}";
+    /// 定期予約の予約枠が1つだけ取り消されたときのデフォルトテンプレート
+    pub const SLOT_CANCELLED: &str = "🗑️ 定期予約の予約枠を取り消し\n👤 {user}\n\n📅 期間\n{time}\n\n{resource_label}\n{resource}{notes}";
     /// 複数競合時の各項目テンプレート（見出しなし）
     pub const CONFLICT_ITEM: &str = "👤 {user}\n\n📅 {time}\n\n{resource_label}\n{resource}{notes}";
 }
@@ -57,23 +62,27 @@ pub fn render_event(
     user_display: &str,
 ) -> String {
     match event {
-        NotificationEvent::ResourceUsageCreated(usage) => {
-            renderer.render_created(usage, user_display)
+        NotificationEvent::ReservationCreated(Reservation::OneTime(reservation)) => {
+            renderer.render_created(reservation, user_display)
         }
-        NotificationEvent::ResourceUsageUpdated(usage) => {
-            renderer.render_updated(usage, user_display)
+        NotificationEvent::ReservationUpdated(Reservation::OneTime(reservation)) => {
+            renderer.render_updated(reservation, user_display)
         }
-        NotificationEvent::ResourceUsageDeleted(usage) => {
-            renderer.render_deleted(usage, user_display)
+        NotificationEvent::ReservationCancelled(Reservation::OneTime(reservation)) => {
+            renderer.render_cancelled(reservation, user_display)
         }
-        NotificationEvent::RecurringReservationCreated(reservation) => {
+        NotificationEvent::ReservationCreated(Reservation::Recurring(reservation)) => {
             renderer.render_recurring_created(reservation, user_display)
         }
-        NotificationEvent::RecurringReservationUpdated(reservation) => {
+        NotificationEvent::ReservationUpdated(Reservation::Recurring(reservation)) => {
             renderer.render_recurring_updated(reservation, user_display)
         }
-        NotificationEvent::RecurringReservationCancelled(reservation) => {
+        NotificationEvent::ReservationCancelled(Reservation::Recurring(reservation)) => {
             renderer.render_recurring_cancelled(reservation, user_display)
+        }
+        NotificationEvent::SlotUpdated(slot) => renderer.render_slot_updated(slot, user_display),
+        NotificationEvent::SlotCancelled(slot) => {
+            renderer.render_slot_cancelled(slot, user_display)
         }
     }
 }
@@ -99,52 +108,78 @@ impl<'a> TemplateRenderer<'a> {
         }
     }
 
-    /// 予約作成メッセージをレンダリング
-    pub fn render_created(&self, usage: &ResourceUsage, user_display: &str) -> String {
+    /// 単発予約の作成メッセージをレンダリング
+    pub fn render_created(&self, reservation: &OneTimeReservation, user_display: &str) -> String {
         let template = self
             .templates
             .created
             .as_deref()
             .unwrap_or(defaults::CREATED);
-        self.render(
-            template,
-            usage.resources(),
-            usage.time_period(),
-            usage.notes().map(String::as_str),
-            user_display,
-            None,
-        )
+        self.render_one_time(template, reservation, user_display)
     }
 
-    /// 予約更新メッセージをレンダリング
-    pub fn render_updated(&self, usage: &ResourceUsage, user_display: &str) -> String {
+    /// 単発予約の変更メッセージをレンダリング
+    pub fn render_updated(&self, reservation: &OneTimeReservation, user_display: &str) -> String {
         let template = self
             .templates
             .updated
             .as_deref()
             .unwrap_or(defaults::UPDATED);
+        self.render_one_time(template, reservation, user_display)
+    }
+
+    /// 単発予約の取り消しメッセージをレンダリング
+    pub fn render_cancelled(&self, reservation: &OneTimeReservation, user_display: &str) -> String {
+        let template = self
+            .templates
+            .cancelled
+            .as_deref()
+            .unwrap_or(defaults::CANCELLED);
+        self.render_one_time(template, reservation, user_display)
+    }
+
+    fn render_one_time(
+        &self,
+        template: &str,
+        reservation: &OneTimeReservation,
+        user_display: &str,
+    ) -> String {
         self.render(
             template,
-            usage.resources(),
-            usage.time_period(),
-            usage.notes().map(String::as_str),
+            reservation.resources(),
+            reservation.time_period(),
+            reservation.notes().map(String::as_str),
             user_display,
             None,
         )
     }
 
-    /// 予約削除メッセージをレンダリング
-    pub fn render_deleted(&self, usage: &ResourceUsage, user_display: &str) -> String {
+    /// 定期予約の予約枠1つの変更メッセージをレンダリング
+    pub fn render_slot_updated(&self, slot: &ReservedSlot, user_display: &str) -> String {
         let template = self
             .templates
-            .deleted
+            .slot_updated
             .as_deref()
-            .unwrap_or(defaults::DELETED);
+            .unwrap_or(defaults::SLOT_UPDATED);
+        self.render_slot(template, slot, user_display)
+    }
+
+    /// 定期予約の予約枠1つの取り消しメッセージをレンダリング
+    pub fn render_slot_cancelled(&self, slot: &ReservedSlot, user_display: &str) -> String {
+        let template = self
+            .templates
+            .slot_cancelled
+            .as_deref()
+            .unwrap_or(defaults::SLOT_CANCELLED);
+        self.render_slot(template, slot, user_display)
+    }
+
+    fn render_slot(&self, template: &str, slot: &ReservedSlot, user_display: &str) -> String {
         self.render(
             template,
-            usage.resources(),
-            usage.time_period(),
-            usage.notes().map(String::as_str),
+            slot.resources(),
+            slot.time_period(),
+            slot.notes().map(String::as_str),
             user_display,
             None,
         )
@@ -203,7 +238,7 @@ impl<'a> TemplateRenderer<'a> {
         self.render(
             template,
             reservation.resources(),
-            reservation.representative_period(),
+            reservation.first_slot_period(),
             reservation.notes().map(String::as_str),
             user_display,
             Some(&recurrence),
@@ -212,12 +247,12 @@ impl<'a> TemplateRenderer<'a> {
 
     /// 予約競合メッセージをレンダリング
     ///
-    /// `existing_usage`は今回の予約要求と競合した既存の使用予定。
+    /// `existing_slot`は今回の予約要求と競合した既存の予約枠。
     /// `conflicting_resource`は競合したリソース単体（要求リソースのうち衝突した1件）。
     pub fn render_conflict(
         &self,
         conflicting_resources: &[Resource],
-        existing_usage: &ResourceUsage,
+        existing_slot: &ReservedSlot,
         user_display: &str,
     ) -> String {
         let template = self
@@ -228,8 +263,8 @@ impl<'a> TemplateRenderer<'a> {
         self.render(
             template,
             conflicting_resources,
-            existing_usage.time_period(),
-            existing_usage.notes().map(String::as_str),
+            existing_slot.time_period(),
+            existing_slot.notes().map(String::as_str),
             user_display,
             None,
         )
@@ -242,7 +277,7 @@ impl<'a> TemplateRenderer<'a> {
     pub fn render_conflict_item(
         &self,
         conflicting_resources: &[Resource],
-        existing_usage: &ResourceUsage,
+        existing_slot: &ReservedSlot,
         user_display: &str,
     ) -> String {
         let template = self
@@ -253,8 +288,8 @@ impl<'a> TemplateRenderer<'a> {
         self.render(
             template,
             conflicting_resources,
-            existing_usage.time_period(),
-            existing_usage.notes().map(String::as_str),
+            existing_slot.time_period(),
+            existing_slot.notes().map(String::as_str),
             user_display,
             None,
         )
@@ -358,12 +393,12 @@ impl<'a> TemplateRenderer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::resource_usage::value_objects::{Gpu, TimePeriod};
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, TimePeriod};
     use crate::domain::common::EmailAddress;
     use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
     use chrono::{TimeZone, Utc};
 
-    fn create_test_usage() -> ResourceUsage {
+    fn create_test_slot() -> ReservedSlot {
         let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
         let period = TimePeriod::new(start, end).unwrap();
@@ -373,7 +408,7 @@ mod tests {
             Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string())),
         ];
 
-        ResourceUsage::new(
+        ReservedSlot::new(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,
@@ -388,9 +423,9 @@ mod tests {
         let format = FormatConfig::default();
 
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
-        let usage = create_test_usage();
+        let slot = create_test_slot();
 
-        let result = renderer.render_created(&usage, "<@U12345>");
+        let result = renderer.render_created(&OneTimeReservation::from_slot(&slot), "<@U12345>");
 
         assert!(result.contains("🔔 新規予約"));
         assert!(result.contains("<@U12345>"));
@@ -404,7 +439,7 @@ mod tests {
         let templates = TemplateConfig {
             created: Some("{user}が{resource}を{time}使います".to_string()),
             updated: None,
-            deleted: None,
+            cancelled: None,
             conflict: None,
             conflict_item: None,
             ..Default::default()
@@ -416,9 +451,9 @@ mod tests {
         };
 
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
-        let usage = create_test_usage();
+        let slot = create_test_slot();
 
-        let result = renderer.render_created(&usage, "田中太郎");
+        let result = renderer.render_created(&OneTimeReservation::from_slot(&slot), "田中太郎");
 
         assert!(result.contains("田中太郎が"));
         assert!(result.contains("Thalys 0,1")); // compact format
@@ -438,9 +473,10 @@ mod tests {
         };
 
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
-        let usage = create_test_usage();
+        let slot = create_test_slot();
 
-        let result = renderer.render_updated(&usage, "user@example.com");
+        let result =
+            renderer.render_updated(&OneTimeReservation::from_slot(&slot), "user@example.com");
 
         assert!(result.contains("🔄 予約更新"));
         assert!(result.contains("Thalys")); // server only
@@ -491,13 +527,13 @@ mod tests {
         let format = FormatConfig::default();
 
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
-        let existing_usage = create_test_usage();
+        let existing_slot = create_test_slot();
         let conflicting_resource =
             Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
 
         let result = renderer.render_conflict(
             std::slice::from_ref(&conflicting_resource),
-            &existing_usage,
+            &existing_slot,
             "<@U67890>",
         );
 
@@ -513,7 +549,7 @@ mod tests {
         let templates = TemplateConfig {
             created: None,
             updated: None,
-            deleted: None,
+            cancelled: None,
             conflict: Some("{user}が既に{resource}を{time}で予約済みです".to_string()),
             conflict_item: None,
             ..Default::default()
@@ -521,13 +557,13 @@ mod tests {
         let format = FormatConfig::default();
 
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
-        let existing_usage = create_test_usage();
+        let existing_slot = create_test_slot();
         let conflicting_resource =
             Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string()));
 
         let result = renderer.render_conflict(
             std::slice::from_ref(&conflicting_resource),
-            &existing_usage,
+            &existing_slot,
             "田中太郎",
         );
 
@@ -552,7 +588,7 @@ mod tests {
             "A100".to_string(),
         ))];
 
-        let usage = ResourceUsage::new(
+        let slot = ReservedSlot::new(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,
@@ -560,7 +596,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = renderer.render_created(&usage, "user");
+        let result = renderer.render_created(&OneTimeReservation::from_slot(&slot), "user");
 
         assert!(!result.contains("📝 備考"));
     }
@@ -571,13 +607,13 @@ mod tests {
         let format = FormatConfig::default();
 
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
-        let existing_usage = create_test_usage();
+        let existing_slot = create_test_slot();
         let conflicting_resource =
             Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
 
         let result = renderer.render_conflict_item(
             std::slice::from_ref(&conflicting_resource),
-            &existing_usage,
+            &existing_slot,
             "<@U67890>",
         );
 
@@ -592,7 +628,7 @@ mod tests {
         let templates = TemplateConfig {
             created: None,
             updated: None,
-            deleted: None,
+            cancelled: None,
             conflict: None,
             conflict_item: Some("{user} : {time} に {resource}".to_string()),
             ..Default::default()
@@ -600,13 +636,13 @@ mod tests {
         let format = FormatConfig::default();
 
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
-        let existing_usage = create_test_usage();
+        let existing_slot = create_test_slot();
         let conflicting_resource =
             Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string()));
 
         let result = renderer.render_conflict_item(
             std::slice::from_ref(&conflicting_resource),
-            &existing_usage,
+            &existing_slot,
             "田中太郎",
         );
 
@@ -616,20 +652,20 @@ mod tests {
     }
 
     fn create_test_recurring_reservation(
-        rule: Option<crate::domain::aggregates::recurring_reservation::RecurrenceRule>,
+        rule: Option<crate::domain::aggregates::reservation::RecurrenceRule>,
     ) -> RecurringReservation {
-        use crate::domain::aggregates::recurring_reservation::RecurringReservationId;
+        use crate::domain::aggregates::reservation::ReservationId;
 
-        RecurringReservation::from_occurrence(
-            RecurringReservationId::from_string("weekly".to_string()),
-            &create_test_usage(),
+        RecurringReservation::from_first_slot(
+            ReservationId::from_string("weekly".to_string()),
+            &create_test_slot(),
             rule,
         )
     }
 
     #[test]
     fn a_recurring_reservation_is_announced_with_its_interval() {
-        use crate::domain::aggregates::recurring_reservation::{
+        use crate::domain::aggregates::reservation::{
             RecurrenceEnd, RecurrenceFrequency, RecurrenceRule,
         };
 
@@ -690,7 +726,10 @@ mod tests {
         let format = FormatConfig::default();
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
 
-        let result = renderer.render_created(&create_test_usage(), "<@U12345>");
+        let result = renderer.render_created(
+            &OneTimeReservation::from_slot(&create_test_slot()),
+            "<@U12345>",
+        );
 
         assert_eq!(result, "<@U12345>[]");
     }

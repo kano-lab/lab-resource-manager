@@ -30,7 +30,7 @@ impl ReservationProposalNotifier for MockReservationProposalNotifier {
     async fn propose(&self, proposal: ReservationProposal) -> Result<(), NotificationError> {
         println!(
             "📤 [MockReservationProposalNotifier] {} へ {} の予約を提案 (候補: {}件)",
-            proposal.owner_email().as_str(),
+            proposal.holder_email().as_str(),
             proposal
                 .resources()
                 .iter()

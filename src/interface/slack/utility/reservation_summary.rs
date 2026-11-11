@@ -4,7 +4,7 @@
 //! 同じ予約の話をしていることが読み手に伝わりにくくなる。対象リソースに設定された
 //! 通知設定（タイムゾーン・フォーマットスタイル）を流用して見え方を揃える。
 
-use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
+use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::infrastructure::config::ResourceConfig;
 use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
 
@@ -12,7 +12,7 @@ use crate::infrastructure::notifier::formatter::{format_resources_styled, format
 ///
 /// 複数リソースをまとめた予約では先頭のリソースの通知設定を使う。
 /// 1件の予約が複数の設定にまたがることは通常なく、見え方を1つに決める必要があるため。
-pub fn build(usage: &ResourceUsage, resource_config: &ResourceConfig) -> String {
+pub fn build(usage: &ReservedSlot, resource_config: &ResourceConfig) -> String {
     let notification = usage
         .resources()
         .first()
@@ -45,7 +45,7 @@ pub fn build(usage: &ResourceUsage, resource_config: &ResourceConfig) -> String 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod};
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, TimePeriod};
     use crate::domain::common::EmailAddress;
     use crate::infrastructure::config::{DeviceConfig, ServerConfig};
     use chrono::{TimeZone, Utc};
@@ -64,10 +64,10 @@ mod tests {
         }
     }
 
-    fn usage() -> ResourceUsage {
+    fn usage() -> ReservedSlot {
         let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
-        ResourceUsage::new(
+        ReservedSlot::new(
             EmailAddress::new("owner@example.com".to_string()).unwrap(),
             TimePeriod::new(start, end).unwrap(),
             vec![Resource::Gpu(Gpu::new(

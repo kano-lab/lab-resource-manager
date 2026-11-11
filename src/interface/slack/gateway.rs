@@ -3,7 +3,7 @@
 //! 受信したSlackイベントを適切なハンドラにルーティング
 
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ResourceUsageRepository;
+use crate::domain::ports::repositories::ReservationRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use slack_morphism::prelude::*;
@@ -11,7 +11,7 @@ use tracing::error;
 
 impl<R, N> SlackApp<R, N>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     /// スラッシュコマンドイベントをルーティング
@@ -164,7 +164,7 @@ where
                     .await?
                 }
                 ACTION_RELEASE_RESERVATION_EARLY => {
-                    crate::interface::slack::block_actions::release_early_button::handle(
+                    crate::interface::slack::block_actions::end_early_button::handle(
                         self,
                         block_actions,
                         action,
@@ -172,7 +172,7 @@ where
                     .await?
                 }
                 ACTION_IDLE_RELEASE | ACTION_IDLE_KEEP | ACTION_IDLE_CANCEL => {
-                    crate::interface::slack::block_actions::idle_reservation_buttons::handle(
+                    crate::interface::slack::block_actions::idle_slot_buttons::handle(
                         self,
                         block_actions,
                         action,

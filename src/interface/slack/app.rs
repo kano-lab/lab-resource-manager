@@ -4,7 +4,7 @@
 
 use crate::application::idle_notice_log::IdleNoticeLog;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ResourceUsageRepository;
+use crate::domain::ports::repositories::ReservationRepository;
 use crate::infrastructure::config::{AppConfig, ResourceConfig};
 use crate::interface::slack::dependencies::{SlackRepositories, SlackUseCases};
 use chrono::{DateTime, Utc};
@@ -21,7 +21,7 @@ use tracing::{debug, error, info, warn};
 /// `run()`メソッドでアプリケーション全体を実行します。
 pub struct SlackApp<R, N>
 where
-    R: ResourceUsageRepository,
+    R: ReservationRepository,
     N: Notifier,
 {
     // 設定
@@ -49,7 +49,7 @@ where
 
 impl<R, N> SlackApp<R, N>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     /// 新しいSlackAppを作成
@@ -120,7 +120,7 @@ where
 
         // バックグラウンドでポーリングタスクを実行
         let polling_handle = {
-            let notify_usecase = self.usecases.notify_resource_usage_changes.clone();
+            let notify_usecase = self.usecases.notify_reservation_changes.clone();
             let polling_interval = Duration::from_secs(self.app_config.polling_interval_secs);
             tokio::spawn(async move {
                 loop {

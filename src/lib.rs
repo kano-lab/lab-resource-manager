@@ -35,8 +35,8 @@
 //!
 //! ```rust,no_run
 //! use lab_resource_manager::{
-//!     NotifyFutureResourceUsageChangesUseCase,
-//!     GoogleCalendarUsageRepository,
+//!     NotifyReservationChangesUseCase,
+//!     GoogleCalendarReservationRepository,
 //!     NotificationRouter,
 //!     JsonFileIdentityLinkRepository,
 //!     load_config,
@@ -52,7 +52,7 @@
 //!
 //! // Create repository and notifier
 //! let repository = Arc::new(
-//!     GoogleCalendarUsageRepository::new(
+//!     GoogleCalendarReservationRepository::new(
 //!         "secrets/service-account.json",
 //!         resource_config.clone(),
 //!         identity_repo.clone(),
@@ -66,7 +66,7 @@
 //!
 //! // Create and run use case. The watch window states how far ahead changes are tracked;
 //! // recurring reservations expand into individual instances, so it cannot be unbounded.
-//! let usecase = NotifyFutureResourceUsageChangesUseCase::new(
+//! let usecase = NotifyReservationChangesUseCase::new(
 //!     repository,
 //!     notifier,
 //!     chrono::Duration::days(60),
@@ -115,28 +115,27 @@ pub mod interface;
 pub mod prelude {
     // Use cases
     pub use crate::application::usecases::{
-        NotifyFutureResourceUsageChangesUseCase, ReconcileObservedUsagesUseCase,
+        NotifyReservationChangesUseCase, ReconcileObservedUsagesUseCase,
     };
 
     // Application errors
     pub use crate::application::error::ApplicationError;
 
     // Domain types
-    pub use crate::domain::aggregates::recurring_reservation::{
-        RecurrenceEnd, RecurrenceFrequency, RecurrenceRule, RecurringReservation,
-        RecurringReservationId,
+    pub use crate::domain::aggregates::reservation::{
+        RecurrenceEnd, RecurrenceFrequency, RecurrenceRule, RecurringReservation, ReservationId,
     };
-    pub use crate::domain::aggregates::resource_usage::{
-        entity::ResourceUsage,
-        errors::ResourceUsageError,
+    pub use crate::domain::aggregates::reservation::{
+        ReservedSlot,
+        errors::ReservationError,
         factory::{ResourceFactory, ResourceFactoryError},
-        value_objects::{Gpu, Resource, TimePeriod, UsageId},
+        value_objects::{Gpu, ReservedSlotId, Resource, TimePeriod},
     };
 
     // Ports (traits)
     pub use crate::domain::ports::{
         notifier::{NotificationError, NotificationEvent, Notifier},
-        repositories::{RepositoryError, ResourceUsageRepository},
+        repositories::{RepositoryError, ReservationRepository},
         reservation_proposal::{ReservationProposal, ReservationProposalNotifier},
         resource_usage_observer::{ObservationError, ObservedUsage, ResourceUsageObserver},
     };
@@ -150,8 +149,9 @@ pub mod prelude {
         },
         repositories::{
             identity_link::JsonFileIdentityLinkRepository,
-            resource_usage::{
-                google_calendar::GoogleCalendarUsageRepository, mock::MockUsageRepository,
+            reservation::{
+                google_calendar::GoogleCalendarReservationRepository,
+                mock::MockReservationRepository,
             },
         },
         reservation_proposal::MockReservationProposalNotifier,
@@ -163,10 +163,10 @@ pub mod prelude {
 }
 
 // Convenience re-exports at crate root
-pub use application::{error::ApplicationError, usecases::NotifyFutureResourceUsageChangesUseCase};
+pub use application::{error::ApplicationError, usecases::NotifyReservationChangesUseCase};
 pub use domain::ports::{
     notifier::{NotificationError, NotificationEvent, Notifier},
-    repositories::{RepositoryError, ResourceUsageRepository},
+    repositories::{RepositoryError, ReservationRepository},
 };
 pub use infrastructure::{
     config::load_config,
@@ -176,8 +176,8 @@ pub use infrastructure::{
     },
     repositories::{
         identity_link::JsonFileIdentityLinkRepository,
-        resource_usage::{
-            google_calendar::GoogleCalendarUsageRepository, mock::MockUsageRepository,
+        reservation::{
+            google_calendar::GoogleCalendarReservationRepository, mock::MockReservationRepository,
         },
     },
 };
