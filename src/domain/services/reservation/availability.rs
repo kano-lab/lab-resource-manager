@@ -7,7 +7,7 @@
 //! # 空きの意味
 //! 空きとは「その期間に重なる予約枠がない」ことである。予約されないまま使われている
 //! リソースは予約枠として現れないため、ここでは空きとして扱われる
-//! （`ReservationRepository`および`ResourceConflictChecker`と同じ立場）。
+//! （`ReservedSlotRepository`および`ResourceConflictChecker`と同じ立場）。
 
 use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource};
@@ -249,7 +249,7 @@ mod tests {
     }
 
     fn slot(holder: &str, resources: Vec<Resource>, from: u32, to: u32) -> ReservedSlot {
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new(holder.to_string()).unwrap(),
             TimePeriod::new(at(from), at(to)).unwrap(),
             resources,
@@ -535,7 +535,7 @@ mod tests {
     #[test]
     fn a_slot_that_ends_before_the_window_does_not_appear() {
         let window = TimePeriod::new(at(9), at(21)).unwrap();
-        let past = ReservedSlot::new(
+        let past = ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(at(9) - Duration::hours(3), at(9)).unwrap(),
             vec![gpu(0)],

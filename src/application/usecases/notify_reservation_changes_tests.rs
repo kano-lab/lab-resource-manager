@@ -1,9 +1,11 @@
 //! `NotifyReservationChangesUseCase`のテスト
 //!
-//! 予約枠の変化が、予約の作成・変更・取り消しとして伝わることを検証する。
+//! 保存先の予約枠の変化が、予約に起きた出来事として予約チャンネルへ伝わることを検証する。
+//! 変化の読み取りそのものは`ReservationChangeInterpreter`のテストが詳しく扱う。
 
 use super::*;
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
+use crate::domain::aggregates::reservation::{ReservationEvent, Schedule};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::NotificationError;
 use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
@@ -16,19 +18,19 @@ const WATCH_WINDOW_DAYS: i64 = 60;
 /// 受け取った通知を記録するテストダブル
 #[derive(Clone, Default)]
 struct RecordingNotifier {
-    events: Arc<Mutex<Vec<NotificationEvent>>>,
+    events: Arc<Mutex<Vec<ReservationEvent>>>,
 }
 
 impl RecordingNotifier {
     /// これまでに受け取った通知を取り出し、記録を空にする
-    fn take(&self) -> Vec<NotificationEvent> {
+    fn take(&self) -> Vec<ReservationEvent> {
         std::mem::take(&mut self.events.lock().unwrap())
     }
 }
 
 #[async_trait]
 impl Notifier for RecordingNotifier {
-    async fn notify(&self, event: NotificationEvent) -> Result<(), NotificationError> {
+    async fn notify(&self, event: ReservationEvent) -> Result<(), NotificationError> {
         self.events.lock().unwrap().push(event);
         Ok(())
     }
@@ -74,25 +76,26 @@ async fn one_time_reservations_are_announced_one_by_one() {
 
     let first = slot("one-time-1", Utc::now() + Duration::days(1));
     let second = slot("one-time-2", Utc::now() + Duration::days(2));
-    repository.save_slot(&first).await.unwrap();
-    repository.save_slot(&second).await.unwrap();
+    repository.put_slot(&first);
+    repository.put_slot(&second);
     usecase.poll_once().await.unwrap();
 
     let created = notifier.take();
     assert_eq!(created.len(), 2, "{created:?}");
-    assert!(created.iter().all(|event| matches!(
-        event,
-        NotificationEvent::ReservationCreated(Reservation::OneTime(_))
-    )));
+    assert!(
+        created
+            .iter()
+            .all(|event| matches!(event, ReservationEvent::Reserved(_)))
+    );
 
-    repository.delete_slot(first.id()).await.unwrap();
+    repository.remove_slot(first.id()).await.unwrap();
     usecase.poll_once().await.unwrap();
 
     let cancelled = notifier.take();
     assert!(
         matches!(
             cancelled.as_slice(),
-            [NotificationEvent::ReservationCancelled(Reservation::OneTime(reservation))]
+            [ReservationEvent::Cancelled(reservation)]
                 if reservation.id().as_str() == first.id().as_str()
         ),
         "{cancelled:?}"
@@ -103,11 +106,11 @@ async fn one_time_reservations_are_announced_one_by_one() {
 async fn ending_a_one_time_reservation_early_is_not_announced_as_a_cancellation() {
     let repository = Arc::new(MockReservationRepository::new());
     let running = slot("one-time", Utc::now() - Duration::hours(1));
-    repository.save_slot(&running).await.unwrap();
+    repository.put_slot(&running);
     let (usecase, notifier) = watching(&repository).await;
 
     let mut ended = running.clone();
-    ended.end_early(Utc::now()).unwrap();
+    ended.end_early(Utc::now(), running.holder_email()).unwrap();
     repository.save_slot(&ended).await.unwrap();
     usecase.poll_once().await.unwrap();
 
@@ -115,8 +118,8 @@ async fn ending_a_one_time_reservation_early_is_not_announced_as_a_cancellation(
     assert!(
         matches!(
             events.as_slice(),
-            [NotificationEvent::ReservationUpdated(Reservation::OneTime(reservation))]
-                if reservation.time_period().end() == ended.time_period().end()
+            [ReservationEvent::EndedEarly(reservation)]
+                if reservation.schedule() == &Schedule::OneTime(ended.time_period().clone())
         ),
         "使った分は予約枠として残っている: {events:?}"
     );
@@ -148,7 +151,7 @@ async fn a_slot_that_ran_its_course_is_not_announced() {
         None,
     )
     .unwrap();
-    repository.save_slot(&ending).await.unwrap();
+    repository.put_slot(&ending);
     let (usecase, notifier) = watching(&repository).await;
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

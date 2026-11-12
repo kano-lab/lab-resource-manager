@@ -85,7 +85,7 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
         let period = TimePeriod::new(start, end).unwrap();
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("owner@example.com".to_string()).unwrap(),
             period,
             vec![Resource::Gpu(Gpu::new(

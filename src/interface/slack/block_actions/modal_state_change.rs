@@ -1,7 +1,7 @@
 //! モーダル状態変更ハンドラ（リソースタイプ、サーバー選択）
 
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use crate::interface::slack::slack_client::modals;
@@ -18,7 +18,7 @@ pub async fn handle<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let action_id = action.action_id.to_string();
@@ -61,7 +61,7 @@ fn build_updated_reserve_modal<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> SlackView
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let config = app.resource_config();
@@ -109,7 +109,7 @@ fn build_updated_link_user_modal<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> SlackView
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let new_target_type = action

@@ -4,7 +4,7 @@ use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::{IdentityLinkRepository, ReservationRepository};
+use crate::domain::ports::repositories::{IdentityLinkRepository, ReservedSlotRepository};
 use crate::domain::ports::{
     ObservedUsage, ReservationProposal, ReservationProposalNotifier, ResourceUsageObserver,
     UnauthorizedUsageNotifier,
@@ -47,7 +47,7 @@ type NotifiedUnauthorizedKey = (ExternalIdentity, String, DateTime<Utc>);
 /// プロセス内メモリのみで保持し、永続化しない。
 pub struct ReconcileObservedUsagesUseCase<R, O, I, P, U>
 where
-    R: ReservationRepository,
+    R: ReservedSlotRepository,
     O: ResourceUsageObserver,
     I: IdentityLinkRepository,
     P: ReservationProposalNotifier,
@@ -66,7 +66,7 @@ where
 
 impl<R, O, I, P, U> ReconcileObservedUsagesUseCase<R, O, I, P, U>
 where
-    R: ReservationRepository,
+    R: ReservedSlotRepository,
     O: ResourceUsageObserver,
     I: IdentityLinkRepository,
     P: ReservationProposalNotifier,

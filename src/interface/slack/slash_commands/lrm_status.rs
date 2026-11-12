@@ -1,7 +1,7 @@
 //! /lrm-status コマンドハンドラ
 
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::views::messages::monitoring;
 use chrono::Utc;
@@ -17,7 +17,7 @@ pub async fn handle<R, N>(
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     debug!(user = %event.user_id, "reporting the monitoring status");

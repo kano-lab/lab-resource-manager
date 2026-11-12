@@ -20,9 +20,7 @@ configuration or prompt that names tools explicitly.
 | `release_reservation_early` | `end_slot_early` |
 | `cancel_reservation` | `cancel_slot` (cancels one reserved slot) |
 
-`get_reservation` and `cancel_reservation` are new tools that act on a reservation. For the
-old "cancel this one" behavior of `cancel_reservation`, use `cancel_slot`. Reserved slots in
-tool output now carry the ID (`reservation_id`) of the reservation they belong to.
+`cancel_slot` cancels one reserved slot, as `cancel_reservation` used to.
 
 ### Notification Template Keys
 
@@ -32,12 +30,21 @@ The template for cancelling a reservation is renamed from `deleted` to `cancelle
 ### Log Field Names
 
 The log field `usage_id` is now `slot_id` (a reserved slot) or `reservation_id` (a
-reservation), and `owner` is now `holder`. The change detection summary line reads:
+reservation), and `owner` is now `holder`. The summary lines of each pass read:
 
 ```text
+reconcile pass finished
+  observed=6 slots_in_progress=5 matched_to_a_slot=5
+  unreserved_sessions=1 failures=0 elapsed_ms=412
+idle slot pass finished
+  slots_in_progress=5 servers_observed=3 absent=0 held=1 held_partially=0
+  notified=1 withheld=0 unreachable=0 failures=0 elapsed_ms=95
 change detection pass finished
   slots=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
 ```
+
+`reservations_in_progress` is now `slots_in_progress`, `matched_to_a_reservation` is now
+`matched_to_a_slot`, and `idle reservation pass finished` is now `idle slot pass finished`.
 
 Update any journalctl filters that rely on these fields.
 

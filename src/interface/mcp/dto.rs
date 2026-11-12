@@ -2,8 +2,8 @@
 //!
 //! ドメインエンティティはserde非依存のため、JSON出力専用のDTOをここに定義する。
 
+use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::Resource;
-use crate::domain::aggregates::reservation::{Reservation, ReservedSlot};
 use crate::domain::common::TimePeriod;
 use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::infrastructure::config::ResourceConfig;
@@ -16,10 +16,6 @@ use serde::{Deserialize, Serialize};
 pub struct SlotDto {
     /// 予約枠ID（`get_slot`・`update_slot`・`end_slot_early`・`cancel_slot`に指定できる）
     pub id: String,
-    /// この予約枠が属する予約のID（`get_reservation`・`cancel_reservation`に指定できる）
-    ///
-    /// 単発予約では予約枠IDと同じ値になる。
-    pub reservation_id: String,
     pub holder_email: String,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
@@ -31,7 +27,6 @@ impl From<&ReservedSlot> for SlotDto {
     fn from(slot: &ReservedSlot) -> Self {
         Self {
             id: slot.id().as_str().to_string(),
-            reservation_id: slot.reservation_id().as_str().to_string(),
             holder_email: slot.holder_email().as_str().to_string(),
             start: slot.time_period().start(),
             end: slot.time_period().end(),
@@ -41,48 +36,10 @@ impl From<&ReservedSlot> for SlotDto {
     }
 }
 
-/// 予約の出力用DTO
-#[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ReservationDto {
-    /// 単発予約
-    OneTime {
-        id: String,
-        holder_email: String,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-        resources: Vec<String>,
-        notes: Option<String>,
-    },
-}
-
-impl From<&Reservation> for ReservationDto {
-    fn from(reservation: &Reservation) -> Self {
-        let resources = |resources: &[Resource]| resources.iter().map(|r| r.to_string()).collect();
-        match reservation {
-            Reservation::OneTime(one_time) => Self::OneTime {
-                id: one_time.id().as_str().to_string(),
-                holder_email: one_time.holder_email().as_str().to_string(),
-                start: one_time.time_period().start(),
-                end: one_time.time_period().end(),
-                resources: resources(one_time.resources()),
-                notes: one_time.notes().cloned(),
-            },
-        }
-    }
-}
-
 /// 予約枠IDだけを受け取るツールの引数
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SlotIdParams {
     /// 予約枠ID
-    pub id: String,
-}
-
-/// 予約IDだけを受け取るツールの引数
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct ReservationIdParams {
-    /// 予約ID（予約枠の`reservation_id`）
     pub id: String,
 }
 
@@ -405,7 +362,7 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2026, 11, 12, 0, 0, 0).unwrap();
         let window = TimePeriod::new(start, start + Duration::hours(6)).unwrap();
         let gpu = Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
-        let slot = ReservedSlot::new(
+        let slot = ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start + Duration::hours(1), start + Duration::hours(2)).unwrap(),
             vec![gpu.clone()],

@@ -5,7 +5,7 @@ use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use crate::interface::slack::utility::conflict_message;
@@ -20,7 +20,7 @@ pub async fn handle<R, N>(
     view_submission: &SlackInteractionViewSubmissionEvent,
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let user_id = view_submission.user.id.clone();

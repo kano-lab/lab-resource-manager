@@ -45,7 +45,7 @@ fn reservation(
     from: DateTime<Utc>,
     to: DateTime<Utc>,
 ) -> ReservedSlot {
-    ReservedSlot::new(
+    ReservedSlot::of_new_one_time_reservation(
         email(holder),
         TimePeriod::new(from, to).unwrap(),
         resources,

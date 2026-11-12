@@ -6,9 +6,9 @@ use slack_morphism::prelude::*;
 use tracing::error;
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
-use crate::domain::aggregates::reservation::Reservation;
+use crate::domain::aggregates::reservation::ReservationEvent;
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
+use crate::domain::ports::notifier::NotificationError;
 use crate::infrastructure::notifier::senders::sender::{NotificationContext, Sender};
 use crate::infrastructure::notifier::template_renderer::{TemplateRenderer, render_event};
 use crate::interface::slack::constants::{
@@ -106,15 +106,14 @@ impl SlackSender {
 
     /// メッセージブロックを構築（イベントに応じてボタンを追加）
     fn build_message_blocks(message: &str, context: &NotificationContext) -> Vec<SlackBlock> {
-        // ボタンは予約枠に対する操作（更新・今で終了・取り消し）なので、対象の予約枠が
-        // まだ残っている場合にだけ付ける。単発予約は予約枠を1つだけ持つので、
-        // 予約のIDがそのまま予約枠のIDになる
+        // ボタンは予約枠に対する操作（更新・今で終了・取り消し）なので、対象の予約枠に
+        // まだ手を入れられる場合にだけ付ける。今で終了した予約枠や取り消された予約には
+        // 付けない。単発予約は予約枠を1つだけ持つので、予約のIDがそのまま予約枠のIDになる
         let actionable_slot_id = match context.event {
-            NotificationEvent::ReservationCreated(Reservation::OneTime(reservation))
-            | NotificationEvent::ReservationUpdated(Reservation::OneTime(reservation)) => {
+            ReservationEvent::Reserved(reservation) | ReservationEvent::Changed(reservation) => {
                 Some(reservation.id().as_str())
             }
-            NotificationEvent::ReservationCancelled(_) => None,
+            ReservationEvent::EndedEarly(_) | ReservationEvent::Cancelled(_) => None,
         };
 
         let blocks_json = if let Some(slot_id) = actionable_slot_id {

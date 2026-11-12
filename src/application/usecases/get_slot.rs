@@ -1,14 +1,14 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::{ReservedSlot, ReservedSlotId};
-use crate::domain::ports::repositories::{RepositoryError, ReservationRepository};
+use crate::domain::ports::repositories::{RepositoryError, ReservedSlotRepository};
 use std::sync::Arc;
 
 /// IDで予約枠を取得するユースケース
-pub struct GetSlotUseCase<R: ReservationRepository> {
+pub struct GetSlotUseCase<R: ReservedSlotRepository> {
     repository: Arc<R>,
 }
 
-impl<R: ReservationRepository> GetSlotUseCase<R> {
+impl<R: ReservedSlotRepository> GetSlotUseCase<R> {
     /// 新しいインスタンスを作成
     ///
     /// # Arguments

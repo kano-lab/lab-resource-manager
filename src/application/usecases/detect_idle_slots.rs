@@ -4,7 +4,7 @@ use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource};
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::NotificationError;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::ports::repositories::ReservedSlotRepository;
 use crate::domain::ports::{
     IdleEvidence, IdleSlot, IdleSlotNotifier, ObservationSnapshot, ResourceUsageObserver,
 };
@@ -120,7 +120,7 @@ struct IdleSpell {
 ///   まもなく終わる予約枠を急かしても、予約者に取れる手はほとんどない
 pub struct DetectIdleSlotsUseCase<R, O, N>
 where
-    R: ReservationRepository,
+    R: ReservedSlotRepository,
     O: ResourceUsageObserver,
     N: IdleSlotNotifier,
 {
@@ -135,7 +135,7 @@ where
 
 impl<R, O, N> DetectIdleSlotsUseCase<R, O, N>
 where
-    R: ReservationRepository,
+    R: ReservedSlotRepository,
     O: ResourceUsageObserver,
     N: IdleSlotNotifier,
 {
@@ -438,7 +438,7 @@ mod tests {
     use crate::domain::services::reservation::GpusAtRest;
 
     fn slot_ending_in(remaining: Duration, now: DateTime<Utc>) -> ReservedSlot {
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(now - Duration::hours(1), now + remaining).unwrap(),
             vec![Resource::Gpu(Gpu::new(

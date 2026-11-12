@@ -1,6 +1,6 @@
 //! # Reservation Repository Implementations
 //!
-//! ReservationRepositoryポートの具象実装を提供します。
+//! ReservedSlotRepositoryポートの具象実装を提供します。
 //!
 //! - `google_calendar`: Google Calendar APIを使用した実装
 //! - `mock`: テスト用のインメモリ実装

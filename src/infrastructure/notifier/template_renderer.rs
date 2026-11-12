@@ -3,9 +3,10 @@
 //! 通知メッセージのテンプレートとプレースホルダー置換を処理します。
 
 use crate::domain::aggregates::reservation::value_objects::Resource;
-use crate::domain::aggregates::reservation::{OneTimeReservation, Reservation, ReservedSlot};
+use crate::domain::aggregates::reservation::{
+    Reservation, ReservationEvent, ReservedSlot, Schedule,
+};
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::notifier::NotificationEvent;
 use crate::infrastructure::config::{FormatConfig, TemplateConfig};
 use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
 
@@ -40,20 +41,22 @@ pub mod defaults {
     pub const CONFLICT_ITEM: &str = "👤 {user}\n\n📅 {time}\n\n{resource_label}\n{resource}{notes}";
 }
 
-/// イベントの種類に応じたテンプレートでメッセージをレンダリング
+/// 出来事の種類に応じたテンプレートでメッセージをレンダリング
+///
+/// 今で終了は、予約枠の時間が変わったこととして`updated`のテンプレートで伝える。
 pub fn render_event(
     renderer: &TemplateRenderer<'_>,
-    event: &NotificationEvent,
+    event: &ReservationEvent,
     user_display: &str,
 ) -> String {
     match event {
-        NotificationEvent::ReservationCreated(Reservation::OneTime(reservation)) => {
+        ReservationEvent::Reserved(reservation) => {
             renderer.render_created(reservation, user_display)
         }
-        NotificationEvent::ReservationUpdated(Reservation::OneTime(reservation)) => {
+        ReservationEvent::Changed(reservation) | ReservationEvent::EndedEarly(reservation) => {
             renderer.render_updated(reservation, user_display)
         }
-        NotificationEvent::ReservationCancelled(Reservation::OneTime(reservation)) => {
+        ReservationEvent::Cancelled(reservation) => {
             renderer.render_cancelled(reservation, user_display)
         }
     }
@@ -81,7 +84,7 @@ impl<'a> TemplateRenderer<'a> {
     }
 
     /// 単発予約の作成メッセージをレンダリング
-    pub fn render_created(&self, reservation: &OneTimeReservation, user_display: &str) -> String {
+    pub fn render_created(&self, reservation: &Reservation, user_display: &str) -> String {
         let template = self
             .templates
             .created
@@ -91,7 +94,7 @@ impl<'a> TemplateRenderer<'a> {
     }
 
     /// 単発予約の変更メッセージをレンダリング
-    pub fn render_updated(&self, reservation: &OneTimeReservation, user_display: &str) -> String {
+    pub fn render_updated(&self, reservation: &Reservation, user_display: &str) -> String {
         let template = self
             .templates
             .updated
@@ -101,7 +104,7 @@ impl<'a> TemplateRenderer<'a> {
     }
 
     /// 単発予約の取り消しメッセージをレンダリング
-    pub fn render_cancelled(&self, reservation: &OneTimeReservation, user_display: &str) -> String {
+    pub fn render_cancelled(&self, reservation: &Reservation, user_display: &str) -> String {
         let template = self
             .templates
             .cancelled
@@ -113,13 +116,14 @@ impl<'a> TemplateRenderer<'a> {
     fn render_one_time(
         &self,
         template: &str,
-        reservation: &OneTimeReservation,
+        reservation: &Reservation,
         user_display: &str,
     ) -> String {
+        let Schedule::OneTime(time_period) = reservation.schedule();
         self.render(
             template,
             reservation.resources(),
-            reservation.time_period(),
+            time_period,
             reservation.notes().map(String::as_str),
             user_display,
         )
@@ -280,7 +284,7 @@ mod tests {
             Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string())),
         ];
 
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,
@@ -297,7 +301,7 @@ mod tests {
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
         let slot = create_test_slot();
 
-        let result = renderer.render_created(&OneTimeReservation::from_slot(&slot), "<@U12345>");
+        let result = renderer.render_created(&Reservation::from_one_time_slot(&slot), "<@U12345>");
 
         assert!(result.contains("🔔 新規予約"));
         assert!(result.contains("<@U12345>"));
@@ -324,7 +328,7 @@ mod tests {
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
         let slot = create_test_slot();
 
-        let result = renderer.render_created(&OneTimeReservation::from_slot(&slot), "田中太郎");
+        let result = renderer.render_created(&Reservation::from_one_time_slot(&slot), "田中太郎");
 
         assert!(result.contains("田中太郎が"));
         assert!(result.contains("Thalys 0,1")); // compact format
@@ -347,7 +351,7 @@ mod tests {
         let slot = create_test_slot();
 
         let result =
-            renderer.render_updated(&OneTimeReservation::from_slot(&slot), "user@example.com");
+            renderer.render_updated(&Reservation::from_one_time_slot(&slot), "user@example.com");
 
         assert!(result.contains("🔄 予約更新"));
         assert!(result.contains("Thalys")); // server only
@@ -458,7 +462,7 @@ mod tests {
             "A100".to_string(),
         ))];
 
-        let slot = ReservedSlot::new(
+        let slot = ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,
@@ -466,7 +470,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = renderer.render_created(&OneTimeReservation::from_slot(&slot), "user");
+        let result = renderer.render_created(&Reservation::from_one_time_slot(&slot), "user");
 
         assert!(!result.contains("📝 備考"));
     }

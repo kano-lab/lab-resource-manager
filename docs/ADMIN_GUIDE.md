@@ -518,12 +518,10 @@ person).
 | `list_slots` | List every reserved slot overlapping the next 60 days (including running ones) |
 | `list_my_slots` | List the caller's reserved slots overlapping the next 60 days |
 | `get_slot` | Get a reserved slot's details by slot ID |
-| `get_reservation` | Get a reservation's details by reservation ID |
 | `create_reservation` | Create a one-time reservation (GPU server or room) |
 | `update_slot` | Change the time or notes of one of your reserved slots |
 | `end_slot_early` | End one of your running reserved slots now, releasing the remaining time |
 | `cancel_slot` | Cancel one of your reserved slots |
-| `cancel_reservation` | Cancel one of your reservations |
 
 Write tools treat the email address linked to the caller's Bearer token as the reservation
 holder. Changing or cancelling someone else's reservation is rejected by the same

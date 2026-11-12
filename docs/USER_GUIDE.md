@@ -40,7 +40,8 @@ This guide keeps these words apart:
 | One-time reservation | A reservation for a single period |
 | Reserved slot | A stretch of time a reservation actually holds. A one-time reservation has one |
 
-Overlap checks, unused notices, and "End now" work on reserved slots. For a one-time
+A reserved slot is time you have held with a reservation, not an open slot waiting to be
+booked. Overlap checks, unused notices, and "End now" work on reserved slots. For a one-time
 reservation, the reservation and its slot are the same thing.
 
 ## Getting Started
@@ -252,11 +253,11 @@ Ask your admin for the exact URL (host, port, and whether it's `http://` or `htt
 - List the resources that can be reserved (GPU servers with their device numbers, meeting rooms)
 - Check when each resource is free in a given period
 - List all upcoming reserved slots, or just your own
-- Look up a reserved slot or a reservation by ID
+- Look up a reserved slot by ID
 - Create a one-time reservation (GPU server or meeting room)
 - Change the time or notes of one of your reserved slots
 - End one of your running reserved slots early, releasing the remaining time
-- Cancel one of your reserved slots or reservations
+- Cancel one of your reserved slots
 
 Ending early shortens the reserved slot to the current time, so the time you used stays on
 record. Cancel instead when the slot should not have existed at all.

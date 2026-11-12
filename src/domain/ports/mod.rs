@@ -37,7 +37,7 @@ pub mod unauthorized_usage_notifier;
 
 pub use error::PortError;
 pub use idle_slot_notifier::{IdleEvidence, IdleSlot, IdleSlotNotifier};
-pub use notifier::{NotificationError, NotificationEvent, Notifier};
+pub use notifier::{NotificationError, Notifier};
 pub use reservation_proposal::{ReservationProposal, ReservationProposalNotifier};
 pub use resource_collection_access::{
     ResourceCollectionAccessError, ResourceCollectionAccessService,

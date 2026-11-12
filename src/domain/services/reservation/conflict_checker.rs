@@ -1,6 +1,6 @@
 use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource};
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::ports::repositories::ReservedSlotRepository;
 use crate::domain::services::reservation::errors::{ConflictCheckError, ResourceConflictError};
 use std::collections::HashMap;
 
@@ -10,7 +10,7 @@ use std::collections::HashMap;
 ///
 /// # 判定の範囲
 /// 判定の対象は予約である。永続化層にあって予約として解釈されないレコードは
-/// 予約ではないため、競合の対象にならない（`ReservationRepository`を参照）。
+/// 予約ではないため、競合の対象にならない（`ReservedSlotRepository`を参照）。
 ///
 /// したがって競合なしとは「予約と重ならない」ことであり、そのリソースが実際に
 /// 使われていないことは意味しない。予約されないまま使われるリソースは
@@ -43,7 +43,7 @@ impl ResourceConflictChecker {
     /// # Errors
     /// - 競合するリソースがある場合
     /// - リポジトリエラー
-    pub async fn check_conflicts<R: ReservationRepository>(
+    pub async fn check_conflicts<R: ReservedSlotRepository + ?Sized>(
         &self,
         repository: &R,
         time_period: &TimePeriod,
@@ -114,7 +114,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl ReservationRepository for StubRepository {
+    impl ReservedSlotRepository for StubRepository {
         async fn find_slot(
             &self,
             _id: &ReservedSlotId,
@@ -141,22 +141,7 @@ mod tests {
             unimplemented!("このテストでは使用しない")
         }
 
-        async fn delete_slot(&self, _id: &ReservedSlotId) -> Result<(), RepositoryError> {
-            unimplemented!("このテストでは使用しない")
-        }
-
-        async fn find_reservation(
-            &self,
-            _id: &crate::domain::aggregates::reservation::ReservationId,
-        ) -> Result<Option<crate::domain::aggregates::reservation::Reservation>, RepositoryError>
-        {
-            Ok(None)
-        }
-
-        async fn delete_reservation(
-            &self,
-            _id: &crate::domain::aggregates::reservation::ReservationId,
-        ) -> Result<(), RepositoryError> {
+        async fn remove_slot(&self, _id: &ReservedSlotId) -> Result<(), RepositoryError> {
             unimplemented!("このテストでは使用しない")
         }
     }
@@ -168,7 +153,7 @@ mod tests {
     }
 
     fn slot_with(holder: &str, resources: Vec<Resource>) -> ReservedSlot {
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new(holder.to_string()).unwrap(),
             test_period(),
             resources,

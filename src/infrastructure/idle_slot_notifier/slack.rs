@@ -210,7 +210,7 @@ mod tests {
 
     fn sample_slot() -> ReservedSlot {
         let start = Utc::now() - Duration::hours(2);
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start, start + Duration::hours(6)).unwrap(),
             vec![Resource::Gpu(Gpu::new(

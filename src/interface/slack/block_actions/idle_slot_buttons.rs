@@ -6,7 +6,7 @@
 use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::{
     ACTION_IDLE_CANCEL, ACTION_IDLE_END_EARLY, ACTION_IDLE_KEEP,
@@ -25,7 +25,7 @@ pub async fn handle<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let Some(slot_id_str) = &action.value else {
@@ -70,7 +70,7 @@ where
 /// 予約は使われる見込みなので、しばらくこの予約について声をかけない。
 fn keep<R, N>(app: &SlackApp<R, N>, slot_id: &ReservedSlotId) -> String
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     app.idle_notices().silence(slot_id, Utc::now());
@@ -89,7 +89,7 @@ async fn release<R, N>(
     requested_by: &EmailAddress,
 ) -> String
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     info!(
@@ -128,7 +128,7 @@ async fn cancel<R, N>(
     requested_by: &EmailAddress,
 ) -> String
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     info!(
@@ -144,7 +144,7 @@ where
         .execute(slot_id, requested_by)
         .await
     {
-        Ok(()) => "✅ 予約を取り消しました。".to_string(),
+        Ok(_) => "✅ 予約を取り消しました。".to_string(),
         Err(failure) => {
             warn!(
                 slot_id = %slot_id.as_str(),
@@ -166,7 +166,7 @@ async fn reply<R, N>(
     block_actions: &SlackInteractionBlockActionsEvent,
     feedback: String,
 ) where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let session = app.slack_client().open_session(app.bot_token());

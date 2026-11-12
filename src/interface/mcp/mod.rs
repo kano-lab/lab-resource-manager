@@ -11,7 +11,9 @@ pub mod auth;
 pub mod dto;
 pub mod server;
 
-use crate::domain::ports::repositories::{McpTokenRepository, ReservationRepository};
+use crate::domain::ports::repositories::{
+    McpTokenRepository, ReservationRepository, ReservedSlotRepository,
+};
 use auth::bearer_auth;
 use axum::middleware;
 use axum_server::tls_rustls::RustlsConfig;
@@ -37,7 +39,7 @@ pub async fn serve<R>(
     server: LrmMcpServer<R>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
 {
     let session_manager = Arc::new(LocalSessionManager::default());
     let config = StreamableHttpServerConfig::default().with_allowed_hosts(allowed_hosts);

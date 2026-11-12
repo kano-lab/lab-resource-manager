@@ -202,7 +202,7 @@ mod tests {
 
     fn reservation(holder: &str, resources: Vec<Resource>) -> ReservedSlot {
         let now = Utc::now();
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new(holder.to_string()).unwrap(),
             TimePeriod::new(now, now + Duration::hours(2)).unwrap(),
             resources,

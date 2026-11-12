@@ -133,8 +133,13 @@ impl From<TimePeriodError> for ApplicationError {
 }
 
 impl From<ReservationError> for ApplicationError {
+    /// 予約者でない人の操作は、ドメインでは予約の決まりへの違反として表れる。
+    /// 呼び出し元から見れば権限の不足なので、`Unauthorized`として伝える。
     fn from(e: ReservationError) -> Self {
-        ApplicationError::Reservation(e)
+        match e {
+            ReservationError::NotHolder { .. } => ApplicationError::Unauthorized(e.to_string()),
+            other => ApplicationError::Reservation(other),
+        }
     }
 }
 

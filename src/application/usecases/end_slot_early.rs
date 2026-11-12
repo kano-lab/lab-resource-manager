@@ -2,49 +2,44 @@ use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::{RepositoryError, ReservationRepository};
-use crate::domain::services::{AuthorizationPolicy, ReservationAuthorizationPolicy};
+use crate::domain::ports::repositories::{RepositoryError, ReservedSlotRepository};
 use chrono::Utc;
 use std::sync::Arc;
 use tracing::info;
 
-/// 進行中の予約を今の時点で締めるユースケース
+/// 進行中の予約枠を今の時点で締めるユースケース（今で終了）
 ///
 /// 取り消しでは「誰がいつ使っていたか」まで消えてしまう。予定より早く使い終わったときに、
 /// 使った分を記録として残したまま残り時間だけを他の利用者へ開くための操作である。
 ///
 /// 締める時刻は常に現在時刻とする。任意の終了時刻を指定したい場合は
 /// `UpdateSlotUseCase`が担う。
-pub struct EndSlotEarlyUseCase<R: ReservationRepository> {
+pub struct EndSlotEarlyUseCase<R: ReservedSlotRepository> {
     repository: Arc<R>,
-    authorization_policy: ReservationAuthorizationPolicy,
 }
 
-impl<R: ReservationRepository> EndSlotEarlyUseCase<R> {
+impl<R: ReservedSlotRepository> EndSlotEarlyUseCase<R> {
     /// 新しいEndSlotEarlyUseCaseインスタンスを作成
     ///
     /// # Arguments
-    /// * `repository` - 予約リポジトリ
+    /// * `repository` - 予約枠リポジトリ
     pub fn new(repository: Arc<R>) -> Self {
-        Self {
-            repository,
-            authorization_policy: ReservationAuthorizationPolicy::new(),
-        }
+        Self { repository }
     }
 
-    /// 予約を今の時点で締める
+    /// 予約枠を今の時点で締める
     ///
     /// # Arguments
     /// * `id` - 予約枠ID
     /// * `requested_by` - 操作者のメールアドレス（権限チェック用）
     ///
     /// # Returns
-    /// 締めたあとの予約（終了時刻が現在時刻に更新されている）
+    /// 締めたあとの予約枠（終了時刻が現在時刻に更新されている）
     ///
     /// # Errors
-    /// - 指定されたIDの予約が見つからない場合
-    /// - 予約者が一致しない場合
-    /// - 予約がまだ始まっていない、またはすでに終わっている場合
+    /// - 指定されたIDの予約枠が見つからない場合
+    /// - 操作者が予約者でない場合
+    /// - 予約枠がまだ始まっていない、またはすでに終わっている場合
     /// - リポジトリエラー
     pub async fn execute(
         &self,
@@ -57,12 +52,8 @@ impl<R: ReservationRepository> EndSlotEarlyUseCase<R> {
             .await?
             .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?;
 
-        self.authorization_policy
-            .authorize_update(requested_by, &slot)
-            .map_err(|e| ApplicationError::Unauthorized(e.to_string()))?;
-
         // 期間を縮める操作のため、新たに占有する時間はなく競合は起こりえない
-        slot.end_early(Utc::now())?;
+        slot.end_early(Utc::now(), requested_by)?;
 
         self.repository.save_slot(&slot).await?;
 
@@ -72,7 +63,7 @@ impl<R: ReservationRepository> EndSlotEarlyUseCase<R> {
             requested_by = %requested_by.as_str(),
             start = %slot.time_period().start(),
             end = %slot.time_period().end(),
-            "reservation released early"
+            "reserved slot ended early"
         );
 
         Ok(slot)
@@ -92,7 +83,7 @@ mod tests {
     }
 
     fn slot_of(holder: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> ReservedSlot {
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             email(holder),
             TimePeriod::new(start, end).unwrap(),
             vec![Resource::Gpu(Gpu::new(
@@ -107,12 +98,12 @@ mod tests {
 
     async fn repository_with(slot: &ReservedSlot) -> Arc<MockReservationRepository> {
         let repository = Arc::new(MockReservationRepository::new());
-        repository.save_slot(slot).await.unwrap();
+        repository.put_slot(slot);
         repository
     }
 
     #[tokio::test]
-    async fn the_reservation_ends_now_and_stays_in_the_repository() {
+    async fn the_slot_ends_now_and_stays_in_the_repository() {
         let start = Utc::now() - Duration::hours(1);
         let slot = slot_of("holder@example.com", start, start + Duration::hours(4));
         let repository = repository_with(&slot).await;
@@ -135,7 +126,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn someone_else_cannot_release_a_reservation() {
+    async fn someone_else_cannot_end_a_slot_early() {
         let start = Utc::now() - Duration::hours(1);
         let slot = slot_of("holder@example.com", start, start + Duration::hours(4));
         let repository = repository_with(&slot).await;
@@ -160,7 +151,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_reservation_that_has_not_started_is_rejected() {
+    async fn a_slot_that_has_not_started_is_rejected() {
         let start = Utc::now() + Duration::hours(1);
         let slot = slot_of("holder@example.com", start, start + Duration::hours(2));
         let repository = repository_with(&slot).await;
@@ -179,7 +170,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_missing_reservation_is_reported_as_not_found() {
+    async fn a_missing_slot_is_reported_as_not_found() {
         let repository = Arc::new(MockReservationRepository::new());
         let usecase = EndSlotEarlyUseCase::new(repository);
 

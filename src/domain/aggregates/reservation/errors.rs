@@ -1,4 +1,4 @@
-use crate::domain::common::TimePeriodError;
+use crate::domain::common::{EmailAddress, TimePeriodError};
 use chrono::{DateTime, Utc};
 use std::fmt;
 
@@ -19,6 +19,13 @@ pub enum ReservationError {
         start: DateTime<Utc>,
         /// 今で終了しようとした時刻
         at: DateTime<Utc>,
+    },
+    /// 予約者ではない人が、予約や予約枠を変えようとした
+    ///
+    /// 予約とその予約枠を変えられるのは予約者本人だけである。
+    NotHolder {
+        /// 操作しようとした人
+        actor: EmailAddress,
     },
     /// すでに終わった予約枠を今で終了しようとした
     AlreadyEnded {
@@ -44,6 +51,11 @@ impl fmt::Display for ReservationError {
                     at.format("%Y-%m-%d %H:%M:%S")
                 )
             }
+            ReservationError::NotHolder { actor } => write!(
+                f,
+                "予約者本人だけが操作できます（操作しようとした人: {}）",
+                actor.as_str()
+            ),
             ReservationError::AlreadyEnded { end, at } => {
                 write!(
                     f,

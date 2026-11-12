@@ -6,21 +6,20 @@
 //! 予約枠は予約が実際に押さえている時間で、一覧・更新・今で終了は予約枠に対して行う。
 
 use crate::application::usecases::{
-    CancelReservationUseCase, CancelSlotUseCase, CheckResourceAvailabilityUseCase,
-    CreateReservationUseCase, EndSlotEarlyUseCase, GetReservationUseCase, GetSlotUseCase,
-    ListSlotsHeldByUseCase, ListSlotsUseCase, UpdateSlotUseCase,
+    CancelSlotUseCase, CheckResourceAvailabilityUseCase, CreateReservationUseCase,
+    EndSlotEarlyUseCase, GetSlotUseCase, ListSlotsHeldByUseCase, ListSlotsUseCase,
+    UpdateSlotUseCase,
 };
+use crate::domain::aggregates::reservation::ReservedSlotId;
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
-use crate::domain::aggregates::reservation::{ReservationId, ReservedSlotId};
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
 use crate::infrastructure::config::ResourceConfig;
 use crate::interface::mcp::auth::ResolvedCaller;
 use crate::interface::mcp::dto::{
-    CheckAvailabilityParams, CreateReservationParams, ReservationDto, ReservationIdParams,
-    ResourceAvailabilityDto, ResourceCatalogDto, SlotDto, SlotIdParams, UpdateSlotParams,
-    resources_to_check,
+    CheckAvailabilityParams, CreateReservationParams, ResourceAvailabilityDto, ResourceCatalogDto,
+    SlotDto, SlotIdParams, UpdateSlotParams, resources_to_check,
 };
 use rmcp::ErrorData;
 use rmcp::handler::server::tool::Extension;
@@ -30,13 +29,9 @@ use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use std::sync::Arc;
 
 /// MCPサーバーが呼び出すユースケース
-pub struct McpUseCases<R: ReservationRepository> {
+pub struct McpUseCases<R: ReservationRepository + ReservedSlotRepository> {
     /// 単発予約を作る
     pub create_reservation: Arc<CreateReservationUseCase<R>>,
-    /// 予約を取得する
-    pub get_reservation: Arc<GetReservationUseCase<R>>,
-    /// 予約を取り消す
-    pub cancel_reservation: Arc<CancelReservationUseCase<R>>,
     /// 指定期間の予約枠を一覧する
     pub list_slots: Arc<ListSlotsUseCase<R>>,
     /// 予約者の予約枠を一覧する
@@ -57,12 +52,12 @@ pub struct McpUseCases<R: ReservationRepository> {
 ///
 /// 全フィールドが`Arc`のため安価に`Clone`でき、接続ごとに新しいインスタンスを渡せる。
 /// `R: Clone`を要求しないよう`Clone`は手動実装する（`derive(Clone)`は`R: Clone`を要求してしまう）。
-pub struct LrmMcpServer<R: ReservationRepository> {
+pub struct LrmMcpServer<R: ReservationRepository + ReservedSlotRepository> {
     usecases: Arc<McpUseCases<R>>,
     resource_config: Arc<ResourceConfig>,
 }
 
-impl<R: ReservationRepository> Clone for LrmMcpServer<R> {
+impl<R: ReservationRepository + ReservedSlotRepository> Clone for LrmMcpServer<R> {
     fn clone(&self) -> Self {
         Self {
             usecases: self.usecases.clone(),
@@ -126,7 +121,7 @@ fn success_text(message: &str) -> CallToolResult {
 #[tool_router]
 impl<R> LrmMcpServer<R>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
 {
     /// 新しいLrmMcpServerを作成
     pub fn new(usecases: McpUseCases<R>, resource_config: Arc<ResourceConfig>) -> Self {
@@ -296,18 +291,6 @@ where
         }
     }
 
-    #[tool(description = "予約IDを指定して予約の詳細を取得する")]
-    async fn get_reservation(
-        &self,
-        Parameters(params): Parameters<ReservationIdParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let id = ReservationId::from_string(params.id);
-        match self.usecases.get_reservation.execute(&id).await {
-            Ok(reservation) => Ok(success_json(&ReservationDto::from(&reservation))),
-            Err(e) => Ok(tool_error(e)),
-        }
-    }
-
     #[tool(description = "単発予約を作る（GPUサーバーまたは部屋）")]
     async fn create_reservation(
         &self,
@@ -400,22 +383,10 @@ where
         let id = ReservedSlotId::from_string(params.id);
 
         match self.usecases.cancel_slot.execute(&id, &caller).await {
-            Ok(()) => Ok(success_text("予約枠を取り消しました")),
-            Err(e) => Ok(tool_error(e)),
-        }
-    }
-
-    #[tool(description = "自分の予約を取り消す。その予約の予約枠も無くなる")]
-    async fn cancel_reservation(
-        &self,
-        Extension(parts): Extension<http::request::Parts>,
-        Parameters(params): Parameters<ReservationIdParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let caller = resolved_caller(&parts)?;
-        let id = ReservationId::from_string(params.id);
-
-        match self.usecases.cancel_reservation.execute(&id, &caller).await {
-            Ok(()) => Ok(success_text("予約を取り消しました")),
+            Ok(event) => Ok(success_text(&format!(
+                "予約枠を取り消しました。単発予約 {} も無くなりました",
+                event.subject_id()
+            ))),
             Err(e) => Ok(tool_error(e)),
         }
     }
@@ -424,7 +395,7 @@ where
 #[tool_handler]
 impl<R> ServerHandler for LrmMcpServer<R>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
 {
     fn get_info(&self) -> ServerConfig {
         let mut info = ServerConfig::new(ServerCapabilities::builder().enable_tools().build());
