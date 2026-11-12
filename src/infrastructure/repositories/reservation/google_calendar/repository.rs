@@ -1057,7 +1057,7 @@ impl ReservationRepository for GoogleCalendarReservationRepository {
         Ok(self
             .parse_events(events)
             .into_iter()
-            .filter(|reservation| reservation.spans_into(time_period))
+            .filter(|reservation| !reservation.slots_in(time_period).is_empty())
             .collect())
     }
 

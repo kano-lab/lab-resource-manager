@@ -103,7 +103,13 @@ where
             "change detection pass finished"
         );
 
-        *previous_reservations = current_reservations;
+        // 見えなくなったが続いている予約も覚えておく。予約枠が監視期間に戻ってきたときに、
+        // 新しい予約と読まないため
+        let mut known = current_reservations;
+        for reservation in changes.carried_over {
+            known.insert(reservation.id().clone(), reservation);
+        }
+        *previous_reservations = known;
 
         Ok(())
     }
