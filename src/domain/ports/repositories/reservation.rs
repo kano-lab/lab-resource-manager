@@ -24,6 +24,8 @@ pub trait ReservationRepository {
     /// 予約枠が期間に重なる予約を読む（版つき）
     ///
     /// 予約に起きた変化を監視するために、監視範囲の予約を集約のまま読む。
+    /// 定期予約は、期間に重なる回があるときだけ含まれる。回と回の合間にあたる期間には
+    /// 現れない（Google カレンダーの一覧もそう振る舞う）。
     async fn find_overlapping(
         &self,
         time_period: &TimePeriod,

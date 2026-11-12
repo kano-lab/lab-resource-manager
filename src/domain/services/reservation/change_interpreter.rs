@@ -41,6 +41,12 @@ pub struct InterpretedChanges {
     pub appeared: usize,
     /// 予定より早く見えなくなった予約の数
     pub disappeared: usize,
+    /// 見えなくなったが、まだ続いている予約（読み直した姿）
+    ///
+    /// 監視している期間に予約枠が無くなっただけの予約である（回の間隔が監視期間より長い
+    /// 定期予約や、監視期間の外へ動かした予約）。呼び出し側は次回の「前回見えていた予約」に
+    /// これを含める。含めないと、予約枠が監視期間に戻ってきたときに新しい予約と読んでしまう。
+    pub carried_over: Vec<Reservation>,
 }
 
 impl ReservationChangeInterpreter {
@@ -92,9 +98,13 @@ impl ReservationChangeInterpreter {
             }
             changes.disappeared += 1;
             match repository.find(id).await? {
-                // 内容を変えずに、監視している期間から外れただけ
-                Some(after) if after.has_same_content_as(before) => {}
-                Some(after) => changes.events.extend(Self::changes(before, &after, now)),
+                Some(after) => {
+                    // 内容を変えずに監視している期間から外れただけなら、何も起きていない
+                    if !after.has_same_content_as(before) {
+                        changes.events.extend(Self::changes(before, &after, now));
+                    }
+                    changes.carried_over.push(after);
+                }
                 None => changes
                     .events
                     .push(ReservationEvent::Cancelled(before.clone())),
@@ -544,6 +554,29 @@ mod recurring_tests {
         let changes = interpret(vec![series.clone()], &[&series], &[], now).await;
 
         assert!(changes.events.is_empty(), "{:?}", changes.events);
+        assert_eq!(
+            changes.carried_over,
+            vec![series],
+            "まだ続いている予約として持ち越す"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_carried_over_reservation_coming_back_into_the_window_is_not_new() {
+        let now = Utc::now();
+        let series = running_daily(now);
+        // 前回の読み取りで、監視している期間から外れて持ち越された
+        let left = interpret(vec![series.clone()], &[&series], &[], now).await;
+        let carried: Vec<&Reservation> = left.carried_over.iter().collect();
+
+        let back = interpret(vec![series.clone()], &carried, &[&series], now).await;
+
+        assert!(
+            back.events.is_empty(),
+            "予約枠が監視期間に戻ってきても、新しい予約ではない: {:?}",
+            back.events
+        );
+        assert_eq!(back.appeared, 0);
     }
 
     #[tokio::test]

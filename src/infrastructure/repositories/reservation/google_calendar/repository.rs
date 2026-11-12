@@ -14,13 +14,7 @@ use crate::infrastructure::config::{ResourceConfig, StorageConfig};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
-use google_calendar3::{
-    CalendarHub,
-    api::{Event, EventDateTime},
-    hyper_rustls::HttpsConnectorBuilder,
-    hyper_util::{client::legacy::Client, rt::TokioExecutor},
-    yup_oauth2,
-};
+use google_calendar3::api::{Event, EventDateTime};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -116,25 +110,11 @@ impl GoogleCalendarReservationRepository {
         identity_repo: Arc<dyn IdentityLinkRepository>,
         storage_config: StorageConfig,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let secret = yup_oauth2::read_service_account_key(service_account_key).await?;
-        let service_account_email = secret.client_email.clone();
-
-        let auth = yup_oauth2::ServiceAccountAuthenticator::builder(secret)
-            .build()
-            .await?;
-
-        let connector = HttpsConnectorBuilder::new()
-            .with_native_roots()?
-            .https_or_http()
-            .enable_http1()
-            .build();
-
-        let client = Client::builder(TokioExecutor::new()).build(connector);
-
-        let hub = CalendarHub::new(client, auth);
+        let (gateway, service_account_email) =
+            GoogleCalendarEventGateway::connect(service_account_key).await?;
 
         Ok(Self {
-            gateway: Arc::new(GoogleCalendarEventGateway::new(hub)),
+            gateway: Arc::new(gateway),
             config,
             storage_config,
             service_account_email,
@@ -903,10 +883,13 @@ impl GoogleCalendarReservationRepository {
     /// 定期予約の、読んだあとに変えた回を書く
     ///
     /// 繰り返しイベントそのものはアプリから変えないので、書くのは回のイベントだけ。
-    /// 回ごとに、読んだときの版のままかを確かめてから書く（`If-Match`）。まだ規則どおり
-    /// だった回は、繰り返しイベントの版が読んだときのままで、その回がまだ規則どおりの
-    /// ときだけ書く。どれか1つでも確かめられなければ、何も書かずに
-    /// `RepositoryError::Conflict`を返す。
+    /// 繰り返しイベントの版が読んだときのままで、変えた回もそれぞれ読んだときの版のまま
+    /// かを確かめてから、回ごとに版を条件に書く（`If-Match`）。どれか1つでも確かめられ
+    /// なければ、何も書かずに`RepositoryError::Conflict`を返す。
+    ///
+    /// カレンダーは、回を書き換えたり削除したりすると、繰り返しイベントそのものの版も
+    /// 変える。そのため、読んだあとに誰かが同じ定期予約のどの回を変えても衝突になる。
+    /// 書いたあとは、繰り返しイベントの新しい版を予約に記録する。
     async fn save_occurrences(
         &self,
         reservation: &mut Reservation,
@@ -1013,6 +996,17 @@ impl GoogleCalendarReservationRepository {
                 "occurrence of a recurring reservation saved to the calendar"
             );
         }
+
+        // 回を書くと繰り返しイベントの版も変わる。読めなければ古い版のまま残し、
+        // 次の保存を衝突として断る（読み直せばやり直せる）
+        if let Ok(Some(event)) = self
+            .gateway
+            .get_event(&series.calendar_id, &series.event_id)
+            .await
+            && let Some(etag) = event.etag
+        {
+            reservation.record_version(Some(Version::new(etag)));
+        }
         Ok(())
     }
 }
@@ -1077,7 +1071,7 @@ impl ReservationRepository for GoogleCalendarReservationRepository {
         Ok(self
             .parse_events(events)
             .into_iter()
-            .filter(|reservation| reservation.spans_into(time_period))
+            .filter(|reservation| !reservation.slots_in(time_period).is_empty())
             .collect())
     }
 

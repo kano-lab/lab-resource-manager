@@ -474,20 +474,11 @@ mod recurring {
     }
 
     #[test]
-    fn a_reservation_without_an_end_reaches_every_later_period() {
+    fn a_reservation_without_an_end_has_no_last_slot() {
         let endless = every_monday();
         let three_times = weekly("RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3", BTreeMap::new());
-        let next_year = period(
-            Utc.with_ymd_and_hms(2027, 6, 1, 0, 0, 0).unwrap(),
-            Utc.with_ymd_and_hms(2027, 6, 2, 0, 0, 0).unwrap(),
-        );
 
         assert_eq!(endless.last_end(), None);
-        assert!(
-            endless.spans_into(&next_year),
-            "回の合間にあたる期間とも重なる"
-        );
         assert_eq!(three_times.last_end(), Some(jst(11, 30, 12)));
-        assert!(!three_times.spans_into(&next_year));
     }
 }

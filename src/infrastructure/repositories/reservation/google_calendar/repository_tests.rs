@@ -22,7 +22,7 @@ use google_calendar3::api::{Event, EventCreator, EventDateTime};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-const SERVICE_ACCOUNT_EMAIL: &str = "service-account@example.com";
+pub(super) const SERVICE_ACCOUNT_EMAIL: &str = "service-account@example.com";
 const CALENDAR_ID: &str = "thalys-calendar-id";
 
 /// ゲートウェイが受け取った問い合わせ内容
@@ -45,7 +45,7 @@ struct ListQuery {
 /// 繰り返しイベントは実APIと同じく展開せずに返す。回のイベントID
 /// （`繰り返しイベントのID_回の開始時刻`）は、規則どおりの回でも取得・書き換え・削除でき、
 /// 削除した回は`status: cancelled`の回のイベントとして残る。
-struct FakeCalendarEventGateway {
+pub(super) struct FakeCalendarEventGateway {
     events: Vec<Event>,
     queries: Mutex<Vec<ListQuery>>,
     /// insert_eventで受け取ったイベント（calendar_id, event）
@@ -61,7 +61,7 @@ struct FakeCalendarEventGateway {
 }
 
 impl FakeCalendarEventGateway {
-    fn new(events: Vec<Event>) -> Self {
+    pub(super) fn new(events: Vec<Event>) -> Self {
         Self {
             events,
             queries: Mutex::new(Vec::new()),
@@ -146,10 +146,27 @@ impl FakeCalendarEventGateway {
     fn edit_in_calendar(&self, event_id: &str) {
         let mut event = self.stored(event_id).expect("書き換えるイベントが無い");
         event.etag = Some(self.new_etag());
+        self.touch_series_of(&event);
         self.current
             .lock()
             .unwrap()
             .insert(event_id.to_string(), Some(event));
+    }
+
+    /// 回を変えたときの、繰り返しイベントそのものの版の変化
+    ///
+    /// 実APIは、回を書き換えたり削除したりすると、繰り返しイベントそのもののetagも変える。
+    fn touch_series_of(&self, instance: &Event) {
+        let Some(series_id) = instance.recurring_event_id.as_deref() else {
+            return;
+        };
+        if let Some(mut series) = self.stored(series_id) {
+            series.etag = Some(self.new_etag());
+            self.current
+                .lock()
+                .unwrap()
+                .insert(series_id.to_string(), Some(series));
+        }
     }
 
     /// カレンダー上で直接消されたことにする
@@ -193,6 +210,30 @@ fn event_end(event: &Event) -> DateTime<Utc> {
         .expect("テストイベントには終了時刻が必要")
 }
 
+/// 繰り返しイベントに、期間に重なる回があるか
+fn occurs_within(event: &Event, time_min: DateTime<Utc>, time_max: Option<DateTime<Utc>>) -> bool {
+    use crate::domain::aggregates::reservation::RecurrenceRule;
+    let Some(rule) = event
+        .recurrence
+        .clone()
+        .and_then(|lines| RecurrenceRule::parse(lines).ok())
+    else {
+        return false;
+    };
+    let time_zone = event
+        .start
+        .as_ref()
+        .and_then(|start| start.time_zone.as_deref())
+        .and_then(|name| name.parse::<chrono_tz::Tz>().ok())
+        .unwrap_or(chrono_tz::UTC);
+    let first = event_start(event);
+    let length = event_end(event) - first;
+    let until = time_max.unwrap_or(time_min + Duration::days(3650));
+    rule.occurrence_starts(first, time_zone, time_min - length, until)
+        .into_iter()
+        .any(|start| start + length > time_min && start < until)
+}
+
 #[async_trait]
 impl CalendarEventGateway for FakeCalendarEventGateway {
     async fn list_events(
@@ -210,9 +251,15 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         Ok(self
             .all_events()
             .into_iter()
-            // 繰り返しイベントは、繰り返しが続く限り期間に重なるものとして返る
-            .filter(|event| event.recurrence.is_some() || event_end(event) > time_min)
-            .filter(|event| time_max.is_none_or(|max| event_start(event) < max))
+            .filter(|event| match &event.recurrence {
+                // 実APIは、繰り返しイベントを、期間に重なる回があるときだけ返す
+                // （回と回の合間の期間には現れない）
+                Some(_) => occurs_within(event, time_min, time_max),
+                None => {
+                    event_end(event) > time_min
+                        && time_max.is_none_or(|max| event_start(event) < max)
+                }
+            })
             .collect())
     }
 
@@ -252,6 +299,11 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
                 ..Default::default()
             });
         }
+        // 実APIは作ったイベントにiCalUIDと作成時刻を付ける
+        if created.i_cal_uid.is_none() {
+            created.i_cal_uid = created.id.as_ref().map(|id| format!("{id}@google.com"));
+        }
+        created.created = Some(Utc::now());
         created.etag = Some(self.new_etag());
         self.current
             .lock()
@@ -279,6 +331,7 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         updated.recurring_event_id = before.recurring_event_id;
         updated.original_start_time = before.original_start_time;
         updated.etag = Some(self.new_etag());
+        self.touch_series_of(&updated);
         self.current
             .lock()
             .unwrap()
@@ -297,6 +350,7 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         version: &str,
     ) -> Result<(), RepositoryError> {
         let before = self.check_version(event_id, version)?;
+        self.touch_series_of(&before);
         if before.recurring_event_id.is_some() {
             // 実APIは、削除した回を`status: cancelled`の回のイベントとして残す
             let cancelled = Event {
@@ -565,7 +619,7 @@ async fn parse_failures_are_reported_once_per_event() {
 
 /// メールアドレスからOSユーザー名を引けるテスト用のIdentityLinkリポジトリ
 #[derive(Default)]
-struct StubIdentityLinkRepository {
+pub(super) struct StubIdentityLinkRepository {
     /// (email, server) -> OSユーザー名
     os_users: Vec<(String, String, String)>,
 }
@@ -1321,21 +1375,48 @@ mod recurring {
     }
 
     #[tokio::test]
-    async fn an_occurrence_someone_else_changed_does_not_block_another_one() {
+    async fn a_change_someone_else_made_to_another_occurrence_is_a_conflict() {
         let (repository, gateway) = repository_with(vec![weekly_event()]);
         let mut reservation = repository.find(&series_id()).await.unwrap().unwrap();
-        // 読んだあとに、別の回を誰かがカレンダーで取り消した
+        // 読んだあとに、別の回を誰かが取り消した。カレンダーは繰り返しイベントの版も変える
         let mut someone_else = repository.find(&series_id()).await.unwrap().unwrap();
         someone_else.cancel_slot(&at(12, 7), &holder()).unwrap();
         repository.save(&mut someone_else).await.unwrap();
 
         reservation.cancel_slot(&at(11, 30), &holder()).unwrap();
+        let result = repository.save(&mut reservation).await;
+
+        assert!(
+            matches!(result, Err(RepositoryError::Conflict)),
+            "読み直してからやり直す: {result:?}"
+        );
+        let stored = repository.find(&series_id()).await.unwrap().unwrap();
+        assert!(
+            stored.slot(&at(11, 30)).is_some(),
+            "断った取り消しは書かない"
+        );
+        assert!(stored.slot(&at(12, 7)).is_none(), "別の人の取り消しは残る");
+        assert_eq!(gateway.deleted().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_same_reservation_can_be_saved_again_after_saving_an_occurrence() {
+        let (repository, _gateway) = repository_with(vec![weekly_event()]);
+        let mut reservation = repository.find(&series_id()).await.unwrap().unwrap();
+
+        reservation.cancel_slot(&at(11, 30), &holder()).unwrap();
+        repository.save(&mut reservation).await.unwrap();
+        reservation.cancel_slot(&at(12, 7), &holder()).unwrap();
         repository.save(&mut reservation).await.unwrap();
 
         let stored = repository.find(&series_id()).await.unwrap().unwrap();
         assert!(stored.slot(&at(11, 30)).is_none());
-        assert!(stored.slot(&at(12, 7)).is_none(), "別の人の取り消しも残る");
-        assert_eq!(gateway.deleted().len(), 2);
+        assert!(stored.slot(&at(12, 7)).is_none());
+        assert_eq!(
+            stored.version(),
+            reservation.version(),
+            "保存したあとの版を持つ"
+        );
     }
 
     #[tokio::test]

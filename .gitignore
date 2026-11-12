@@ -18,3 +18,9 @@ target/
 ### Python (scripts/) ###
 __pycache__/
 *.pyc
+
+### Local secrets ###
+# 鍵や秘密の設定は git に入れない
+.env.contract
+secrets/*
+!secrets/.gitkeep
