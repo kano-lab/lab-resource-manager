@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      # Maintenance releases of an older release line, e.g. release/2.0.x
+      - release/**
 
 env:
   CARGO_TERM_COLOR: always
@@ -23,6 +25,9 @@ jobs:
       - name: Run Release Please
         uses: googleapis/release-please-action@v5
         id: release
+        with:
+          # Release from the branch that was pushed, so a maintenance branch gets its own patch releases
+          target-branch: ${{ github.ref_name }}
 
   build:
     name: Build ${{ matrix.target }}
