@@ -5,7 +5,7 @@ use crate::domain::ports::resource_collection_access::{
 use async_trait::async_trait;
 use google_calendar3::{
     CalendarHub,
-    api::{AclRule, AclRuleScope},
+    api::{AclRule, AclRuleScope, Scope},
     hyper_rustls::{HttpsConnector, HttpsConnectorBuilder},
     hyper_util::{
         client::legacy::{Client, connect::HttpConnector},
@@ -13,6 +13,13 @@ use google_calendar3::{
     },
     yup_oauth2,
 };
+
+/// すべての呼び出しで求める権限
+///
+/// 生成されたクライアントは呼び出しごとに既定の権限を選ぶ。google-calendar3 7 から、
+/// 共有設定の一覧の既定が`calendar.acls.readonly`（サービスアカウント自身が持つカレンダーだけ）に
+/// なった。リソースのカレンダーは人が作ってサービスアカウントに共有するので、権限を明示する。
+const SCOPE: Scope = Scope::Full;
 
 /// Google Calendar API を使用したリソースコレクションアクセスサービス
 ///
@@ -56,12 +63,19 @@ impl ResourceCollectionAccessService for GoogleCalendarAccessService {
         email: &EmailAddress,
     ) -> Result<(), ResourceCollectionAccessError> {
         // まず既存のACLをチェック
-        let acl_list = self.hub.acl().list(calendar_id).doit().await.map_err(|e| {
-            ResourceCollectionAccessError::ApiError(format!(
-                "カレンダー '{}' のACL一覧取得に失敗: {}",
-                calendar_id, e
-            ))
-        })?;
+        let acl_list = self
+            .hub
+            .acl()
+            .list(calendar_id)
+            .add_scope(SCOPE)
+            .doit()
+            .await
+            .map_err(|e| {
+                ResourceCollectionAccessError::ApiError(format!(
+                    "カレンダー '{}' のACL一覧取得に失敗: {}",
+                    calendar_id, e
+                ))
+            })?;
 
         // 既にアクセス権があるかチェック
         if let Some(items) = acl_list.1.items
@@ -96,6 +110,7 @@ impl ResourceCollectionAccessService for GoogleCalendarAccessService {
         self.hub
             .acl()
             .insert(rule, calendar_id)
+            .add_scope(SCOPE)
             .doit()
             .await
             .map_err(|e| {
@@ -116,12 +131,19 @@ impl ResourceCollectionAccessService for GoogleCalendarAccessService {
         email: &EmailAddress,
     ) -> Result<(), ResourceCollectionAccessError> {
         // まず、このメールアドレスに対応するACLルールIDを検索
-        let acl_list = self.hub.acl().list(calendar_id).doit().await.map_err(|e| {
-            ResourceCollectionAccessError::ApiError(format!(
-                "カレンダー '{}' のACL一覧取得に失敗: {}",
-                calendar_id, e
-            ))
-        })?;
+        let acl_list = self
+            .hub
+            .acl()
+            .list(calendar_id)
+            .add_scope(SCOPE)
+            .doit()
+            .await
+            .map_err(|e| {
+                ResourceCollectionAccessError::ApiError(format!(
+                    "カレンダー '{}' のACL一覧取得に失敗: {}",
+                    calendar_id, e
+                ))
+            })?;
 
         let rule_id = acl_list
             .1
@@ -148,6 +170,7 @@ impl ResourceCollectionAccessService for GoogleCalendarAccessService {
         self.hub
             .acl()
             .delete(calendar_id, &rule_id)
+            .add_scope(SCOPE)
             .doit()
             .await
             .map_err(|e| {
