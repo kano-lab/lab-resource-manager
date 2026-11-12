@@ -24,7 +24,7 @@ use crate::interface::mcp::dto::{
 use rmcp::ErrorData;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, ContentBlock, ServerCapabilities, ServerInfo};
+use rmcp::model::{CallToolResult, ContentBlock, ServerCapabilities, ServerConfig};
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use std::sync::Arc;
 
@@ -426,8 +426,8 @@ impl<R> ServerHandler for LrmMcpServer<R>
 where
     R: ReservationRepository + Send + Sync + 'static,
 {
-    fn get_info(&self) -> ServerInfo {
-        let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
+    fn get_info(&self) -> ServerConfig {
+        let mut info = ServerConfig::new(ServerCapabilities::builder().enable_tools().build());
         info.instructions = Some(
             "lab-resource-manager の予約を扱うツール群。予約は作る・取り消すの単位、\
             予約枠は予約が実際に押さえている時間で、単発予約は予約枠を1つ持つ。\
