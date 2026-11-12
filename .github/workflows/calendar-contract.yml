@@ -4,10 +4,6 @@ name: Calendar Contract
 # service account key, so they run on demand rather than on every pull request.
 on:
   workflow_dispatch:
-  # Temporary: lets the first run happen before this workflow is on main.
-  push:
-    branches:
-      - claude/recurring-booking-model-u8lax8
 
 # The runs share one test calendar: let only one run at a time touch it.
 concurrency:
@@ -45,4 +41,4 @@ jobs:
         env:
           LRM_CONTRACT_CALENDAR_ID: ${{ secrets.LRM_CONTRACT_CALENDAR_ID }}
           LRM_CONTRACT_SERVICE_ACCOUNT_KEY: ${{ runner.temp }}/service-account-key.json
-        run: cargo test --all-features contract_tests -- --ignored --nocapture --test-threads=1
+        run: cargo test --all-features contract_tests -- --ignored
