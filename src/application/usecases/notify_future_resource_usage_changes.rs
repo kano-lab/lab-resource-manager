@@ -15,6 +15,9 @@ use tracing::info;
 /// - 更新: 既存の予約内容が変更された
 /// - 削除: **未来の予約**がキャンセル/削除された
 ///
+/// 早期終了（予定より前倒しで終了）した予約は、使った分が予約として残っているため
+/// 削除ではなく更新として通知します。
+///
 /// # スコープ
 /// このユースケースは「未来および進行中」のリソース使用のみを監視対象とします。
 /// 予約期間が終了したリソースは自然に監視対象外となり、削除通知は送信されません。
@@ -163,8 +166,18 @@ where
 
         // フィルタリング後のpreviousとcurrentを比較
         for (id, usage) in previous_still_future {
-            if !current.contains_key(id) {
-                self.notify_deleted(usage.clone()).await?;
+            if current.contains_key(id) {
+                continue;
+            }
+
+            // 予定より早く見えなくなった予約には、取り消されたものと、早期終了で
+            // 終了時刻が今より前へ縮んだものがある。後者は予約として残っており、
+            // 削除ではなく更新として伝える
+            match self.repository.find_by_id(usage.id()).await? {
+                Some(stored) if stored.time_period().end() <= now => {
+                    self.notify_updated(stored).await?
+                }
+                _ => self.notify_deleted(usage.clone()).await?,
             }
         }
         Ok(())
@@ -188,3 +201,7 @@ where
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "notify_future_resource_usage_changes_tests.rs"]
+mod tests;
