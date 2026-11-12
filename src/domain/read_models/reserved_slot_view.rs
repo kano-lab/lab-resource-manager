@@ -74,6 +74,14 @@ impl ReservedSlotView {
         self.id.reservation_id()
     }
 
+    /// 定期予約の予約枠か（定期予約の予約枠は、回の本来の開始時刻で識別される）
+    pub fn belongs_to_recurring_reservation(&self) -> bool {
+        matches!(
+            self.id.key(),
+            crate::domain::aggregates::reservation::OccurrenceKey::At(_)
+        )
+    }
+
     /// 予約者のメールアドレスを取得
     pub fn holder_email(&self) -> &EmailAddress {
         &self.holder_email

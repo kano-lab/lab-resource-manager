@@ -12,6 +12,7 @@ A resource reservation management system for laboratories.
 
 - **Resource Reservation Management**: Manage schedules for resources such as GPU servers and rooms
 - **Change Notifications**: Get notified when reservations are created, updated, or cancelled
+  (a recurring reservation is announced once, not once per reserved slot)
 - **Identity Linking**: Map user identities across different systems for enhanced notifications
 
 ### Default Implementations

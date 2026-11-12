@@ -151,6 +151,13 @@ fn format_memory(used_memory_mib: u64) -> String {
 /// 未使用の予約を知らせるDMのBlock Kitメッセージを構築する（純粋関数、ユニットテスト対象）
 fn build_idle_blocks(slot: &ReservedSlotView, text: &str) -> Vec<SlackBlock> {
     let slot_id = slot.id().as_str();
+    // 定期予約の予約枠を取り消しても、定期予約と他の予約枠は残る。ボタンの文言で
+    // 定期予約ごと消えるように読めないよう、取り消す範囲を言い分ける
+    let cancel_label = if slot.belongs_to_recurring_reservation() {
+        "❌ この予約枠だけ取り消す"
+    } else {
+        "❌ 予約を取り消す"
+    };
 
     let blocks_json = serde_json::json!([
         {
@@ -186,7 +193,7 @@ fn build_idle_blocks(slot: &ReservedSlotView, text: &str) -> Vec<SlackBlock> {
                     "type": "button",
                     "text": {
                         "type": "plain_text",
-                        "text": "❌ 予約を取り消す"
+                        "text": cancel_label
                     },
                     "style": "danger",
                     "action_id": ACTION_IDLE_CANCEL,
@@ -209,6 +216,35 @@ mod tests {
     use crate::domain::common::EmailAddress;
     use crate::domain::common::TimePeriod;
     use chrono::Duration;
+
+    fn cancel_label(slot: &ReservedSlotView) -> String {
+        let json = serde_json::to_value(build_idle_blocks(slot, "test message")).unwrap();
+        json[1]["elements"][2]["text"]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn cancelling_a_slot_of_a_recurring_reservation_says_only_that_slot_goes() {
+        use crate::domain::aggregates::reservation::ReservedSlotId;
+        let one_time = sample_slot();
+        let recurring = ReservedSlotView::reconstruct(
+            ReservedSlotId::from_string("weekly_20261123T010000Z".to_string()),
+            one_time.holder_email().clone(),
+            one_time.time_period().clone(),
+            one_time.resources().to_vec(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(cancel_label(&one_time), "❌ 予約を取り消す");
+        assert_eq!(
+            cancel_label(&recurring),
+            "❌ この予約枠だけ取り消す",
+            "定期予約ごと消えるように読めてはいけない"
+        );
+    }
 
     fn sample_slot() -> ReservedSlotView {
         let start = Utc::now() - Duration::hours(2);

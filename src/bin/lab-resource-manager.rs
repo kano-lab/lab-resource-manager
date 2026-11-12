@@ -8,11 +8,12 @@ use chrono::Duration as ChronoDuration;
 use lab_resource_manager::{
     application::idle_notice_log::IdleNoticeLog,
     application::usecases::{
-        AcceptReservationProposalUseCase, CancelReservedSlotUseCase,
+        AcceptReservationProposalUseCase, CancelReservationUseCase, CancelReservedSlotUseCase,
         CheckResourceAvailabilityUseCase, CreateReservationUseCase, DetectIdleReservedSlotsUseCase,
-        EndReservedSlotEarlyUseCase, GetReservedSlotUseCase, GrantUserResourceAccessUseCase,
-        IdleCriteria, ListReservedSlotsHeldByUseCase, ListReservedSlotsUseCase,
-        NotifyReservationChangesUseCase, ReconcileObservedUsagesUseCase, UpdateReservedSlotUseCase,
+        EndReservedSlotEarlyUseCase, GetReservationUseCase, GetReservedSlotUseCase,
+        GrantUserResourceAccessUseCase, IdleCriteria, ListReservedSlotsHeldByUseCase,
+        ListReservedSlotsUseCase, NotifyReservationChangesUseCase, ReconcileObservedUsagesUseCase,
+        UpdateReservedSlotUseCase,
         describe_monitoring::{DescribeMonitoringUseCase, MonitoringSettings},
     },
     domain::ports::ResourceUsageObserver,
@@ -267,6 +268,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mcp_server = LrmMcpServer::new(
             McpUseCases {
                 create_reservation: create_reservation_usecase.clone(),
+                get_reservation: Arc::new(GetReservationUseCase::new(reservation_repo.clone())),
+                cancel_reservation: Arc::new(CancelReservationUseCase::new(
+                    reservation_repo.clone(),
+                )),
                 list_reserved_slots: Arc::new(ListReservedSlotsUseCase::new(
                     reservation_repo.clone(),
                 )),

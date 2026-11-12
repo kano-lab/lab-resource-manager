@@ -5,6 +5,7 @@
 //! 内部のエラー文字列をそのまま見せず、次に何をすればよいかが分かる言葉にする。
 
 use crate::application::error::ApplicationError;
+use crate::domain::aggregates::reservation::ReservationEvent;
 use crate::domain::aggregates::reservation::errors::ReservationError;
 use crate::domain::ports::repositories::RepositoryError;
 
@@ -24,6 +25,21 @@ pub fn end_early_message(failure: &ApplicationError) -> String {
         }
         ApplicationError::Unauthorized(_) => "❌ 自分の予約枠だけを終了できます。".to_string(),
         other => format!("❌ 予約枠を終了できませんでした: {}", other),
+    }
+}
+
+/// 予約枠を取り消したことを伝える文面
+///
+/// 単発予約の予約枠を取り消すと予約ごと無くなるが、定期予約の予約枠を取り消しても、
+/// 定期予約と他の予約枠は残る。何が無くなり何が残ったのかを取り違えないよう、
+/// 取り消しで起きた出来事に合わせて言い分ける。
+pub fn cancelled_message(event: &ReservationEvent) -> String {
+    match event {
+        ReservationEvent::SlotCancelled { .. } => {
+            "✅ この予約枠を取り消しました。定期予約の他の予約枠はそのまま残っています。"
+                .to_string()
+        }
+        _ => "✅ 予約を取り消しました。".to_string(),
     }
 }
 
@@ -88,5 +104,53 @@ mod tests {
                 "内部のエラー文字列をそのまま見せない: {message}"
             );
         }
+    }
+
+    #[test]
+    fn cancelling_a_slot_of_a_recurring_reservation_says_the_rest_remains() {
+        use crate::domain::aggregates::reservation::{
+            OccurrenceKey, RecurrenceRule, RecurringSchedule, Reservation, ReservationId, Schedule,
+            value_objects::{Gpu, Resource},
+        };
+        use crate::domain::common::{EmailAddress, TimePeriod};
+        use chrono::Duration;
+
+        let holder = EmailAddress::new("holder@example.com".to_string()).unwrap();
+        let resources = vec![Resource::Gpu(Gpu::new(
+            "Thalys".to_string(),
+            0,
+            "A100".to_string(),
+        ))];
+        let start = Utc::now() + Duration::days(1);
+        let period = TimePeriod::new(start, start + Duration::hours(1)).unwrap();
+        let mut recurring = Reservation::reconstruct(
+            ReservationId::from_string("weekly".to_string()),
+            holder.clone(),
+            resources.clone(),
+            None,
+            Schedule::Recurring(RecurringSchedule::new(
+                period.clone(),
+                RecurrenceRule::parse(vec!["RRULE:FREQ=WEEKLY".to_string()]).unwrap(),
+                chrono_tz::UTC,
+                Default::default(),
+            )),
+            None,
+        )
+        .unwrap();
+        let mut one_time = Reservation::one_time(holder.clone(), period, resources, None).unwrap();
+
+        let slot_cancelled = recurring
+            .cancel_slot(&OccurrenceKey::At(start), &holder)
+            .unwrap();
+        let reservation_cancelled = one_time.cancel_slot(&OccurrenceKey::Only, &holder).unwrap();
+
+        assert!(
+            cancelled_message(&slot_cancelled).contains("残っています"),
+            "定期予約ごと消えたと受け取られてはいけない"
+        );
+        assert_eq!(
+            cancelled_message(&reservation_cancelled),
+            "✅ 予約を取り消しました。"
+        );
     }
 }

@@ -2,24 +2,26 @@
 //!
 //! 既存のユースケース層をそのまま呼び出す薄いアダプタ。新しい業務ロジックは持たない。
 //!
-//! ツールの名前はユビキタス言語に従う。予約は作る・取り消すの単位、
+//! ツールの名前はユビキタス言語に従う。予約（単発予約・定期予約）は作る・取り消すの単位、
 //! 予約枠は予約が実際に押さえている時間で、一覧・更新・今で終了は予約枠に対して行う。
 
 use crate::application::usecases::{
-    CancelReservedSlotUseCase, CheckResourceAvailabilityUseCase, CreateReservationUseCase,
-    EndReservedSlotEarlyUseCase, GetReservedSlotUseCase, ListReservedSlotsHeldByUseCase,
-    ListReservedSlotsUseCase, UpdateReservedSlotUseCase,
+    CancelReservationUseCase, CancelReservedSlotUseCase, CheckResourceAvailabilityUseCase,
+    CreateReservationUseCase, EndReservedSlotEarlyUseCase, GetReservationUseCase,
+    GetReservedSlotUseCase, ListReservedSlotsHeldByUseCase, ListReservedSlotsUseCase,
+    UpdateReservedSlotUseCase,
 };
-use crate::domain::aggregates::reservation::ReservedSlotId;
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
+use crate::domain::aggregates::reservation::{ReservationEvent, ReservationId, ReservedSlotId};
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::infrastructure::config::ResourceConfig;
 use crate::interface::mcp::auth::ResolvedCaller;
 use crate::interface::mcp::dto::{
-    CheckAvailabilityParams, CreateReservationParams, ReservedSlotDto, ReservedSlotIdParams,
-    ResourceAvailabilityDto, ResourceCatalogDto, UpdateReservedSlotParams, resources_to_check,
+    CheckAvailabilityParams, CreateReservationParams, ReservationDto, ReservationIdParams,
+    ReservedSlotDto, ReservedSlotIdParams, ResourceAvailabilityDto, ResourceCatalogDto,
+    UpdateReservedSlotParams, resources_to_check,
 };
 use rmcp::ErrorData;
 use rmcp::handler::server::tool::Extension;
@@ -32,6 +34,10 @@ use std::sync::Arc;
 pub struct McpUseCases<R: ReservationRepository + ReservedSlotQuery> {
     /// 単発予約を作る
     pub create_reservation: Arc<CreateReservationUseCase<R>>,
+    /// 予約を取得する
+    pub get_reservation: Arc<GetReservationUseCase<R>>,
+    /// 予約を取り消す
+    pub cancel_reservation: Arc<CancelReservationUseCase<R>>,
     /// 指定期間の予約枠を一覧する
     pub list_reserved_slots: Arc<ListReservedSlotsUseCase<R>>,
     /// 予約者の予約枠を一覧する
@@ -242,7 +248,9 @@ where
         }
     }
 
-    #[tool(description = "今後60日に重なる（進行中を含む）すべての予約枠を開始順に一覧表示する")]
+    #[tool(
+        description = "今後60日に重なる（進行中を含む）すべての予約枠を開始順に一覧表示する。定期予約は予約枠ごとに並び、同じreservation_idを持つ"
+    )]
     async fn list_reserved_slots(&self) -> Result<CallToolResult, ErrorData> {
         let window = match listing_window() {
             Ok(window) => window,
@@ -291,6 +299,20 @@ where
         }
     }
 
+    #[tool(
+        description = "予約IDを指定して予約の詳細を取得する。単発予約は期間を、定期予約は初回の予約枠と繰り返しの規則を返す"
+    )]
+    async fn get_reservation(
+        &self,
+        Parameters(params): Parameters<ReservationIdParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let id = ReservationId::from_string(params.id);
+        match self.usecases.get_reservation.execute(&id).await {
+            Ok(reservation) => Ok(success_json(&ReservationDto::from(&reservation))),
+            Err(e) => Ok(tool_error(e)),
+        }
+    }
+
     #[tool(description = "単発予約を作る（GPUサーバーまたは部屋）")]
     async fn create_reservation(
         &self,
@@ -323,7 +345,9 @@ where
         }
     }
 
-    #[tool(description = "自分の予約枠の期間または備考を変更する")]
+    #[tool(
+        description = "自分の予約枠の期間または備考を変更する。定期予約の予約枠を指定した場合は、その予約枠だけが変わる"
+    )]
     async fn update_reserved_slot(
         &self,
         Extension(parts): Extension<http::request::Parts>,
@@ -357,7 +381,7 @@ where
     }
 
     #[tool(
-        description = "進行中の自分の予約枠を今の時点で終了し、残りの時間を空きに戻す。使った分は予約枠として残るため、無かったことにしたい場合はcancel_reserved_slotを使う"
+        description = "進行中の自分の予約枠を今の時点で終了し、残りの時間を空きに戻す。使った分は予約枠として残るため、無かったことにしたい場合はcancel_reserved_slotを使う。定期予約の予約枠を指定した場合は、その予約枠だけが終わり、次回以降はそのまま残る"
     )]
     async fn end_reserved_slot_early(
         &self,
@@ -378,7 +402,9 @@ where
         }
     }
 
-    #[tool(description = "自分の予約枠を1つ取り消す。単発予約の予約枠なら、その単発予約も無くなる")]
+    #[tool(
+        description = "自分の予約枠を1つ取り消す。単発予約の予約枠なら、その単発予約が無くなる。定期予約の予約枠なら、その予約枠だけが無くなり、定期予約と他の予約枠は残る"
+    )]
     async fn cancel_reserved_slot(
         &self,
         Extension(parts): Extension<http::request::Parts>,
@@ -393,10 +419,30 @@ where
             .execute(&id, &caller)
             .await
         {
+            Ok(ReservationEvent::SlotCancelled { .. }) => Ok(success_text(
+                "予約枠を取り消しました（定期予約と他の予約枠は残っています）",
+            )),
             Ok(event) => Ok(success_text(&format!(
                 "予約枠を取り消しました。単発予約 {} も無くなりました",
                 event.subject_id()
             ))),
+            Err(e) => Ok(tool_error(e)),
+        }
+    }
+
+    #[tool(
+        description = "自分の予約を丸ごと取り消す。定期予約を指定した場合は、すべての予約枠が無くなる。予約枠を1つだけ取り消したい場合はcancel_reserved_slotを使う"
+    )]
+    async fn cancel_reservation(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<ReservationIdParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let caller = resolved_caller(&parts)?;
+        let id = ReservationId::from_string(params.id);
+
+        match self.usecases.cancel_reservation.execute(&id, &caller).await {
+            Ok(_) => Ok(success_text("予約を取り消しました")),
             Err(e) => Ok(tool_error(e)),
         }
     }
@@ -410,8 +456,8 @@ where
     fn get_info(&self) -> ServerConfig {
         let mut info = ServerConfig::new(ServerCapabilities::builder().enable_tools().build());
         info.instructions = Some(
-            "lab-resource-manager の予約を扱うツール群。予約は作る・取り消すの単位、\
-            予約枠は予約が実際に押さえている時間で、単発予約は予約枠を1つ持つ。\
+            "lab-resource-manager の予約を扱うツール群。予約（単発予約・定期予約）は作る・取り消すの単位、\
+            予約枠は予約が実際に押さえている時間で、単発予約は1つ、定期予約は繰り返しの数だけ持つ。\
             一覧・変更・今で終了は予約枠に対して行う。予約できるリソースとその空きも調べられる。\
             書き込み系ツールは呼び出し元のBearerトークンに紐づくメールアドレスを予約者として扱う。"
                 .to_string(),
