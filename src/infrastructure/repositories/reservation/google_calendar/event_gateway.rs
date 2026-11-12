@@ -126,25 +126,6 @@ enum ListFilter<'a> {
 }
 
 impl GoogleCalendarEventGateway {
-    /// 繰り返しイベントを回ごとに展開して取得する（本物のカレンダーの振る舞いを調べる用）
-    #[cfg(test)]
-    pub(super) async fn list_instances(
-        &self,
-        calendar_id: &str,
-        series_id: &str,
-    ) -> Result<Vec<Event>, RepositoryError> {
-        let (_response, events) = self
-            .hub
-            .events()
-            .instances(calendar_id, series_id)
-            .show_deleted(true)
-            .add_scope(SCOPE)
-            .doit()
-            .await
-            .map_err(|e| RepositoryError::ConnectionError(format!("Calendar API error: {}", e)))?;
-        Ok(events.items.unwrap_or_default())
-    }
-
     /// サービスアカウントの鍵でGoogle Calendar APIにつなぐ
     ///
     /// # Returns

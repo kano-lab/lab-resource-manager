@@ -20,7 +20,9 @@
 //! # 並列に流しても互いに触れない
 //!
 //! - イベント・予約のIDは毎回ランダムに作る
-//! - 期間で引くテストは、テストごとにランダムに選んだ2100年以降の日を使う
+//! - 期間で引くテストは、テストごとにランダムに選んだ、1か月〜1年先の日を使う。
+//!   カレンダーは遠い未来の繰り返しを回に展開しない（2100年代では最初の回しか作らない）ので、
+//!   何十年も先の日は使えない
 //! - 「ちょうどN件」ではなく「自分の作ったものが期待どおりに含まれる」を確かめる
 //! - 作ったイベントは自分で消す。途中で失敗して残ったものは、説明欄の印（[`CONTRACT_MARKER`]）
 //!   で見分け、作られて1日以上たったものを次の実行の始めに消す
@@ -163,10 +165,9 @@ impl Calendar {
 
     /// 前の実行が途中で失敗して残したテスト用イベントを消す
     async fn sweep_leftovers(&self) {
-        let far_ahead = Utc.with_ymd_and_hms(2100, 1, 1, 0, 0, 0).unwrap();
         let Ok(events) = self
             .gateway
-            .list_events(&self.calendar_id, far_ahead, None)
+            .list_events(&self.calendar_id, Utc::now() - Duration::days(1), None)
             .await
         else {
             return;
@@ -224,14 +225,16 @@ fn new_event_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }
 
-/// テストごとに選ぶ、ほかのテストと重ならない遠い未来の、東京の10時
-fn somewhere_far_ahead() -> DateTime<Utc> {
-    let days = (uuid::Uuid::new_v4().as_u128() % 36_000) as i64;
+/// テストごとにランダムに選ぶ、1か月〜1年先の日の、東京の10時
+fn somewhere_ahead() -> DateTime<Utc> {
+    let days = 30 + (uuid::Uuid::new_v4().as_u128() % 335) as i64;
+    let date = (Utc::now() + Duration::days(days))
+        .with_timezone(&chrono_tz::Asia::Tokyo)
+        .date_naive();
     chrono_tz::Asia::Tokyo
-        .with_ymd_and_hms(2100, 1, 1, 10, 0, 0)
+        .from_local_datetime(&date.and_hms_opt(10, 0, 0).unwrap())
         .unwrap()
         .with_timezone(&Utc)
-        + Duration::days(days)
 }
 
 /// 繰り返しイベントの、本来`start`に始まる回のイベントID
@@ -286,7 +289,7 @@ async fn conditional_writes(calendar: &Calendar) {
     let gateway = &calendar.gateway;
     let calendar_id = calendar.calendar_id.as_str();
     let id = new_event_id();
-    let start = somewhere_far_ahead();
+    let start = somewhere_ahead();
 
     let created = gateway
         .insert_event(
@@ -336,26 +339,27 @@ async fn conditional_writes(calendar: &Calendar) {
     );
 }
 
-/// 繰り返しイベントは、回と回の合間の期間の一覧にも現れる
+/// 繰り返しイベントは、期間に重なる回があるときだけ一覧に現れる
 ///
-/// 予約の変化を監視する範囲から、回の合間に定期予約が消えると、次の回が範囲に入ったときに
-/// 新しい予約として知らせてしまう。
-async fn a_recurring_event_is_listed_between_its_occurrences(calendar: &Calendar) {
+/// 回と回の合間の期間には現れない。予約の変化を監視する範囲から外れた定期予約は、
+/// 変化の読み取りが「まだ続いている予約」として持ち越す。
+async fn a_recurring_event_is_listed_only_around_its_occurrences(calendar: &Calendar) {
     let gateway = &calendar.gateway;
     let calendar_id = calendar.calendar_id.as_str();
     let id = new_event_id();
-    let first = somewhere_far_ahead();
+    let first = somewhere_ahead();
     gateway
         .insert_event(calendar_id, weekly_event(&id, first))
         .await
         .unwrap();
 
-    // 1回目と2回目（7日後）の間の1日
-    let (from, to) = (first + Duration::days(2), first + Duration::days(3));
+    // 2回目（7日後）に重なる期間には現れる
+    let second = first + Duration::days(7);
+    let (from, to) = (second - Duration::hours(1), second + Duration::hours(1));
     let series_id = id.as_str();
     calendar
         .eventually(
-            "回の合間の期間の一覧に、繰り返しイベントが現れる",
+            "2回目に重なる期間の一覧に、繰り返しイベントが現れる",
             || async move {
                 let events = gateway
                     .list_events(calendar_id, from, Some(to))
@@ -369,6 +373,22 @@ async fn a_recurring_event_is_listed_between_its_occurrences(calendar: &Calendar
         )
         .await;
 
+    // 1回目と2回目の間の1日には現れない
+    let between = gateway
+        .list_events(
+            calendar_id,
+            first + Duration::days(2),
+            Some(first + Duration::days(3)),
+        )
+        .await
+        .unwrap();
+    assert!(
+        !between
+            .iter()
+            .any(|event| event.id.as_deref() == Some(series_id)),
+        "回と回の合間の期間には現れない"
+    );
+
     calendar.remove(&id).await;
 }
 
@@ -377,7 +397,7 @@ async fn one_occurrence_is_written_by_its_instance_id(calendar: &Calendar) {
     let gateway = &calendar.gateway;
     let calendar_id = calendar.calendar_id.as_str();
     let id = new_event_id();
-    let first = somewhere_far_ahead();
+    let first = somewhere_ahead();
     let series = gateway
         .insert_event(calendar_id, weekly_event(&id, first))
         .await
@@ -484,7 +504,7 @@ async fn one_occurrence_is_written_by_its_instance_id(calendar: &Calendar) {
 /// 単発予約をアダプタ越しに作り、読み、書き換え、取り消す
 async fn a_one_time_reservation_round_trips(calendar: &Calendar) {
     let repository = calendar.repository();
-    let start = somewhere_far_ahead();
+    let start = somewhere_ahead();
     let mut reservation = Reservation::one_time(
         holder(),
         TimePeriod::new(start, start + Duration::hours(1)).unwrap(),
@@ -533,7 +553,7 @@ async fn a_one_time_reservation_round_trips(calendar: &Calendar) {
 async fn a_recurring_reservation_round_trips(calendar: &Calendar) {
     let repository = calendar.repository();
     let id = new_event_id();
-    let first = somewhere_far_ahead();
+    let first = somewhere_ahead();
     calendar
         .gateway
         .insert_event(&calendar.calendar_id, weekly_event(&id, first))
@@ -572,19 +592,23 @@ async fn a_recurring_reservation_round_trips(calendar: &Calendar) {
         "ほかの回は残る"
     );
 
-    // 回と回の合間の期間でも予約として読める（変化を監視する範囲に入り続ける）
-    let between = TimePeriod::new(first + Duration::days(2), first + Duration::days(3)).unwrap();
-    let between_ref = &between;
+    // 4回目に重なる期間で、定期予約として読める
+    let fourth = first + Duration::days(21);
+    let around = TimePeriod::new(fourth - Duration::hours(1), fourth + Duration::hours(1)).unwrap();
+    let around_ref = &around;
     calendar
-        .eventually("回の合間の期間に定期予約が読める", || async move {
-            repository_ref
-                .find_overlapping(between_ref)
-                .await
-                .unwrap()
-                .iter()
-                .any(|found| found.id() == reservation_ref)
-                .then_some(())
-        })
+        .eventually(
+            "4回目に重なる期間で定期予約が読める",
+            || async move {
+                repository_ref
+                    .find_overlapping(around_ref)
+                    .await
+                    .unwrap()
+                    .iter()
+                    .any(|found| found.id() == reservation_ref)
+                    .then_some(())
+            },
+        )
         .await;
 
     let mut latest = stored;
@@ -613,171 +637,8 @@ macro_rules! contract {
     };
 }
 
-/// 本物のカレンダーで、どの操作がどう応えるかを書き出す（失敗の切り分け用）
-///
-/// カレンダーIDそのものは書き出さない。
-#[tokio::test]
-#[ignore = "本物のテスト用カレンダーが要る（モジュールの説明を参照）"]
-async fn diagnose_a_real_calendar() {
-    let raw_id = std::env::var("LRM_CONTRACT_CALENDAR_ID").unwrap_or_default();
-    println!(
-        "[diagnose] calendar id: {} chars, whitespace around: {}, ends with @group.calendar.google.com: {}",
-        raw_id.len(),
-        raw_id != raw_id.trim(),
-        raw_id.trim().ends_with("@group.calendar.google.com"),
-    );
-    let calendar = Calendar::real().await;
-    let gateway = &calendar.gateway;
-    let calendar_id = calendar.calendar_id.as_str();
-
-    for (label, start) in [
-        ("near", Utc::now() + Duration::days(2)),
-        ("2100+", somewhere_far_ahead()),
-    ] {
-        let id = new_event_id();
-        let end = start + Duration::hours(1);
-        let inserted = gateway
-            .insert_event(calendar_id, reservation_event(&id, start, end))
-            .await;
-        println!(
-            "[diagnose] {label}: insert -> {:?}",
-            inserted.as_ref().map(|event| event.id.is_some())
-        );
-        let Ok(inserted) = inserted else { continue };
-        for wait in [0u64, 5] {
-            tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
-            let got = gateway.get_event(calendar_id, &id).await;
-            let listed = gateway
-                .list_events(
-                    calendar_id,
-                    start - Duration::hours(1),
-                    Some(end + Duration::hours(1)),
-                )
-                .await;
-            println!(
-                "[diagnose] {label}: after {wait}s get -> {:?}, list -> {:?}",
-                got.as_ref().map(|event| event.is_some()),
-                listed.as_ref().map(|events| events
-                    .iter()
-                    .any(|event| event.id.as_deref() == Some(id.as_str())))
-            );
-        }
-        if let Some(etag) = inserted.etag {
-            let updated = gateway
-                .update_event(
-                    calendar_id,
-                    &id,
-                    reservation_event(&id, start, end + Duration::hours(1)),
-                    &etag,
-                )
-                .await;
-            println!(
-                "[diagnose] {label}: update with If-Match -> {:?}",
-                updated.as_ref().map(|_| ())
-            );
-            let etag = updated.ok().and_then(|event| event.etag).unwrap_or(etag);
-            let deleted = gateway.delete_event(calendar_id, &id, &etag).await;
-            println!("[diagnose] {label}: delete -> {deleted:?}");
-        }
-    }
-}
-
-/// 本物のカレンダーで、繰り返しイベントがどう扱われるかを書き出す（失敗の切り分け用）
-#[tokio::test]
-#[ignore = "本物のテスト用カレンダーが要る（モジュールの説明を参照）"]
-async fn diagnose_recurring_events_on_a_real_calendar() {
-    let calendar = Calendar::real().await;
-    let calendar_id = calendar.calendar_id.as_str();
-    let key = setting("LRM_CONTRACT_SERVICE_ACCOUNT_KEY").unwrap();
-    let key = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(key)
-        .to_string_lossy()
-        .into_owned();
-    let (google, _) = GoogleCalendarEventGateway::connect(&key).await.unwrap();
-    let gateway = &calendar.gateway;
-
-    let near = chrono_tz::Asia::Tokyo
-        .with_ymd_and_hms(2027, 3, 1, 10, 0, 0)
-        .unwrap()
-        .with_timezone(&Utc)
-        + Duration::days((uuid::Uuid::new_v4().as_u128() % 300) as i64);
-    for (label, first) in [("near", near), ("2100+", somewhere_far_ahead())] {
-        let id = new_event_id();
-        let inserted = gateway
-            .insert_event(calendar_id, weekly_event(&id, first))
-            .await;
-        println!(
-            "[diagnose-rec] {label}: insert -> {:?} (first {first})",
-            inserted.as_ref().map(|event| (
-                event.recurrence.clone(),
-                event
-                    .start
-                    .as_ref()
-                    .map(|s| (s.date_time, s.time_zone.clone()))
-            ))
-        );
-        if inserted.is_err() {
-            continue;
-        }
-        let instances = google.list_instances(calendar_id, &id).await;
-        match &instances {
-            Ok(instances) => {
-                println!("[diagnose-rec] {label}: {} instances", instances.len());
-                for instance in instances.iter().take(2) {
-                    println!(
-                        "[diagnose-rec] {label}:   id suffix {:?}, original start {:?}, start {:?}",
-                        instance
-                            .id
-                            .as_deref()
-                            .and_then(|instance_id| instance_id.strip_prefix(id.as_str())),
-                        original_start(instance),
-                        instance.start.as_ref().and_then(|s| s.date_time),
-                    );
-                }
-            }
-            Err(e) => println!("[diagnose-rec] {label}: instances -> {e:?}"),
-        }
-        let second = first + Duration::days(7);
-        let ours = instance_id(&id, second);
-        println!(
-            "[diagnose-rec] {label}: our instance id suffix {:?} get -> {:?}",
-            ours.strip_prefix(id.as_str()),
-            gateway
-                .get_event(calendar_id, &ours)
-                .await
-                .map(|event| event.is_some())
-        );
-        for (window, from, to) in [
-            (
-                "around 1st",
-                first - Duration::hours(1),
-                first + Duration::hours(3),
-            ),
-            (
-                "around 2nd",
-                second - Duration::hours(1),
-                second + Duration::hours(3),
-            ),
-            (
-                "between",
-                first + Duration::days(2),
-                first + Duration::days(3),
-            ),
-        ] {
-            let listed = gateway.list_events(calendar_id, from, Some(to)).await;
-            println!(
-                "[diagnose-rec] {label}: list {window} -> {:?}",
-                listed.map(|events| events
-                    .iter()
-                    .any(|event| event.id.as_deref() == Some(id.as_str())))
-            );
-        }
-        calendar.remove(&id).await;
-    }
-}
-
 contract!(conditional_writes);
-contract!(a_recurring_event_is_listed_between_its_occurrences);
+contract!(a_recurring_event_is_listed_only_around_its_occurrences);
 contract!(one_occurrence_is_written_by_its_instance_id);
 contract!(a_one_time_reservation_round_trips);
 contract!(a_recurring_reservation_round_trips);

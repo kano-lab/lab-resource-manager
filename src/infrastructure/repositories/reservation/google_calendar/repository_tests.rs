@@ -193,6 +193,30 @@ fn event_end(event: &Event) -> DateTime<Utc> {
         .expect("テストイベントには終了時刻が必要")
 }
 
+/// 繰り返しイベントに、期間に重なる回があるか
+fn occurs_within(event: &Event, time_min: DateTime<Utc>, time_max: Option<DateTime<Utc>>) -> bool {
+    use crate::domain::aggregates::reservation::RecurrenceRule;
+    let Some(rule) = event
+        .recurrence
+        .clone()
+        .and_then(|lines| RecurrenceRule::parse(lines).ok())
+    else {
+        return false;
+    };
+    let time_zone = event
+        .start
+        .as_ref()
+        .and_then(|start| start.time_zone.as_deref())
+        .and_then(|name| name.parse::<chrono_tz::Tz>().ok())
+        .unwrap_or(chrono_tz::UTC);
+    let first = event_start(event);
+    let length = event_end(event) - first;
+    let until = time_max.unwrap_or(time_min + Duration::days(3650));
+    rule.occurrence_starts(first, time_zone, time_min - length, until)
+        .into_iter()
+        .any(|start| start + length > time_min && start < until)
+}
+
 #[async_trait]
 impl CalendarEventGateway for FakeCalendarEventGateway {
     async fn list_events(
@@ -210,9 +234,15 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         Ok(self
             .all_events()
             .into_iter()
-            // 繰り返しイベントは、繰り返しが続く限り期間に重なるものとして返る
-            .filter(|event| event.recurrence.is_some() || event_end(event) > time_min)
-            .filter(|event| time_max.is_none_or(|max| event_start(event) < max))
+            .filter(|event| match &event.recurrence {
+                // 実APIは、繰り返しイベントを、期間に重なる回があるときだけ返す
+                // （回と回の合間の期間には現れない）
+                Some(_) => occurs_within(event, time_min, time_max),
+                None => {
+                    event_end(event) > time_min
+                        && time_max.is_none_or(|max| event_start(event) < max)
+                }
+            })
             .collect())
     }
 
