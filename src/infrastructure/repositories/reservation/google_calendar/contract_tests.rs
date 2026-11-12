@@ -77,6 +77,9 @@ impl Calendar {
     }
 
     async fn real() -> Self {
+        // アプリの起動時と同じ暗号化プロバイダを使う。rustlsはringとaws-lc-rsの両方を
+        // 持つため、選ばないとTLSの準備で止まる。並列のテストが先に入れていてもよい
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let calendar_id = setting("LRM_CONTRACT_CALENDAR_ID").expect(
             "LRM_CONTRACT_CALENDAR_IDにテスト用カレンダーのIDを設定してください（.env.contract）",
         );
