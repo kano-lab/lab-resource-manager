@@ -15,6 +15,14 @@ use google_calendar3::{
     yup_oauth2,
 };
 
+/// すべての呼び出しで求める権限
+///
+/// 生成されたクライアントは呼び出しごとに既定の権限を選ぶ。google-calendar3 7 から、
+/// イベントの取得・一覧の既定が`calendar.events.owned.readonly`（サービスアカウント自身が
+/// 持つカレンダーだけ）になった。予約のカレンダーは人が作ってサービスアカウントに共有するので、
+/// その権限では見つからない（404）。共有されたカレンダーも読み書きできる権限を明示する。
+const SCOPE: Scope = Scope::Full;
+
 /// 1ページあたりの最大取得件数（Google Calendar APIの上限値）
 const MAX_RESULTS_PER_PAGE: i32 = 2500;
 
@@ -165,6 +173,7 @@ impl GoogleCalendarEventGateway {
                 .hub
                 .events()
                 .list(calendar_id)
+                .add_scope(SCOPE)
                 // 繰り返しイベントは回ごとに展開しない。回は予約が自分の日程から求める
                 .single_events(false)
                 // 削除された回（規則どおりでない回の一種）も読む
@@ -218,7 +227,7 @@ impl GoogleCalendarEventGateway {
         let token = self
             .hub
             .auth
-            .get_token(&[Scope::Full.as_ref()])
+            .get_token(&[SCOPE.as_ref()])
             .await
             .map_err(|e| RepositoryError::ConnectionError(format!("認証に失敗: {}", e)))?;
 
@@ -304,7 +313,14 @@ impl CalendarEventGateway for GoogleCalendarEventGateway {
         calendar_id: &str,
         event_id: &str,
     ) -> Result<Option<Event>, RepositoryError> {
-        match self.hub.events().get(calendar_id, event_id).doit().await {
+        match self
+            .hub
+            .events()
+            .get(calendar_id, event_id)
+            .add_scope(SCOPE)
+            .doit()
+            .await
+        {
             Ok((_response, event)) => Ok(Some(event)),
             Err(e) => {
                 // HTTPステータスコード404の場合はNoneを返す
@@ -333,6 +349,7 @@ impl CalendarEventGateway for GoogleCalendarEventGateway {
             .hub
             .events()
             .insert(event, calendar_id)
+            .add_scope(SCOPE)
             .doit()
             .await
             .map_err(|e| RepositoryError::ConnectionError(format!("イベント作成に失敗: {}", e)))?;
