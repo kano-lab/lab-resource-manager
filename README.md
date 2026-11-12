@@ -17,7 +17,7 @@ A resource reservation management system for laboratories.
 ### Default Implementations
 
 | Component | Implementation |
-|-----------|----------------|
+| --- | --- |
 | Resource Repository | Google Calendar |
 | Notifications | Slack |
 | User Interface | Slack Bot |

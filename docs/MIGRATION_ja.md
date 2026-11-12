@@ -171,12 +171,12 @@ v2.0.0 では `google_calendar_mappings.json` ファイルと `GOOGLE_CALENDAR_M
 
 v1.0.0 ではデプロイ方式が大きく変更されました：
 
-| 項目 | 変更前 (Docker) | 変更後 (v1.0.0)      |
-|------|-----------------|----------------------|
-| デプロイ方式 | Docker Compose  | バイナリ + systemd   |
-| 設定ファイル | `config/`       | `/etc/lab-resource-manager/` |
-| データ | `data/`         | `/var/lib/lab-resource-manager/` |
-| 環境変数 | `.env`          | `/etc/default/lab-resource-manager` |
+| 項目 | 変更前 (Docker) | 変更後 (v1.0.0) |
+| --- | --- | --- |
+| デプロイ方式 | Docker Compose | バイナリ + systemd |
+| 設定ファイル | `config/` | `/etc/lab-resource-manager/` |
+| データ | `data/` | `/var/lib/lab-resource-manager/` |
+| 環境変数 | `.env` | `/etc/default/lab-resource-manager` |
 | バイナリ | コンテナ内 | `/usr/local/bin/lab-resource-manager` |
 
 ### 前提条件
