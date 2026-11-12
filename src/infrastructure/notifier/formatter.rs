@@ -3,9 +3,10 @@
 //! リソースと時刻のスタイル別フォーマット関数を提供します。
 
 use crate::domain::aggregates::reservation::value_objects::Resource;
+use crate::domain::aggregates::reservation::{RecurrenceEnd, RecurrenceFrequency, RecurrenceRule};
 use crate::domain::common::TimePeriod;
 use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
-use chrono::{Local, Utc};
+use chrono::{Local, Utc, Weekday};
 use chrono_tz::Tz;
 use std::collections::BTreeMap;
 
@@ -96,6 +97,54 @@ fn format_resources_server_only(resources: &[Resource]) -> String {
         .chain(rooms)
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// 定期予約の繰り返しの間隔を文章にする
+///
+/// 例: "毎週 月・水（2026-12-31まで）", "2週間ごと 火", "毎日（全10回）"
+pub fn format_recurrence(
+    rule: &RecurrenceRule,
+    timezone_str: Option<&str>,
+    date_format: DateFormat,
+) -> String {
+    let mut text = match (rule.frequency(), rule.interval()) {
+        (RecurrenceFrequency::Daily, 1) => "毎日".to_string(),
+        (RecurrenceFrequency::Weekly, 1) => "毎週".to_string(),
+        (RecurrenceFrequency::Monthly, 1) => "毎月".to_string(),
+        (RecurrenceFrequency::Yearly, 1) => "毎年".to_string(),
+        (RecurrenceFrequency::Daily, n) => format!("{n}日ごと"),
+        (RecurrenceFrequency::Weekly, n) => format!("{n}週間ごと"),
+        (RecurrenceFrequency::Monthly, n) => format!("{n}か月ごと"),
+        (RecurrenceFrequency::Yearly, n) => format!("{n}年ごと"),
+    };
+
+    if !rule.weekdays().is_empty() {
+        let weekdays: Vec<&str> = rule.weekdays().iter().map(weekday_label).collect();
+        text.push_str(&format!(" {}", weekdays.join("・")));
+    }
+
+    match rule.end() {
+        RecurrenceEnd::Never => {}
+        RecurrenceEnd::Until(until) => text.push_str(&format!(
+            "（{}まで）",
+            to_zoned(until, timezone_str).format(date_format_string(date_format))
+        )),
+        RecurrenceEnd::AfterOccurrences(count) => text.push_str(&format!("（全{count}回）")),
+    }
+
+    text
+}
+
+fn weekday_label(weekday: &Weekday) -> &'static str {
+    match weekday {
+        Weekday::Mon => "月",
+        Weekday::Tue => "火",
+        Weekday::Wed => "水",
+        Weekday::Thu => "木",
+        Weekday::Fri => "金",
+        Weekday::Sat => "土",
+        Weekday::Sun => "日",
+    }
 }
 
 /// 時刻をスタイルに応じてフォーマット
@@ -284,6 +333,58 @@ fn convert_to_timezone(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// RRULEの行から繰り返しの規則を作る
+    fn rule(rrule: &str) -> RecurrenceRule {
+        RecurrenceRule::parse(vec![format!("RRULE:{rrule}")]).unwrap()
+    }
+
+    #[test]
+    fn a_weekly_recurrence_names_its_weekdays() {
+        let weekly = rule("FREQ=WEEKLY;BYDAY=MO,WE");
+
+        assert_eq!(
+            format_recurrence(&weekly, Some("Asia/Tokyo"), DateFormat::Ymd),
+            "毎週 月・水"
+        );
+    }
+
+    #[test]
+    fn a_longer_interval_is_spelled_out() {
+        let biweekly = rule("FREQ=WEEKLY;INTERVAL=2;BYDAY=TU");
+        let every_three_days = rule("FREQ=DAILY;INTERVAL=3");
+
+        assert_eq!(
+            format_recurrence(&biweekly, None, DateFormat::Ymd),
+            "2週間ごと 火"
+        );
+        assert_eq!(
+            format_recurrence(&every_three_days, None, DateFormat::Ymd),
+            "3日ごと"
+        );
+    }
+
+    #[test]
+    fn the_end_of_a_recurrence_is_shown_in_the_notification_timezone() {
+        // UTCでは12/31だが、日本時間では翌日の1/1にあたる
+        let daily = rule("FREQ=DAILY;UNTIL=20261231T153000Z");
+
+        assert_eq!(
+            format_recurrence(&daily, Some("Asia/Tokyo"), DateFormat::Ymd),
+            "毎日（2027-01-01まで）"
+        );
+    }
+
+    #[test]
+    fn a_recurrence_limited_by_count_says_how_many_times() {
+        let monthly = rule("FREQ=MONTHLY;COUNT=10");
+
+        assert_eq!(
+            format_recurrence(&monthly, None, DateFormat::Ymd),
+            "毎月（全10回）"
+        );
+    }
+
     use crate::domain::aggregates::reservation::value_objects::Gpu;
     use chrono::TimeZone;
 

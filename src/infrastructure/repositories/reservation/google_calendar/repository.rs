@@ -1,8 +1,8 @@
 use super::event_gateway::{CalendarEventGateway, GoogleCalendarEventGateway};
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::reservation::{
-    Reservation, ReservationId, ReservationStatus, Schedule, Version, factory::ResourceFactory,
-    value_objects::Resource,
+    Exception, ExceptionChange, RecurrenceRule, RecurringSchedule, Reservation, ReservationId,
+    ReservationStatus, Schedule, Version, factory::ResourceFactory, value_objects::Resource,
 };
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
@@ -13,14 +13,15 @@ use crate::domain::read_models::SlotView;
 use crate::infrastructure::config::{ResourceConfig, StorageConfig};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use chrono_tz::Tz;
 use google_calendar3::{
     CalendarHub,
-    api::Event,
+    api::{Event, EventDateTime},
     hyper_rustls::HttpsConnectorBuilder,
     hyper_util::{client::legacy::Client, rt::TokioExecutor},
     yup_oauth2,
 };
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 /// Google Calendar の外部ID (calendar_id + event_id)
@@ -58,6 +59,22 @@ const RESERVATION_ID_LINE_PREFIX: &str = "予約ID: ";
 /// v2.0.0 以降はすべての予約のイベントIDを予約IDから導出可能。
 fn event_id_for(reservation_id: &ReservationId) -> String {
     reservation_id.as_str().replace('-', "")
+}
+
+/// 繰り返しイベントの個々の回のイベントIDで、回の本来の開始時刻を書く形式（UTC）
+const INSTANCE_START_FORMAT: &str = "%Y%m%dT%H%M%SZ";
+
+/// 繰り返しイベントの、本来`start`に始まる回のイベントID
+fn instance_event_id(series_event_id: &str, start: DateTime<Utc>) -> String {
+    format!("{series_event_id}_{}", start.format(INSTANCE_START_FORMAT))
+}
+
+/// 取得したイベントと、それが繰り返しイベントなら規則どおりでない回のイベント
+struct FetchedEvent {
+    event: Event,
+    exceptions: Vec<Event>,
+    calendar_id: String,
+    resource_context: String,
 }
 
 /// キャンセル済みイベントのstatus値
@@ -150,7 +167,18 @@ impl GoogleCalendarReservationRepository {
     /// アプリが管理する行はマーカーで囲む。カレンダーを開いた人が状況を把握できるよう、
     /// 予約者のメールアドレスに加えて、分かる範囲の情報（OSユーザー名・予約ID）を並べる。
     /// 備考はマーカーの外に置き、利用者が自由に編集できる領域として残す。
+    #[cfg(test)]
     pub(super) async fn build_description(&self, reservation: &Reservation) -> String {
+        self.build_description_with_notes(reservation, reservation.notes())
+            .await
+    }
+
+    /// 備考を指定してイベントのdescriptionを組み立てる（定期予約の回は回ごとの備考を持つ）
+    async fn build_description_with_notes(
+        &self,
+        reservation: &Reservation,
+        notes: Option<&String>,
+    ) -> String {
         let mut lines = vec![
             MANAGED_SECTION_BEGIN.to_string(),
             format!(
@@ -171,7 +199,7 @@ impl GoogleCalendarReservationRepository {
 
         let mut description = lines.join("\n");
 
-        if let Some(notes) = reservation.notes() {
+        if let Some(notes) = notes {
             description.push_str(&format!("\n\n{notes}"));
         }
 
@@ -243,13 +271,15 @@ impl GoogleCalendarReservationRepository {
     /// `time_min`は「イベントの終了時刻がこれより後」、`time_max`は「イベントの開始時刻が
     /// これより前」を意味する。どの期間を対象とするかは呼び出し側が決める。
     ///
-    /// 戻り値: (Event, calendar_id, resource_name)
+    /// 繰り返しイベントは、規則どおりでない回のイベントをすべて添えて返す。期間内に
+    /// 時間を変えた回だけがあり、繰り返しイベントそのものが一覧に無い場合も拾う。
+    /// 削除されたイベントと、繰り返しイベントの回だけのイベントは、予約として返さない。
     async fn fetch_events(
         &self,
         time_min: DateTime<Utc>,
         time_max: Option<DateTime<Utc>>,
-    ) -> Result<Vec<(Event, String, String)>, RepositoryError> {
-        let mut all_events = Vec::new();
+    ) -> Result<Vec<FetchedEvent>, RepositoryError> {
+        let mut fetched = Vec::new();
 
         for (calendar_id, resource_name) in self.calendars() {
             let events = self
@@ -257,15 +287,65 @@ impl GoogleCalendarReservationRepository {
                 .list_events(&calendar_id, time_min, time_max)
                 .await?;
 
-            all_events.extend(
-                events
-                    .into_iter()
-                    .filter(is_active_event)
-                    .map(|event| (event, calendar_id.clone(), resource_name.clone())),
-            );
+            let mut series = Vec::new();
+            let mut series_of_instances = Vec::new();
+            for event in events {
+                if let Some(series_id) = &event.recurring_event_id {
+                    series_of_instances.push(series_id.clone());
+                } else if is_active_event(&event) {
+                    series.push(event);
+                }
+            }
+            series_of_instances.sort();
+            series_of_instances.dedup();
+            for series_id in series_of_instances {
+                let listed = series
+                    .iter()
+                    .any(|event| event.id.as_deref() == Some(series_id.as_str()));
+                if listed {
+                    continue;
+                }
+                if let Some(event) = self.gateway.get_event(&calendar_id, &series_id).await?
+                    && is_active_event(&event)
+                {
+                    series.push(event);
+                }
+            }
+
+            for event in series {
+                fetched.push(
+                    self.with_exceptions(event, &calendar_id, &resource_name)
+                        .await?,
+                );
+            }
         }
 
-        Ok(all_events)
+        Ok(fetched)
+    }
+
+    /// イベントに、それが繰り返しイベントなら規則どおりでない回のイベントを添える
+    async fn with_exceptions(
+        &self,
+        event: Event,
+        calendar_id: &str,
+        resource_context: &str,
+    ) -> Result<FetchedEvent, RepositoryError> {
+        let exceptions = match (&event.recurrence, &event.i_cal_uid, &event.id) {
+            (Some(_), Some(ical_uid), Some(series_id)) => self
+                .gateway
+                .list_series(calendar_id, ical_uid)
+                .await?
+                .into_iter()
+                .filter(|other| other.recurring_event_id.as_deref() == Some(series_id.as_str()))
+                .collect(),
+            _ => Vec::new(),
+        };
+        Ok(FetchedEvent {
+            event,
+            exceptions,
+            calendar_id: calendar_id.to_string(),
+            resource_context: resource_context.to_string(),
+        })
     }
 
     /// 解釈失敗を警告として報告すべきか（イベントごとに初回のみ）
@@ -280,12 +360,18 @@ impl GoogleCalendarReservationRepository {
     ///
     /// 予約として解釈できないイベント（カレンダー上で直接作られた自由記述のイベントなど）は
     /// 警告を残して飛ばす。1件の解釈失敗で予約機能全体を止めないための判断。
-    fn parse_events(&self, events: Vec<(Event, String, String)>) -> Vec<Reservation> {
+    fn parse_events(&self, events: Vec<FetchedEvent>) -> Vec<Reservation> {
         events
             .into_iter()
-            .filter_map(|(event, calendar_id, resource_context)| {
+            .filter_map(|fetched| {
+                let FetchedEvent {
+                    event,
+                    exceptions,
+                    calendar_id,
+                    resource_context,
+                } = fetched;
                 let event_id = event.id.clone().unwrap_or_default();
-                match self.parse_event(event, &resource_context) {
+                match self.parse_event(event, &exceptions, &resource_context) {
                     Ok(reservation) => Some(reservation),
                     Err(e) => {
                         if self.should_report_parse_failure(&event_id) {
@@ -308,12 +394,15 @@ impl GoogleCalendarReservationRepository {
             .collect()
     }
 
-    /// イベントを単発予約に変換
+    /// イベントを予約に変換
     ///
-    /// イベントのetagを予約の版とする。カレンダーはイベントを書き換えるたびにetagを変える。
+    /// 繰り返しイベントは、規則どおりでない回のイベント（`exceptions`）とあわせて定期予約に、
+    /// それ以外は単発予約にする。イベントのetagを予約の版とする。カレンダーはイベントを
+    /// 書き換えるたびにetagを変える。
     fn parse_event(
         &self,
         event: Event,
+        exceptions: &[Event],
         resource_context: &str,
     ) -> Result<Reservation, RepositoryError> {
         // Event ID から Domain ID を取得
@@ -352,6 +441,34 @@ impl GoogleCalendarReservationRepository {
 
         let user = self.parse_user(holder_email)?;
 
+        let time_period = Self::period_of(&event)?;
+
+        // タイトルから資源をパース
+        let default_title = String::new();
+        let title = event.summary.as_ref().unwrap_or(&default_title);
+        let items = self.parse_resources(title, resource_context)?;
+
+        let notes = event
+            .description
+            .as_ref()
+            .and_then(|desc| Self::extract_notes(desc));
+
+        let schedule = match &event.recurrence {
+            Some(lines) => Schedule::Recurring(Self::parse_recurring_schedule(
+                &event,
+                lines,
+                time_period,
+                exceptions,
+            )?),
+            None => Schedule::OneTime(time_period),
+        };
+
+        Reservation::reconstruct(id, user, items, notes, schedule, version)
+            .map_err(RepositoryError::from)
+    }
+
+    /// イベントの期間
+    fn period_of(event: &Event) -> Result<TimePeriod, RepositoryError> {
         let start = event
             .start
             .as_ref()
@@ -364,28 +481,59 @@ impl GoogleCalendarReservationRepository {
             .and_then(|e| e.date_time.as_ref())
             .ok_or_else(|| RepositoryError::Unknown("終了時刻がありません".to_string()))?;
 
-        let time_period = TimePeriod::new(*start, *end)
-            .map_err(|e| RepositoryError::Unknown(format!("時間枠エラー: {}", e)))?;
+        TimePeriod::new(*start, *end)
+            .map_err(|e| RepositoryError::Unknown(format!("時間枠エラー: {}", e)))
+    }
 
-        // タイトルから資源をパース
-        let default_title = String::new();
-        let title = event.summary.as_ref().unwrap_or(&default_title);
-        let items = self.parse_resources(title, resource_context)?;
-
-        let notes = event
-            .description
+    /// 繰り返しイベントと、その規則どおりでない回のイベントから、定期予約の日程を組み立てる
+    ///
+    /// 回の時刻は、繰り返しイベントの開始時刻の時間帯で数える（指定が無ければUTC）。
+    /// 回のイベントからは、期間と備考と版を読む。削除された回は取り消した回になる。
+    fn parse_recurring_schedule(
+        event: &Event,
+        lines: &[String],
+        first: TimePeriod,
+        exceptions: &[Event],
+    ) -> Result<RecurringSchedule, RepositoryError> {
+        let rule = RecurrenceRule::parse(lines.to_vec())
+            .map_err(|e| RepositoryError::Unknown(e.to_string()))?;
+        let time_zone = event
+            .start
             .as_ref()
-            .and_then(|desc| Self::extract_notes(desc));
+            .and_then(|start| start.time_zone.as_deref())
+            .and_then(|name| name.parse::<Tz>().ok())
+            .unwrap_or(Tz::UTC);
 
-        Reservation::reconstruct(
-            id,
-            user,
-            items,
-            notes,
-            Schedule::OneTime(time_period),
-            version,
-        )
-        .map_err(RepositoryError::from)
+        let mut by_start = BTreeMap::new();
+        for exception in exceptions {
+            let Some(original_start) = exception
+                .original_start_time
+                .as_ref()
+                .and_then(|original| original.date_time)
+            else {
+                continue;
+            };
+            let change = if is_active_event(exception) {
+                let Ok(time_period) = Self::period_of(exception) else {
+                    continue;
+                };
+                ExceptionChange::Changed {
+                    time_period,
+                    notes: exception
+                        .description
+                        .as_ref()
+                        .and_then(|desc| Self::extract_notes(desc)),
+                }
+            } else {
+                ExceptionChange::Cancelled
+            };
+            by_start.insert(
+                original_start,
+                Exception::new(change, exception.etag.clone().map(Version::new)),
+            );
+        }
+
+        Ok(RecurringSchedule::new(first, rule, time_zone, by_start))
     }
 
     /// descriptionから備考（アプリ管理セクションの外側）を取り出す
@@ -665,6 +813,27 @@ impl GoogleCalendarReservationRepository {
         &self,
         reservation: &Reservation,
     ) -> Result<Event, RepositoryError> {
+        let time_period = match reservation.schedule() {
+            Schedule::OneTime(time_period) => time_period,
+            Schedule::Recurring(_) => {
+                return Err(RepositoryError::Unknown(
+                    "定期予約そのものはアプリから作成・変更できません".to_string(),
+                ));
+            }
+        };
+        self.event_for(reservation, time_period, reservation.notes())
+            .await
+    }
+
+    /// 予約の、指定した期間と備考のイベントを組み立てる
+    ///
+    /// 単発予約のイベントにも、定期予約の1つの回のイベントにも使う。
+    async fn event_for(
+        &self,
+        reservation: &Reservation,
+        time_period: &TimePeriod,
+        notes: Option<&String>,
+    ) -> Result<Event, RepositoryError> {
         // 注: get_calendar_id_for_reservationで検証済みのため、resources()[0]は安全に使用できる
         let summary = match &reservation.resources()[0] {
             Resource::Gpu(_) => self
@@ -674,18 +843,17 @@ impl GoogleCalendarReservationRepository {
                 })?,
             Resource::Room { name } => name.clone(),
         };
-        let Schedule::OneTime(time_period) = reservation.schedule();
 
-        let description = self.build_description(reservation).await;
+        let description = self.build_description_with_notes(reservation, notes).await;
 
         Ok(Event {
             summary: Some(summary),
             description: Some(description),
-            start: Some(google_calendar3::api::EventDateTime {
+            start: Some(EventDateTime {
                 date_time: Some(time_period.start()),
                 ..Default::default()
             }),
-            end: Some(google_calendar3::api::EventDateTime {
+            end: Some(EventDateTime {
                 date_time: Some(time_period.end()),
                 ..Default::default()
             }),
@@ -698,7 +866,8 @@ impl GoogleCalendarReservationRepository {
     /// event_idから直接イベントを検索（マッピングがない場合）
     ///
     /// 全カレンダーから該当するイベントを検索して予約を返します。
-    /// 削除済み（`status: cancelled`）のイベントは予約ではないため、見つからなかったものとします。
+    /// 削除済み（`status: cancelled`）のイベントと、繰り返しイベントの1つの回のイベントは
+    /// 予約ではないため、見つからなかったものとします。
     async fn find_by_event_id(
         &self,
         event_id: &str,
@@ -706,10 +875,20 @@ impl GoogleCalendarReservationRepository {
         // 各カレンダーでイベントの検索を試みる
         for (calendar_id, resource_context) in self.calendars() {
             match self.gateway.get_event(&calendar_id, event_id).await? {
-                Some(event) if is_active_event(&event) => {
-                    let reservation = self.parse_event(event, &resource_context)?;
+                Some(event) if is_active_event(&event) && event.recurring_event_id.is_none() => {
+                    let fetched = self
+                        .with_exceptions(event, &calendar_id, &resource_context)
+                        .await?;
+                    let reservation = self.parse_event(
+                        fetched.event,
+                        &fetched.exceptions,
+                        &fetched.resource_context,
+                    )?;
                     return Ok(Some(reservation));
                 }
+                // 繰り返しイベントの1つの回は、予約ではない
+                Some(event) if event.recurring_event_id.is_some() => return Ok(None),
+                // 削除済みなら、別のカレンダーへ移った同じIDのイベントがあるかもしれない
                 _ => {
                     // 次のカレンダーを試す
                     continue;
@@ -719,6 +898,122 @@ impl GoogleCalendarReservationRepository {
 
         // すべてのカレンダーで見つからなかった
         Ok(None)
+    }
+
+    /// 定期予約の、読んだあとに変えた回を書く
+    ///
+    /// 繰り返しイベントそのものはアプリから変えないので、書くのは回のイベントだけ。
+    /// 回ごとに、読んだときの版のままかを確かめてから書く（`If-Match`）。まだ規則どおり
+    /// だった回は、繰り返しイベントの版が読んだときのままで、その回がまだ規則どおりの
+    /// ときだけ書く。どれか1つでも確かめられなければ、何も書かずに
+    /// `RepositoryError::Conflict`を返す。
+    async fn save_occurrences(
+        &self,
+        reservation: &mut Reservation,
+        version: &Version,
+    ) -> Result<(), RepositoryError> {
+        let Schedule::Recurring(recurring) = reservation.schedule() else {
+            return Ok(());
+        };
+        let changes: Vec<(DateTime<Utc>, ExceptionChange, Option<Version>)> = recurring
+            .unsaved_occurrences()
+            .iter()
+            .filter_map(|start| {
+                recurring.exceptions().get(start).map(|exception| {
+                    (
+                        *start,
+                        exception.change().clone(),
+                        exception.version().cloned(),
+                    )
+                })
+            })
+            .collect();
+        if changes.is_empty() {
+            return Ok(());
+        }
+        let time_zone = recurring.time_zone();
+
+        // 先にすべて確かめる。書いている途中で断ると、一部の回だけが書かれる
+        let stored = self
+            .find(reservation.id())
+            .await?
+            .ok_or(RepositoryError::Conflict)?;
+        let Schedule::Recurring(stored_schedule) = stored.schedule() else {
+            return Err(RepositoryError::Conflict);
+        };
+        if stored.version() != Some(version) {
+            return Err(RepositoryError::Conflict);
+        }
+        for (start, _, read_at) in &changes {
+            let stored_at = stored_schedule
+                .exceptions()
+                .get(start)
+                .and_then(Exception::version);
+            if read_at.as_ref() != stored_at {
+                return Err(RepositoryError::Conflict);
+            }
+        }
+
+        let calendar_id = self.get_calendar_id_for_reservation(reservation)?;
+        let series = self
+            .locate_existing_event(reservation.id(), &calendar_id)
+            .await?
+            .ok_or(RepositoryError::Conflict)?;
+
+        for (start, change, read_at) in changes {
+            let instance_id = instance_event_id(&series.event_id, start);
+            // まだ規則どおりだった回は、今のその回の版を条件にする
+            let precondition = match read_at {
+                Some(read_at) => read_at,
+                None => self
+                    .gateway
+                    .get_event(&series.calendar_id, &instance_id)
+                    .await?
+                    .and_then(|instance| instance.etag)
+                    .map(Version::new)
+                    .ok_or(RepositoryError::Conflict)?,
+            };
+
+            let saved_version = match change {
+                ExceptionChange::Changed { time_period, notes } => {
+                    let mut event = self
+                        .event_for(reservation, &time_period, notes.as_ref())
+                        .await?;
+                    event.id = Some(instance_id.clone());
+                    event.recurring_event_id = Some(series.event_id.clone());
+                    event.original_start_time = Some(EventDateTime {
+                        date_time: Some(start),
+                        time_zone: Some(time_zone.name().to_string()),
+                        ..Default::default()
+                    });
+                    self.gateway
+                        .update_event(
+                            &series.calendar_id,
+                            &instance_id,
+                            event,
+                            precondition.as_str(),
+                        )
+                        .await?
+                        .etag
+                        .map(Version::new)
+                }
+                ExceptionChange::Cancelled => {
+                    self.gateway
+                        .delete_event(&series.calendar_id, &instance_id, precondition.as_str())
+                        .await?;
+                    None
+                }
+            };
+            reservation.record_occurrence_version(start, saved_version);
+
+            tracing::info!(
+                reservation_id = %reservation.id().as_str(),
+                occurrence = %start,
+                calendar_id = %series.calendar_id,
+                "occurrence of a recurring reservation saved to the calendar"
+            );
+        }
+        Ok(())
     }
 }
 
@@ -782,7 +1077,7 @@ impl ReservationRepository for GoogleCalendarReservationRepository {
         Ok(self
             .parse_events(events)
             .into_iter()
-            .filter(|reservation| !reservation.slots_in(time_period).is_empty())
+            .filter(|reservation| reservation.spans_into(time_period))
             .collect())
     }
 
@@ -803,6 +1098,9 @@ impl ReservationRepository for GoogleCalendarReservationRepository {
                     calendar_id = %calendar_id,
                     "reservation added to the calendar"
                 );
+            }
+            (ReservationStatus::Active, Some(version)) if reservation.is_recurring() => {
+                self.save_occurrences(reservation, &version).await?;
             }
             (ReservationStatus::Active, Some(version)) => {
                 let new_calendar_id = self.get_calendar_id_for_reservation(reservation)?;

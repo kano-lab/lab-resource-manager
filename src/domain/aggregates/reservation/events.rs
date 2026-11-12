@@ -1,4 +1,5 @@
 use super::entity::Reservation;
+use super::reserved_slot::ReservedSlot;
 use super::value_objects::Resource;
 use crate::domain::common::EmailAddress;
 
@@ -22,6 +23,27 @@ pub enum ReservationEvent {
     EndedEarly(Reservation),
     /// 予約が取り消された
     Cancelled(Reservation),
+    /// 定期予約の1つの予約枠の時間や備考が変わった（ほかの予約枠はそのまま）
+    SlotChanged {
+        /// 変わったあとの予約
+        reservation: Reservation,
+        /// 変わったあとの予約枠
+        slot: ReservedSlot,
+    },
+    /// 定期予約の進行中の予約枠が今で終了した（ほかの予約枠はそのまま）
+    SlotEndedEarly {
+        /// 終了したあとの予約
+        reservation: Reservation,
+        /// 締めたあとの予約枠
+        slot: ReservedSlot,
+    },
+    /// 定期予約の1つの予約枠が取り消された（予約とほかの予約枠は残る）
+    SlotCancelled {
+        /// 取り消したあとの予約
+        reservation: Reservation,
+        /// 取り消された予約枠（取り消す前の姿）
+        slot: ReservedSlot,
+    },
 }
 
 impl ReservationEvent {
@@ -31,7 +53,20 @@ impl ReservationEvent {
             Self::Reserved(reservation)
             | Self::Changed(reservation)
             | Self::EndedEarly(reservation)
-            | Self::Cancelled(reservation) => reservation,
+            | Self::Cancelled(reservation)
+            | Self::SlotChanged { reservation, .. }
+            | Self::SlotEndedEarly { reservation, .. }
+            | Self::SlotCancelled { reservation, .. } => reservation,
+        }
+    }
+
+    /// 出来事が起きた予約枠（定期予約の1つの予約枠に起きた出来事なら）
+    pub fn slot(&self) -> Option<&ReservedSlot> {
+        match self {
+            Self::SlotChanged { slot, .. }
+            | Self::SlotEndedEarly { slot, .. }
+            | Self::SlotCancelled { slot, .. } => Some(slot),
+            Self::Reserved(_) | Self::Changed(_) | Self::EndedEarly(_) | Self::Cancelled(_) => None,
         }
     }
 

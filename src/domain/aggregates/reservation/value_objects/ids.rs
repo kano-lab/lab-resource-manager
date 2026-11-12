@@ -1,3 +1,10 @@
+use chrono::{DateTime, NaiveDateTime, Utc};
+
+/// 予約枠IDの中で、回の開始時刻を書く形式（UTC）
+///
+/// Google カレンダーが繰り返しイベントの個々の回に付けるIDと同じ形にしてある。
+const OCCURRENCE_START_FORMAT: &str = "%Y%m%dT%H%M%SZ";
+
 /// 予約の識別子
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ReservationId(String);
@@ -29,16 +36,21 @@ impl ReservationId {
 }
 
 /// 予約の中で回を区別する鍵
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum OccurrenceKey {
     /// 単発予約の唯一の回
     Only,
+    /// 定期予約の、本来この時刻に始まる回
+    ///
+    /// 回の時間を変えても鍵は変わらない。繰り返しの規則が決めた開始時刻で回を指す。
+    At(DateTime<Utc>),
 }
 
 /// 予約枠ID（予約ID ＋ 回の鍵）
 ///
 /// 予約枠は予約の中の回であり、予約の外から指すときはこのIDを使う。
-/// 文字列にすると、単発予約の予約枠は予約IDと同じになる。
+/// 文字列にすると、単発予約の予約枠は予約IDと同じになり、定期予約の予約枠は
+/// `予約ID_回の本来の開始時刻`（例: `abc123_20261116T010000Z`）になる。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ReservedSlotId {
     reservation_id: ReservationId,
@@ -51,6 +63,11 @@ impl ReservedSlotId {
     pub fn new(reservation_id: ReservationId, key: OccurrenceKey) -> Self {
         let text = match &key {
             OccurrenceKey::Only => reservation_id.as_str().to_string(),
+            OccurrenceKey::At(start) => format!(
+                "{}_{}",
+                reservation_id.as_str(),
+                start.format(OCCURRENCE_START_FORMAT)
+            ),
         };
         Self {
             reservation_id,
@@ -61,9 +78,21 @@ impl ReservedSlotId {
 
     /// 文字列表現から予約枠IDを読み取る
     ///
-    /// 単発予約の予約枠IDは、その予約IDと同じ文字列である。
+    /// 末尾が`_回の開始時刻`なら定期予約の予約枠、そうでなければ単発予約の予約枠
+    /// （予約IDと同じ文字列）として読む。予約IDに`_`は使われない。
     pub fn from_string(text: String) -> Self {
-        Self::new(ReservationId::from_string(text), OccurrenceKey::Only)
+        let occurrence = text.rsplit_once('_').and_then(|(reservation_id, start)| {
+            NaiveDateTime::parse_from_str(start, OCCURRENCE_START_FORMAT)
+                .ok()
+                .map(|start| (reservation_id.to_string(), start.and_utc()))
+        });
+        match occurrence {
+            Some((reservation_id, start)) => Self::new(
+                ReservationId::from_string(reservation_id),
+                OccurrenceKey::At(start),
+            ),
+            None => Self::new(ReservationId::from_string(text), OccurrenceKey::Only),
+        }
     }
 
     /// この予約枠が属する予約のID
@@ -128,6 +157,22 @@ mod tests {
 
         assert_eq!(slot_id.as_str(), "abc123");
         assert_eq!(ReservedSlotId::from_string("abc123".to_string()), slot_id);
+        assert_eq!(slot_id.reservation_id(), &reservation_id);
+    }
+
+    #[test]
+    fn the_slot_of_a_recurring_reservation_reads_as_the_id_and_its_original_start() {
+        use chrono::TimeZone;
+        let reservation_id = ReservationId::from_string("series1".to_string());
+        let start = Utc.with_ymd_and_hms(2026, 11, 16, 1, 0, 0).unwrap();
+
+        let slot_id = ReservedSlotId::new(reservation_id.clone(), OccurrenceKey::At(start));
+
+        assert_eq!(slot_id.as_str(), "series1_20261116T010000Z");
+        assert_eq!(
+            ReservedSlotId::from_string("series1_20261116T010000Z".to_string()),
+            slot_id
+        );
         assert_eq!(slot_id.reservation_id(), &reservation_id);
     }
 }

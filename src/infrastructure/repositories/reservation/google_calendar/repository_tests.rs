@@ -41,6 +41,10 @@ struct ListQuery {
 ///
 /// 書き換え・削除は実APIの`If-Match`と同じく、イベントのetagが渡された版と
 /// 一致するときだけ通す。イベントは書き込むたびに新しいetagになる。
+///
+/// 繰り返しイベントは実APIと同じく展開せずに返す。回のイベントID
+/// （`繰り返しイベントのID_回の開始時刻`）は、規則どおりの回でも取得・書き換え・削除でき、
+/// 削除した回は`status: cancelled`の回のイベントとして残る。
 struct FakeCalendarEventGateway {
     events: Vec<Event>,
     queries: Mutex<Vec<ListQuery>>,
@@ -84,6 +88,50 @@ impl FakeCalendarEventGateway {
             .iter()
             .find(|event| event.id.as_deref() == Some(event_id))
             .cloned()
+            .or_else(|| self.regular_instance(event_id))
+    }
+
+    /// まだ規則どおりの回のイベント（実APIは回のイベントIDでも取得できる）
+    fn regular_instance(&self, event_id: &str) -> Option<Event> {
+        let (series_id, start) = event_id.rsplit_once('_')?;
+        let start = chrono::NaiveDateTime::parse_from_str(start, "%Y%m%dT%H%M%SZ")
+            .ok()?
+            .and_utc();
+        let series = self.stored(series_id)?;
+        series.recurrence.as_ref()?;
+        let length = event_end(&series) - event_start(&series);
+        Some(Event {
+            id: Some(event_id.to_string()),
+            recurrence: None,
+            recurring_event_id: Some(series_id.to_string()),
+            original_start_time: Some(EventDateTime {
+                date_time: Some(start),
+                ..Default::default()
+            }),
+            start: Some(EventDateTime {
+                date_time: Some(start),
+                ..Default::default()
+            }),
+            end: Some(EventDateTime {
+                date_time: Some(start + length),
+                ..Default::default()
+            }),
+            etag: Some(format!("\"regular-{event_id}\"")),
+            ..series
+        })
+    }
+
+    /// 書き込みを反映した、今あるすべてのイベント
+    fn all_events(&self) -> Vec<Event> {
+        let current = self.current.lock().unwrap().clone();
+        let mut all: Vec<Event> = self
+            .events
+            .iter()
+            .filter(|event| !current.contains_key(event.id.as_deref().unwrap_or_default()))
+            .cloned()
+            .collect();
+        all.extend(current.into_values().flatten());
+        all
     }
 
     /// 版が今のetagと一致すれば、今のイベントを返す
@@ -160,11 +208,23 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         });
 
         Ok(self
-            .events
-            .iter()
-            .filter(|event| event_end(event) > time_min)
+            .all_events()
+            .into_iter()
+            // 繰り返しイベントは、繰り返しが続く限り期間に重なるものとして返る
+            .filter(|event| event.recurrence.is_some() || event_end(event) > time_min)
             .filter(|event| time_max.is_none_or(|max| event_start(event) < max))
-            .cloned()
+            .collect())
+    }
+
+    async fn list_series(
+        &self,
+        _calendar_id: &str,
+        ical_uid: &str,
+    ) -> Result<Vec<Event>, RepositoryError> {
+        Ok(self
+            .all_events()
+            .into_iter()
+            .filter(|event| event.i_cal_uid.as_deref() == Some(ical_uid))
             .collect())
     }
 
@@ -213,8 +273,11 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
     ) -> Result<Event, RepositoryError> {
         let before = self.check_version(event_id, version)?;
         let mut updated = event;
-        // 実APIは作成者を書き換えない
+        // 実APIは作成者や、繰り返しのどの回かを書き換えない
         updated.creator = before.creator;
+        updated.i_cal_uid = before.i_cal_uid;
+        updated.recurring_event_id = before.recurring_event_id;
+        updated.original_start_time = before.original_start_time;
         updated.etag = Some(self.new_etag());
         self.current
             .lock()
@@ -233,8 +296,21 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         event_id: &str,
         version: &str,
     ) -> Result<(), RepositoryError> {
-        self.check_version(event_id, version)?;
-        self.delete_in_calendar(event_id);
+        let before = self.check_version(event_id, version)?;
+        if before.recurring_event_id.is_some() {
+            // 実APIは、削除した回を`status: cancelled`の回のイベントとして残す
+            let cancelled = Event {
+                status: Some("cancelled".to_string()),
+                etag: Some(self.new_etag()),
+                ..before
+            };
+            self.current
+                .lock()
+                .unwrap()
+                .insert(event_id.to_string(), Some(cancelled));
+        } else {
+            self.delete_in_calendar(event_id);
+        }
         self.deleted
             .lock()
             .unwrap()
@@ -1014,4 +1090,266 @@ async fn saving_a_cancelled_reservation_deletes_its_event() {
         )]
     );
     assert!(repository.find(reservation.id()).await.unwrap().is_none());
+}
+
+mod recurring {
+    use super::*;
+    use crate::domain::aggregates::reservation::{ExceptionChange, Schedule};
+    use chrono::TimeZone;
+
+    const SERIES_ID: &str = "weeklyseries1";
+
+    /// 東京の2026年の時刻をUTCで
+    fn jst(m: u32, d: u32, h: u32) -> DateTime<Utc> {
+        chrono_tz::Asia::Tokyo
+            .with_ymd_and_hms(2026, m, d, h, 0, 0)
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
+    /// 毎週月曜10時〜12時（東京）の繰り返しイベント。最初の回は11月16日
+    fn weekly_event() -> Event {
+        let mut event = reservation_event(
+            SERIES_ID,
+            "0",
+            "holder@example.com",
+            jst(11, 16, 10),
+            jst(11, 16, 12),
+        );
+        event.recurrence = Some(vec!["RRULE:FREQ=WEEKLY;BYDAY=MO".to_string()]);
+        event.i_cal_uid = Some(format!("{SERIES_ID}@google.com"));
+        event.start.as_mut().unwrap().time_zone = Some("Asia/Tokyo".to_string());
+        event
+    }
+
+    /// 繰り返しイベントの、本来`original`に始まる回を動かしたイベント
+    fn moved_occurrence(original: DateTime<Utc>, start: DateTime<Utc>) -> Event {
+        let mut event = reservation_event(
+            &format!("{SERIES_ID}_{}", original.format("%Y%m%dT%H%M%SZ")),
+            "0",
+            "holder@example.com",
+            start,
+            start + Duration::hours(2),
+        );
+        event.recurring_event_id = Some(SERIES_ID.to_string());
+        event.original_start_time = Some(EventDateTime {
+            date_time: Some(original),
+            ..Default::default()
+        });
+        event.i_cal_uid = Some(format!("{SERIES_ID}@google.com"));
+        event.etag = Some("\"moved\"".to_string());
+        event
+    }
+
+    /// 繰り返しイベントの、本来`original`に始まる回を削除したイベント
+    fn cancelled_occurrence(original: DateTime<Utc>) -> Event {
+        let mut event = moved_occurrence(original, original);
+        event.status = Some("cancelled".to_string());
+        event.etag = Some("\"cancelled\"".to_string());
+        event
+    }
+
+    fn holder() -> crate::domain::common::EmailAddress {
+        crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap()
+    }
+
+    fn series_id() -> ReservationId {
+        ReservationId::from_string(SERIES_ID.to_string())
+    }
+
+    fn at(m: u32, d: u32) -> OccurrenceKey {
+        OccurrenceKey::At(jst(m, d, 10))
+    }
+
+    fn december() -> TimePeriod {
+        TimePeriod::new(jst(11, 20, 0), jst(12, 10, 0)).unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_recurring_event_is_read_as_one_reservation_with_its_exceptions() {
+        let (repository, _gateway) = repository_with(vec![
+            weekly_event(),
+            moved_occurrence(jst(11, 23, 10), jst(11, 24, 15)),
+            cancelled_occurrence(jst(11, 30, 10)),
+        ]);
+
+        let reservations = repository.find_overlapping(&december()).await.unwrap();
+
+        assert_eq!(reservations.len(), 1, "回ごとではなく1件の予約");
+        let reservation = &reservations[0];
+        assert!(reservation.is_recurring());
+        assert_eq!(reservation.id(), &series_id());
+        let Schedule::Recurring(recurring) = reservation.schedule() else {
+            panic!("定期予約のはず");
+        };
+        assert_eq!(recurring.time_zone(), chrono_tz::Asia::Tokyo);
+        assert_eq!(
+            recurring.exceptions()[&jst(11, 30, 10)].change(),
+            &ExceptionChange::Cancelled
+        );
+        let keys: Vec<OccurrenceKey> = reservation
+            .slots_in(&december())
+            .iter()
+            .map(|slot| slot.key().clone())
+            .collect();
+        assert_eq!(
+            keys,
+            vec![at(11, 23), at(12, 7)],
+            "取り消した回は無く、動かした回は動かした先にある"
+        );
+        assert_eq!(
+            reservation.slot(&at(11, 23)).unwrap().time_period().start(),
+            jst(11, 24, 15)
+        );
+    }
+
+    #[tokio::test]
+    async fn the_slots_of_a_recurring_reservation_are_queried_per_occurrence() {
+        let (repository, _gateway) = repository_with(vec![weekly_event()]);
+
+        let slots = repository
+            .find_slots_overlapping(&december())
+            .await
+            .unwrap();
+
+        let ids: Vec<&str> = slots.iter().map(|slot| slot.id().as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "weeklyseries1_20261123T010000Z",
+                "weeklyseries1_20261130T010000Z",
+                "weeklyseries1_20261207T010000Z",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn the_id_of_one_occurrence_is_not_a_reservation_id() {
+        let (repository, _gateway) = repository_with(vec![weekly_event()]);
+
+        let found = repository
+            .find(&ReservationId::from_string(
+                "weeklyseries1_20261123T010000Z".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        assert!(found.is_none(), "{found:?}");
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_rule_is_not_a_reservation() {
+        let mut event = weekly_event();
+        event.recurrence = Some(vec!["RRULE:FREQ=SOMETIMES".to_string()]);
+        let (repository, _gateway) = repository_with(vec![event]);
+
+        let reservations = repository.find_overlapping(&december()).await.unwrap();
+
+        assert!(reservations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn rescheduling_one_occurrence_writes_only_that_occurrence() {
+        let (repository, gateway) = repository_with(vec![weekly_event()]);
+        let mut reservation = repository.find(&series_id()).await.unwrap().unwrap();
+        let later = TimePeriod::new(jst(11, 23, 14), jst(11, 23, 16)).unwrap();
+
+        reservation
+            .reschedule_slot(&at(11, 23), later.clone(), &holder())
+            .unwrap();
+        repository.save(&mut reservation).await.unwrap();
+
+        assert_eq!(
+            gateway.updated(),
+            vec![(
+                CALENDAR_ID.to_string(),
+                "weeklyseries1_20261123T010000Z".to_string()
+            )],
+            "繰り返しイベントそのものやほかの回には書かない"
+        );
+        let stored = repository.find(&series_id()).await.unwrap().unwrap();
+        assert_eq!(stored.slot(&at(11, 23)).unwrap().time_period(), &later);
+        assert!(stored.has_same_content_as(&reservation));
+        let Schedule::Recurring(saved) = reservation.schedule() else {
+            panic!("定期予約のはず");
+        };
+        assert!(saved.unsaved_occurrences().is_empty());
+        assert!(
+            saved.exceptions()[&jst(11, 23, 10)].version().is_some(),
+            "書いた回の版を持つ"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelling_one_occurrence_deletes_only_that_occurrence() {
+        let (repository, gateway) = repository_with(vec![weekly_event()]);
+        let mut reservation = repository.find(&series_id()).await.unwrap().unwrap();
+
+        reservation.cancel_slot(&at(11, 30), &holder()).unwrap();
+        repository.save(&mut reservation).await.unwrap();
+
+        assert_eq!(
+            gateway.deleted(),
+            vec![(
+                CALENDAR_ID.to_string(),
+                "weeklyseries1_20261130T010000Z".to_string()
+            )]
+        );
+        let stored = repository.find(&series_id()).await.unwrap().unwrap();
+        assert!(stored.slot(&at(11, 30)).is_none());
+        assert!(stored.slot(&at(12, 7)).is_some(), "ほかの回は残る");
+    }
+
+    #[tokio::test]
+    async fn an_occurrence_changed_in_the_calendar_meanwhile_is_not_overwritten() {
+        let (repository, gateway) = repository_with(vec![
+            weekly_event(),
+            moved_occurrence(jst(11, 23, 10), jst(11, 24, 15)),
+        ]);
+        let mut reservation = repository.find(&series_id()).await.unwrap().unwrap();
+        // 読んだあとに、同じ回を誰かがカレンダーで書き換えた
+        gateway.edit_in_calendar("weeklyseries1_20261123T010000Z");
+
+        reservation.cancel_slot(&at(11, 23), &holder()).unwrap();
+        let result = repository.save(&mut reservation).await;
+
+        assert!(
+            matches!(result, Err(RepositoryError::Conflict)),
+            "{result:?}"
+        );
+        assert!(gateway.deleted().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_occurrence_someone_else_changed_does_not_block_another_one() {
+        let (repository, gateway) = repository_with(vec![weekly_event()]);
+        let mut reservation = repository.find(&series_id()).await.unwrap().unwrap();
+        // 読んだあとに、別の回を誰かがカレンダーで取り消した
+        let mut someone_else = repository.find(&series_id()).await.unwrap().unwrap();
+        someone_else.cancel_slot(&at(12, 7), &holder()).unwrap();
+        repository.save(&mut someone_else).await.unwrap();
+
+        reservation.cancel_slot(&at(11, 30), &holder()).unwrap();
+        repository.save(&mut reservation).await.unwrap();
+
+        let stored = repository.find(&series_id()).await.unwrap().unwrap();
+        assert!(stored.slot(&at(11, 30)).is_none());
+        assert!(stored.slot(&at(12, 7)).is_none(), "別の人の取り消しも残る");
+        assert_eq!(gateway.deleted().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_recurring_reservation_deletes_the_recurring_event() {
+        let (repository, gateway) = repository_with(vec![weekly_event()]);
+        let mut reservation = repository.find(&series_id()).await.unwrap().unwrap();
+
+        reservation.cancel(&holder()).unwrap();
+        repository.save(&mut reservation).await.unwrap();
+
+        assert_eq!(
+            gateway.deleted(),
+            vec![(CALENDAR_ID.to_string(), SERIES_ID.to_string())]
+        );
+        assert!(repository.find(&series_id()).await.unwrap().is_none());
+    }
 }

@@ -6,8 +6,10 @@ use serde::Deserialize;
 
 /// メッセージテンプレート設定
 ///
-/// 通知の種類（予約の作成・変更・取り消し、競合）ごとのメッセージテンプレートを定義。
+/// 通知の種類（予約の作成・変更・取り消し、定期予約の予約枠1つの変更・取り消し、競合）ごとの
+/// メッセージテンプレートを定義。
 /// プレースホルダー: `{user}`, `{resource}`, `{time}`, `{notes}`, `{resource_label}`
+/// （定期予約のテンプレートでは加えて`{recurrence}`）
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq, Hash, Default)]
 pub struct TemplateConfig {
     /// 単発予約の作成時のテンプレート
@@ -33,6 +35,29 @@ pub struct TemplateConfig {
     /// `{user}`/`{time}`/`{resource}`等は各競合の既存予約の情報。
     #[serde(default)]
     pub conflict_item: Option<String>,
+
+    /// 定期予約作成時のテンプレート
+    ///
+    /// 定期予約のテンプレートでは`{recurrence}`（繰り返しの規則）も使える。
+    /// `{time}`は初回の予約枠の期間。
+    #[serde(default)]
+    pub recurring_created: Option<String>,
+
+    /// 定期予約変更時のテンプレート（複数の予約枠に及ぶ変更）
+    #[serde(default)]
+    pub recurring_updated: Option<String>,
+
+    /// 定期予約取り消し時のテンプレート
+    #[serde(default)]
+    pub recurring_cancelled: Option<String>,
+
+    /// 定期予約の予約枠が1つだけ変更されたときのテンプレート（今で終了を含む）
+    #[serde(default)]
+    pub slot_updated: Option<String>,
+
+    /// 定期予約の予約枠が1つだけ取り消されたときのテンプレート
+    #[serde(default)]
+    pub slot_cancelled: Option<String>,
 }
 
 /// リソース表示スタイル
@@ -130,6 +155,11 @@ mod tests {
         assert!(config.cancelled.is_none());
         assert!(config.conflict.is_none());
         assert!(config.conflict_item.is_none());
+        assert!(config.recurring_created.is_none());
+        assert!(config.recurring_updated.is_none());
+        assert!(config.recurring_cancelled.is_none());
+        assert!(config.slot_updated.is_none());
+        assert!(config.slot_cancelled.is_none());
     }
 
     #[test]

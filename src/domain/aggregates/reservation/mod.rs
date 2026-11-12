@@ -44,6 +44,8 @@ pub mod errors;
 pub mod events;
 /// Reservation集約のファクトリ
 pub mod factory;
+/// 定期予約の日程
+pub mod recurring;
 /// 予約枠
 pub mod reserved_slot;
 /// Reservation集約の値オブジェクト
@@ -51,5 +53,9 @@ pub mod value_objects;
 
 pub use entity::{Reservation, ReservationStatus, Schedule};
 pub use events::ReservationEvent;
+pub use recurring::{Exception, ExceptionChange, RecurringSchedule};
 pub use reserved_slot::ReservedSlot;
-pub use value_objects::{OccurrenceKey, ReservationId, ReservedSlotId, Version};
+pub use value_objects::{
+    OccurrenceKey, RecurrenceEnd, RecurrenceFrequency, RecurrenceRule, ReservationId,
+    ReservedSlotId, Version,
+};
