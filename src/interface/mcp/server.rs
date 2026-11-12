@@ -6,9 +6,9 @@
 //! 予約枠は予約が実際に押さえている時間で、一覧・更新・今で終了は予約枠に対して行う。
 
 use crate::application::usecases::{
-    CancelSlotUseCase, CheckResourceAvailabilityUseCase, CreateReservationUseCase,
-    EndSlotEarlyUseCase, GetSlotUseCase, ListSlotsHeldByUseCase, ListSlotsUseCase,
-    UpdateSlotUseCase,
+    CancelReservedSlotUseCase, CheckResourceAvailabilityUseCase, CreateReservationUseCase,
+    EndReservedSlotEarlyUseCase, GetReservedSlotUseCase, ListReservedSlotsHeldByUseCase,
+    ListReservedSlotsUseCase, UpdateReservedSlotUseCase,
 };
 use crate::domain::aggregates::reservation::ReservedSlotId;
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
@@ -18,8 +18,8 @@ use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuer
 use crate::infrastructure::config::ResourceConfig;
 use crate::interface::mcp::auth::ResolvedCaller;
 use crate::interface::mcp::dto::{
-    CheckAvailabilityParams, CreateReservationParams, ResourceAvailabilityDto, ResourceCatalogDto,
-    SlotDto, SlotIdParams, UpdateSlotParams, resources_to_check,
+    CheckAvailabilityParams, CreateReservationParams, ReservedSlotDto, ReservedSlotIdParams,
+    ResourceAvailabilityDto, ResourceCatalogDto, UpdateReservedSlotParams, resources_to_check,
 };
 use rmcp::ErrorData;
 use rmcp::handler::server::tool::Extension;
@@ -33,17 +33,17 @@ pub struct McpUseCases<R: ReservationRepository + ReservedSlotQuery> {
     /// 単発予約を作る
     pub create_reservation: Arc<CreateReservationUseCase<R>>,
     /// 指定期間の予約枠を一覧する
-    pub list_slots: Arc<ListSlotsUseCase<R>>,
+    pub list_reserved_slots: Arc<ListReservedSlotsUseCase<R>>,
     /// 予約者の予約枠を一覧する
-    pub list_slots_held_by: Arc<ListSlotsHeldByUseCase<R>>,
+    pub list_slots_held_by: Arc<ListReservedSlotsHeldByUseCase<R>>,
     /// 予約枠を取得する
-    pub get_slot: Arc<GetSlotUseCase<R>>,
+    pub get_reserved_slot: Arc<GetReservedSlotUseCase<R>>,
     /// 予約枠の期間・備考を更新する
-    pub update_slot: Arc<UpdateSlotUseCase<R>>,
+    pub update_reserved_slot: Arc<UpdateReservedSlotUseCase<R>>,
     /// 進行中の予約枠を今で終了する
-    pub end_slot_early: Arc<EndSlotEarlyUseCase<R>>,
+    pub end_reserved_slot_early: Arc<EndReservedSlotEarlyUseCase<R>>,
     /// 予約枠を取り消す
-    pub cancel_slot: Arc<CancelSlotUseCase<R>>,
+    pub cancel_reserved_slot: Arc<CancelReservedSlotUseCase<R>>,
     /// リソースの空きを調べる
     pub check_resource_availability: Arc<CheckResourceAvailabilityUseCase<R>>,
 }
@@ -243,21 +243,21 @@ where
     }
 
     #[tool(description = "今後60日に重なる（進行中を含む）すべての予約枠を開始順に一覧表示する")]
-    async fn list_slots(&self) -> Result<CallToolResult, ErrorData> {
+    async fn list_reserved_slots(&self) -> Result<CallToolResult, ErrorData> {
         let window = match listing_window() {
             Ok(window) => window,
             Err(e) => return Ok(tool_error(e)),
         };
-        match self.usecases.list_slots.execute(&window).await {
+        match self.usecases.list_reserved_slots.execute(&window).await {
             Ok(slots) => Ok(success_json(
-                &slots.iter().map(SlotDto::from).collect::<Vec<_>>(),
+                &slots.iter().map(ReservedSlotDto::from).collect::<Vec<_>>(),
             )),
             Err(e) => Ok(tool_error(e)),
         }
     }
 
     #[tool(description = "今後60日に重なる（進行中を含む）自分の予約枠を開始順に一覧表示する")]
-    async fn list_my_slots(
+    async fn list_my_reserved_slots(
         &self,
         Extension(parts): Extension<http::request::Parts>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -273,20 +273,20 @@ where
             .await
         {
             Ok(slots) => Ok(success_json(
-                &slots.iter().map(SlotDto::from).collect::<Vec<_>>(),
+                &slots.iter().map(ReservedSlotDto::from).collect::<Vec<_>>(),
             )),
             Err(e) => Ok(tool_error(e)),
         }
     }
 
     #[tool(description = "予約枠IDを指定して予約枠の詳細を取得する")]
-    async fn get_slot(
+    async fn get_reserved_slot(
         &self,
-        Parameters(params): Parameters<SlotIdParams>,
+        Parameters(params): Parameters<ReservedSlotIdParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let id = ReservedSlotId::from_string(params.id);
-        match self.usecases.get_slot.execute(&id).await {
-            Ok(slot) => Ok(success_json(&SlotDto::from(&slot))),
+        match self.usecases.get_reserved_slot.execute(&id).await {
+            Ok(slot) => Ok(success_json(&ReservedSlotDto::from(&slot))),
             Err(e) => Ok(tool_error(e)),
         }
     }
@@ -324,10 +324,10 @@ where
     }
 
     #[tool(description = "自分の予約枠の期間または備考を変更する")]
-    async fn update_slot(
+    async fn update_reserved_slot(
         &self,
         Extension(parts): Extension<http::request::Parts>,
-        Parameters(params): Parameters<UpdateSlotParams>,
+        Parameters(params): Parameters<UpdateReservedSlotParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let caller = resolved_caller(&parts)?;
         let id = ReservedSlotId::from_string(params.id);
@@ -347,7 +347,7 @@ where
 
         match self
             .usecases
-            .update_slot
+            .update_reserved_slot
             .execute(&id, &caller, time_period, params.notes)
             .await
         {
@@ -357,32 +357,42 @@ where
     }
 
     #[tool(
-        description = "進行中の自分の予約枠を今の時点で終了し、残りの時間を空きに戻す。使った分は予約枠として残るため、無かったことにしたい場合はcancel_slotを使う"
+        description = "進行中の自分の予約枠を今の時点で終了し、残りの時間を空きに戻す。使った分は予約枠として残るため、無かったことにしたい場合はcancel_reserved_slotを使う"
     )]
-    async fn end_slot_early(
+    async fn end_reserved_slot_early(
         &self,
         Extension(parts): Extension<http::request::Parts>,
-        Parameters(params): Parameters<SlotIdParams>,
+        Parameters(params): Parameters<ReservedSlotIdParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let caller = resolved_caller(&parts)?;
         let id = ReservedSlotId::from_string(params.id);
 
-        match self.usecases.end_slot_early.execute(&id, &caller).await {
-            Ok(slot) => Ok(success_json(&SlotDto::from(&slot))),
+        match self
+            .usecases
+            .end_reserved_slot_early
+            .execute(&id, &caller)
+            .await
+        {
+            Ok(slot) => Ok(success_json(&ReservedSlotDto::from(&slot))),
             Err(e) => Ok(tool_error(e)),
         }
     }
 
     #[tool(description = "自分の予約枠を1つ取り消す。単発予約の予約枠なら、その単発予約も無くなる")]
-    async fn cancel_slot(
+    async fn cancel_reserved_slot(
         &self,
         Extension(parts): Extension<http::request::Parts>,
-        Parameters(params): Parameters<SlotIdParams>,
+        Parameters(params): Parameters<ReservedSlotIdParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let caller = resolved_caller(&parts)?;
         let id = ReservedSlotId::from_string(params.id);
 
-        match self.usecases.cancel_slot.execute(&id, &caller).await {
+        match self
+            .usecases
+            .cancel_reserved_slot
+            .execute(&id, &caller)
+            .await
+        {
             Ok(event) => Ok(success_text(&format!(
                 "予約枠を取り消しました。単発予約 {} も無くなりました",
                 event.subject_id()

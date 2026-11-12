@@ -129,7 +129,7 @@ pub mod prelude {
         value_objects::{Gpu, Resource},
     };
     pub use crate::domain::common::TimePeriod;
-    pub use crate::domain::read_models::SlotView;
+    pub use crate::domain::read_models::ReservedSlotView;
 
     // Ports (traits)
     pub use crate::domain::ports::{

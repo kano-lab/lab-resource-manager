@@ -179,7 +179,7 @@ mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::common::EmailAddress;
-    use crate::domain::read_models::SlotView;
+    use crate::domain::read_models::ReservedSlotView;
     use crate::domain::services::reservation::availability::calculate;
     use chrono::{DateTime, TimeZone};
 
@@ -199,8 +199,8 @@ mod tests {
         ))
     }
 
-    fn reservation(resources: Vec<Resource>) -> SlotView {
-        SlotView::of_new_one_time_reservation(
+    fn reservation(resources: Vec<Resource>) -> ReservedSlotView {
+        ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new("sato@example.com".to_string()).unwrap(),
             TimePeriod::new(at(9), at(18)).unwrap(),
             resources,
@@ -209,7 +209,10 @@ mod tests {
         .unwrap()
     }
 
-    fn availabilities(resources: &[Resource], slots: &[SlotView]) -> Vec<ResourceAvailability> {
+    fn availabilities(
+        resources: &[Resource],
+        slots: &[ReservedSlotView],
+    ) -> Vec<ResourceAvailability> {
         calculate(resources, &window(), slots)
     }
 

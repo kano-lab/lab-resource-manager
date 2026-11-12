@@ -3,7 +3,7 @@
 use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::errors::DomainError;
 use crate::domain::ports::repositories::RepositoryError;
-use crate::domain::read_models::SlotView;
+use crate::domain::read_models::ReservedSlotView;
 use std::fmt;
 
 /// リソース競合エラー（リクエストしたリソース1件分）
@@ -19,11 +19,11 @@ pub struct ResourceConflictError {
     /// この予約と競合したリソース
     pub resources: Vec<Resource>,
     /// 競合している既存の予約枠
-    pub existing_slot: SlotView,
+    pub existing_slot: ReservedSlotView,
 }
 
 impl ResourceConflictError {
-    pub fn new(resources: Vec<Resource>, existing_slot: SlotView) -> Self {
+    pub fn new(resources: Vec<Resource>, existing_slot: ReservedSlotView) -> Self {
         Self {
             resources,
             existing_slot,

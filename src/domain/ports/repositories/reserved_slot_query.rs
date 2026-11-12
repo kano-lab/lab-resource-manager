@@ -1,7 +1,7 @@
 use crate::domain::{
     common::{EmailAddress, TimePeriod},
     ports::repositories::RepositoryError,
-    read_models::SlotView,
+    read_models::ReservedSlotView,
 };
 use async_trait::async_trait;
 
@@ -9,7 +9,7 @@ use async_trait::async_trait;
 ///
 /// # 書き込みには使わない
 /// 競合の判定、空きの計算、使われていない予約枠の検知、一覧のために、予約をまたいで
-/// 予約枠の写し（[`SlotView`]）を検索する。予約枠を変えるときは、属する予約を
+/// 予約枠の写し（[`ReservedSlotView`]）を検索する。予約枠を変えるときは、属する予約を
 /// [`super::ReservationRepository`]から読んで操作し、予約ごと保存する。
 ///
 /// # 検索する期間
@@ -38,7 +38,7 @@ pub trait ReservedSlotQuery {
     async fn find_slots_overlapping(
         &self,
         time_period: &TimePeriod,
-    ) -> Result<Vec<SlotView>, RepositoryError>;
+    ) -> Result<Vec<ReservedSlotView>, RepositoryError>;
 
     /// 指定期間に重なる、特定の予約者の予約枠を検索
     ///
@@ -47,5 +47,5 @@ pub trait ReservedSlotQuery {
         &self,
         holder_email: &EmailAddress,
         time_period: &TimePeriod,
-    ) -> Result<Vec<SlotView>, RepositoryError>;
+    ) -> Result<Vec<ReservedSlotView>, RepositoryError>;
 }

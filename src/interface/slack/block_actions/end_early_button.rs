@@ -23,7 +23,7 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     let Some(slot_id_str) = &action.value else {
-        error!("release button carried no slot id");
+        error!("release button carried no reserved slot id");
         return Ok(());
     };
 
@@ -43,7 +43,7 @@ where
     let slot_id = ReservedSlotId::from_string(slot_id_str.to_string());
 
     info!(
-        slot_id = %slot_id.as_str(),
+        reserved_slot_id = %slot_id.as_str(),
         requested_by = %requested_by.as_str(),
         origin = "slack",
         "releasing a reservation early"
@@ -51,14 +51,14 @@ where
 
     let outcome = app
         .usecases()
-        .end_slot_early
+        .end_reserved_slot_early
         .execute(&slot_id, &requested_by)
         .await;
 
     let feedback = match &outcome {
         Ok(released) => {
             info!(
-                slot_id = %slot_id.as_str(),
+                reserved_slot_id = %slot_id.as_str(),
                 end = %released.time_period().end(),
                 origin = "slack",
                 "reservation released early"
@@ -97,13 +97,13 @@ where
 fn log_failure(slot_id: &ReservedSlotId, failure: &ApplicationError) {
     match failure {
         ApplicationError::Reservation(_) | ApplicationError::Unauthorized(_) => warn!(
-            slot_id = %slot_id.as_str(),
+            reserved_slot_id = %slot_id.as_str(),
             reason = %failure,
             origin = "slack",
             "releasing the reservation early was refused"
         ),
         other => error!(
-            slot_id = %slot_id.as_str(),
+            reserved_slot_id = %slot_id.as_str(),
             error = %other,
             origin = "slack",
             "releasing the reservation early failed"

@@ -515,13 +515,13 @@ person).
 | --- | --- |
 | `list_resources` | List the resources that can be reserved (GPU servers with their devices, rooms) |
 | `check_availability` | Check when each resource is free in a period (up to 60 days, filterable by server or room) |
-| `list_slots` | List every reserved slot overlapping the next 60 days (including running ones) |
-| `list_my_slots` | List the caller's reserved slots overlapping the next 60 days |
-| `get_slot` | Get a reserved slot's details by slot ID |
+| `list_reserved_slots` | List every reserved slot overlapping the next 60 days (including running ones) |
+| `list_my_reserved_slots` | List the caller's reserved slots overlapping the next 60 days |
+| `get_reserved_slot` | Get a reserved slot's details by reserved slot ID |
 | `create_reservation` | Create a one-time reservation (GPU server or room) |
-| `update_slot` | Change the time or notes of one of your reserved slots |
-| `end_slot_early` | End one of your running reserved slots now, releasing the remaining time |
-| `cancel_slot` | Cancel one of your reserved slots |
+| `update_reserved_slot` | Change the time or notes of one of your reserved slots |
+| `end_reserved_slot_early` | End one of your running reserved slots now, releasing the remaining time |
+| `cancel_reserved_slot` | Cancel one of your reserved slots |
 
 Write tools treat the email address linked to the caller's Bearer token as the reservation
 holder. Changing or cancelling someone else's reservation is rejected by the same
@@ -628,10 +628,10 @@ is off:
 
 ```text
 reconcile pass finished
-  observed=6 slots_in_progress=5 matched_to_a_slot=5
+  observed=6 reserved_slots_in_progress=5 matched_to_a_reserved_slot=5
   unreserved_sessions=1 failures=0 elapsed_ms=412
 change detection pass finished
-  slots=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
+  reservations=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
 ```
 
 A count that jumps or an `elapsed_ms` that grows points at a problem well before anything

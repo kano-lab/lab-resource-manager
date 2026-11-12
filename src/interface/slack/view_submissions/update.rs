@@ -65,7 +65,7 @@ where
     // 予約を更新
     let update_result = app
         .usecases()
-        .update_slot
+        .update_reserved_slot
         .execute(&slot_id, &holder_email, Some(time_period), notes)
         .await;
 

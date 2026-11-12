@@ -9,7 +9,7 @@ use crate::domain::common::{EmailAddress, TimePeriod};
 /// 予約枠を期間で引くための、予約者とリソースを添えた写し。書き込みには使わない。
 /// 予約枠を変えるときは、属する予約を読んで操作する（`ReservationRepository`）。
 #[derive(Debug, Clone, PartialEq)]
-pub struct SlotView {
+pub struct ReservedSlotView {
     id: ReservedSlotId,
     holder_email: EmailAddress,
     time_period: TimePeriod,
@@ -17,7 +17,7 @@ pub struct SlotView {
     notes: Option<String>,
 }
 
-impl SlotView {
+impl ReservedSlotView {
     /// 予約枠の写しを、既存のIDで再構築する（読み取りの口からの再構築用）
     ///
     /// 予約枠を新しく作る手段ではない。予約枠は予約を作ることで生まれる
@@ -96,7 +96,7 @@ impl SlotView {
 }
 
 #[cfg(test)]
-impl SlotView {
+impl ReservedSlotView {
     /// 新しい単発予約を作り、その予約枠の写しを返す（テスト用）
     pub(crate) fn of_new_one_time_reservation(
         holder_email: EmailAddress,

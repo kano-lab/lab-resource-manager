@@ -8,11 +8,11 @@ use tracing::info;
 /// 予約枠を取り消すユースケース
 ///
 /// 単発予約の予約枠を取り消すと、その単発予約も無くなる。
-pub struct CancelSlotUseCase<R: ReservationRepository> {
+pub struct CancelReservedSlotUseCase<R: ReservationRepository> {
     repository: Arc<R>,
 }
 
-impl<R: ReservationRepository> CancelSlotUseCase<R> {
+impl<R: ReservationRepository> CancelReservedSlotUseCase<R> {
     /// 新しいインスタンスを作成
     ///
     /// # Arguments
@@ -55,7 +55,7 @@ impl<R: ReservationRepository> CancelSlotUseCase<R> {
         self.repository.save(&mut reservation).await?;
 
         info!(
-            slot_id = %id.as_str(),
+            reserved_slot_id = %id.as_str(),
             reservation_id = %event.subject_id(),
             holder = %holder.as_str(),
             requested_by = %requested_by.as_str(),
@@ -73,7 +73,7 @@ mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::TimePeriod;
-    use crate::domain::read_models::SlotView;
+    use crate::domain::read_models::ReservedSlotView;
     use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
     use chrono::{Duration, Utc};
 
@@ -81,9 +81,9 @@ mod tests {
         EmailAddress::new(address.to_string()).unwrap()
     }
 
-    fn upcoming_slot() -> SlotView {
+    fn upcoming_slot() -> ReservedSlotView {
         let start = Utc::now() + Duration::hours(1);
-        SlotView::of_new_one_time_reservation(
+        ReservedSlotView::of_new_one_time_reservation(
             email("holder@example.com"),
             TimePeriod::new(start, start + Duration::hours(1)).unwrap(),
             vec![Resource::Gpu(Gpu::new(
@@ -102,7 +102,7 @@ mod tests {
         let repository = Arc::new(MockReservationRepository::new());
         repository.put_slot(&slot);
 
-        let event = CancelSlotUseCase::new(repository.clone())
+        let event = CancelReservedSlotUseCase::new(repository.clone())
             .execute(slot.id(), &email("holder@example.com"))
             .await
             .unwrap();
@@ -120,7 +120,7 @@ mod tests {
         let repository = Arc::new(MockReservationRepository::new());
         repository.put_slot(&slot);
 
-        let error = CancelSlotUseCase::new(repository.clone())
+        let error = CancelReservedSlotUseCase::new(repository.clone())
             .execute(slot.id(), &email("other@example.com"))
             .await
             .unwrap_err();

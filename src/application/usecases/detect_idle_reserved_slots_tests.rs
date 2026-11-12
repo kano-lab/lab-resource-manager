@@ -1,10 +1,10 @@
-//! `DetectIdleSlotsUseCase`のテスト
+//! `DetectIdleReservedSlotsUseCase`のテスト
 //!
 //! 使われていない予約の見分け方と、知らせる/知らせない条件を検証する。
 
 use crate::application::idle_notice_log::IdleNoticeLog;
-use crate::application::usecases::detect_idle_slots::{
-    DetectIdleSlotsUseCase, IdleCriteria, NoticePolicy,
+use crate::application::usecases::detect_idle_reserved_slots::{
+    DetectIdleReservedSlotsUseCase, IdleCriteria, NoticePolicy,
 };
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
@@ -14,8 +14,8 @@ use crate::domain::ports::{
     GpuActivity, IdleEvidence, ObservationSnapshot, ObservedUsage, ServerObservation,
     UnattributedUsage,
 };
-use crate::domain::read_models::SlotView;
-use crate::infrastructure::idle_slot_notifier::MockIdleSlotNotifier;
+use crate::domain::read_models::ReservedSlotView;
+use crate::infrastructure::idle_reserved_slot_notifier::MockIdleReservedSlotNotifier;
 use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
 use crate::infrastructure::resource_usage_observer::MockResourceUsageObserver;
 use chrono::{DateTime, Duration, Utc};
@@ -26,17 +26,17 @@ const SERVER: &str = "Thalys";
 /// これ以上の稼働率が出ていれば計算が走っているとみなす
 const COMPUTING: u32 = 5;
 
-type TestUseCase = DetectIdleSlotsUseCase<
+type TestUseCase = DetectIdleReservedSlotsUseCase<
     MockReservationRepository,
     MockResourceUsageObserver,
-    MockIdleSlotNotifier,
+    MockIdleReservedSlotNotifier,
 >;
 
 struct Fixture {
     usecase: TestUseCase,
     repository: Arc<MockReservationRepository>,
     observer: Arc<MockResourceUsageObserver>,
-    notifier: MockIdleSlotNotifier,
+    notifier: MockIdleReservedSlotNotifier,
     notices: Arc<IdleNoticeLog>,
 }
 
@@ -59,10 +59,10 @@ fn criteria(threshold_minutes: i64) -> IdleCriteria {
 fn fixture_with(criteria: IdleCriteria) -> Fixture {
     let repository = Arc::new(MockReservationRepository::new());
     let observer = Arc::new(MockResourceUsageObserver::new());
-    let notifier = MockIdleSlotNotifier::new();
+    let notifier = MockIdleReservedSlotNotifier::new();
     let notices = Arc::new(IdleNoticeLog::new(Duration::hours(4)));
 
-    let usecase = DetectIdleSlotsUseCase::new(
+    let usecase = DetectIdleReservedSlotsUseCase::new(
         repository.clone(),
         observer.clone(),
         notifier.clone(),
@@ -93,9 +93,9 @@ fn gpu(device_number: u32) -> Resource {
     ))
 }
 
-fn reservation_of(holder: &str, resources: Vec<Resource>, ends_in: Duration) -> SlotView {
+fn reservation_of(holder: &str, resources: Vec<Resource>, ends_in: Duration) -> ReservedSlotView {
     let now = Utc::now();
-    SlotView::of_new_one_time_reservation(
+    ReservedSlotView::of_new_one_time_reservation(
         EmailAddress::new(holder.to_string()).unwrap(),
         TimePeriod::new(now - Duration::hours(1), now + ends_in).unwrap(),
         resources,

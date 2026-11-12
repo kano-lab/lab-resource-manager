@@ -1,10 +1,10 @@
 //! 予約と予約枠に関するドメインサービス
 //!
-//! 予約（Reservation）と予約枠（SlotView）に関連するビジネスロジックを提供する。
+//! 予約（Reservation）と予約枠（ReservedSlotView）に関連するビジネスロジックを提供する。
 //!
 //! # 概要
 //!
-//! このモジュールは、複数のSlotViewエンティティにまたがる操作や、
+//! このモジュールは、複数のReservedSlotViewエンティティにまたがる操作や、
 //! 外部リポジトリとの連携が必要なドメインロジックを実装します。
 //!
 //! # モジュール
@@ -19,10 +19,10 @@ pub mod availability;
 pub mod change_interpreter;
 pub mod conflict_checker;
 pub mod errors;
-pub mod slot_activity;
+pub mod reserved_slot_activity;
 
 pub use availability::{AvailabilityState, BusyPeriod, ResourceAvailability};
 pub use change_interpreter::{InterpretedChanges, ReservationChangeInterpreter};
 pub use conflict_checker::ResourceConflictChecker;
 pub use errors::ResourceConflictError;
-pub use slot_activity::{GpusAtRest, SlotActivity, judge_slot_activity};
+pub use reserved_slot_activity::{GpusAtRest, ReservedSlotActivity, judge_reserved_slot_activity};

@@ -10,9 +10,9 @@
 //! 編集し続けることになります。束にすれば、触るのは束の定義と組み立て側の2箇所です。
 
 use crate::application::usecases::{
-    AcceptReservationProposalUseCase, CancelSlotUseCase, CheckResourceAvailabilityUseCase,
-    CreateReservationUseCase, DescribeMonitoringUseCase, EndSlotEarlyUseCase,
-    GrantUserResourceAccessUseCase, NotifyReservationChangesUseCase, UpdateSlotUseCase,
+    AcceptReservationProposalUseCase, CancelReservedSlotUseCase, CheckResourceAvailabilityUseCase,
+    CreateReservationUseCase, DescribeMonitoringUseCase, EndReservedSlotEarlyUseCase,
+    GrantUserResourceAccessUseCase, NotifyReservationChangesUseCase, UpdateReservedSlotUseCase,
 };
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{
@@ -33,11 +33,11 @@ where
     /// 事後予約の提案を受諾する
     pub accept_reservation_proposal: Arc<AcceptReservationProposalUseCase<R>>,
     /// 予約を更新する
-    pub update_slot: Arc<UpdateSlotUseCase<R>>,
+    pub update_reserved_slot: Arc<UpdateReservedSlotUseCase<R>>,
     /// 予約を取り消す
-    pub cancel_slot: Arc<CancelSlotUseCase<R>>,
+    pub cancel_reserved_slot: Arc<CancelReservedSlotUseCase<R>>,
     /// 進行中の予約を今の時点で締める
-    pub end_slot_early: Arc<EndSlotEarlyUseCase<R>>,
+    pub end_reserved_slot_early: Arc<EndReservedSlotEarlyUseCase<R>>,
     /// リソースの空きを調べる
     pub check_resource_availability: Arc<CheckResourceAvailabilityUseCase<R>>,
     /// 予約の変更を監視して通知する

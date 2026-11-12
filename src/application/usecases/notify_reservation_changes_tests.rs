@@ -8,7 +8,7 @@ use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::aggregates::reservation::{OccurrenceKey, ReservationEvent, ReservedSlotId};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::NotificationError;
-use crate::domain::read_models::SlotView;
+use crate::domain::read_models::ReservedSlotView;
 use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
 use async_trait::async_trait;
 use chrono::DateTime;
@@ -38,8 +38,8 @@ impl Notifier for RecordingNotifier {
 }
 
 /// 単発予約の予約枠
-fn slot(id: &str, start: DateTime<Utc>) -> SlotView {
-    SlotView::reconstruct(
+fn slot(id: &str, start: DateTime<Utc>) -> ReservedSlotView {
+    ReservedSlotView::reconstruct(
         ReservedSlotId::from_string(id.to_string()),
         EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(start, start + Duration::hours(2)).unwrap(),
@@ -142,7 +142,7 @@ async fn ending_a_one_time_reservation_early_is_not_announced_as_a_cancellation(
 async fn a_slot_that_ran_its_course_is_not_announced() {
     let repository = Arc::new(MockReservationRepository::new());
     // 既に終わりかけの予約枠。次のポーリングまでに予定どおり終わる
-    let ending = SlotView::reconstruct(
+    let ending = ReservedSlotView::reconstruct(
         ReservedSlotId::from_string("ending".to_string()),
         EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(

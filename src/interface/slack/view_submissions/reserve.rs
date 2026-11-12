@@ -158,7 +158,7 @@ where
     let message_text = match reservation_result {
         Ok(slot_id) => {
             info!(
-                slot_id = %slot_id.as_str(),
+                reserved_slot_id = %slot_id.as_str(),
                 holder = %logged_holder,
                 resources = %logged_resources,
                 start = %logged_start,

@@ -4,7 +4,7 @@
 
 use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::common::TimePeriod;
-use crate::domain::read_models::SlotView;
+use crate::domain::read_models::ReservedSlotView;
 use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::infrastructure::config::ResourceConfig;
 use chrono::{DateTime, Utc};
@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 
 /// 予約枠の出力用DTO
 #[derive(Debug, Serialize)]
-pub struct SlotDto {
-    /// 予約枠ID（`get_slot`・`update_slot`・`end_slot_early`・`cancel_slot`に指定できる）
+pub struct ReservedSlotDto {
+    /// 予約枠ID（`get_reserved_slot`・`update_reserved_slot`・`end_reserved_slot_early`・`cancel_reserved_slot`に指定できる）
     pub id: String,
     pub holder_email: String,
     pub start: DateTime<Utc>,
@@ -23,8 +23,8 @@ pub struct SlotDto {
     pub notes: Option<String>,
 }
 
-impl From<&SlotView> for SlotDto {
-    fn from(slot: &SlotView) -> Self {
+impl From<&ReservedSlotView> for ReservedSlotDto {
+    fn from(slot: &ReservedSlotView) -> Self {
         Self {
             id: slot.id().as_str().to_string(),
             holder_email: slot.holder_email().as_str().to_string(),
@@ -38,7 +38,7 @@ impl From<&SlotView> for SlotDto {
 
 /// 予約枠IDだけを受け取るツールの引数
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct SlotIdParams {
+pub struct ReservedSlotIdParams {
     /// 予約枠ID
     pub id: String,
 }
@@ -66,9 +66,9 @@ pub struct CreateReservationParams {
     pub notes: Option<String>,
 }
 
-/// `update_slot`の引数
+/// `update_reserved_slot`の引数
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct UpdateSlotParams {
+pub struct UpdateReservedSlotParams {
     /// 予約枠ID
     pub id: String,
     /// 新しい開始時刻（endと同時に指定、省略時は時間変更なし）
@@ -201,7 +201,7 @@ pub struct BusyPeriodDto {
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
     /// 押さえている予約枠のID
-    pub slot_id: String,
+    pub reserved_slot_id: String,
     /// 押さえている予約枠の予約者
     pub holder_email: String,
 }
@@ -253,7 +253,7 @@ impl From<&ResourceAvailability> for ResourceAvailabilityDto {
                 .map(|busy| BusyPeriodDto {
                     start: busy.period().start(),
                     end: busy.period().end(),
-                    slot_id: busy.slot_id().as_str().to_string(),
+                    reserved_slot_id: busy.slot_id().as_str().to_string(),
                     holder_email: busy.holder_email().as_str().to_string(),
                 })
                 .collect(),
@@ -362,7 +362,7 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2026, 11, 12, 0, 0, 0).unwrap();
         let window = TimePeriod::new(start, start + Duration::hours(6)).unwrap();
         let gpu = Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
-        let slot = SlotView::of_new_one_time_reservation(
+        let slot = ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start + Duration::hours(1), start + Duration::hours(2)).unwrap(),
             vec![gpu.clone()],
@@ -382,7 +382,7 @@ mod tests {
             vec![BusyPeriodDto {
                 start: start + Duration::hours(1),
                 end: start + Duration::hours(2),
-                slot_id: slot.id().as_str().to_string(),
+                reserved_slot_id: slot.id().as_str().to_string(),
                 holder_email: "holder@example.com".to_string(),
             }]
         );

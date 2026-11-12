@@ -70,7 +70,7 @@ impl GpusAtRest {
 /// 言い表せない。予約が塞いでいる時間を他の人に開けられるかどうかは、プロセスの有無
 /// ではなく計算が走っているかで決まる。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SlotActivity {
+pub enum ReservedSlotActivity {
     /// 押さえているGPUのどれでも計算が走っている
     InUse,
     /// 押さえているGPUの全部または一部で、計算が走っていない
@@ -89,7 +89,7 @@ pub enum SlotActivity {
 /// 名義の照合は無断使用の検出の仕事であり、この見立ての条件ではない。
 ///
 /// 判定できるのは、予約が押さえるGPUをすべて観測できている場合に限る。その手前で
-/// 足りないものがあるときは呼び出し側が[`SlotActivity::Undecidable`]を選ぶ。
+/// 足りないものがあるときは呼び出し側が[`ReservedSlotActivity::Undecidable`]を選ぶ。
 /// この関数は観測できている事実だけを読む。
 ///
 /// 押さえているGPUは1台ずつ見る。8枚のうち1枚で計算が走っていることは、
@@ -99,15 +99,15 @@ pub enum SlotActivity {
 /// * `reserved` - 予約が押さえているリソース
 /// * `snapshot` - 観測結果
 /// * `computing_utilization_percent` - これ以上の稼働率が出ていれば計算が走っているとみなす
-pub fn judge_slot_activity(
+pub fn judge_reserved_slot_activity(
     reserved: &[Resource],
     snapshot: &ObservationSnapshot,
     computing_utilization_percent: u32,
-) -> SlotActivity {
+) -> ReservedSlotActivity {
     let in_play = gpus_in_play(reserved, snapshot, computing_utilization_percent);
 
     if in_play.is_empty() {
-        return SlotActivity::Absent;
+        return ReservedSlotActivity::Absent;
     }
 
     let observed: Vec<(&Gpu, u32)> = in_play
@@ -121,7 +121,7 @@ pub fn judge_slot_activity(
 
     // 稼働率を報告しない観測手段のもとでは、プロセスが乗っていることを利用の証と読むほかない
     if observed.is_empty() {
-        return SlotActivity::InUse;
+        return ReservedSlotActivity::InUse;
     }
 
     let at_rest: Vec<(&Gpu, u32)> = observed
@@ -131,10 +131,10 @@ pub fn judge_slot_activity(
         .collect();
 
     if at_rest.is_empty() {
-        return SlotActivity::InUse;
+        return ReservedSlotActivity::InUse;
     }
 
-    SlotActivity::HeldWithoutComputing(GpusAtRest::new(
+    ReservedSlotActivity::HeldWithoutComputing(GpusAtRest::new(
         at_rest.iter().map(|(gpu, _)| (*gpu).clone()).collect(),
         observed.len(),
         at_rest.iter().map(|(_, peak)| *peak).max().unwrap_or(0),
@@ -278,13 +278,13 @@ mod tests {
             .with_used_memory(used_memory_mib)
     }
 
-    fn judge(reserved: &[Resource], snapshot: &ObservationSnapshot) -> SlotActivity {
-        judge_slot_activity(reserved, snapshot, COMPUTING)
+    fn judge(reserved: &[Resource], snapshot: &ObservationSnapshot) -> ReservedSlotActivity {
+        judge_reserved_slot_activity(reserved, snapshot, COMPUTING)
     }
 
-    fn at_rest_of(activity: &SlotActivity) -> &GpusAtRest {
+    fn at_rest_of(activity: &ReservedSlotActivity) -> &GpusAtRest {
         match activity {
-            SlotActivity::HeldWithoutComputing(at_rest) => at_rest,
+            ReservedSlotActivity::HeldWithoutComputing(at_rest) => at_rest,
             other => panic!("計算していないGPUがあるはず: {other:?}"),
         }
     }
@@ -294,7 +294,7 @@ mod tests {
         let reserved = vec![Resource::Gpu(gpu(0))];
         let snapshot = snapshot_of(vec![], vec![(0, 0)]);
 
-        assert_eq!(judge(&reserved, &snapshot), SlotActivity::Absent);
+        assert_eq!(judge(&reserved, &snapshot), ReservedSlotActivity::Absent);
     }
 
     #[test]
@@ -302,7 +302,7 @@ mod tests {
         let reserved = vec![Resource::Gpu(gpu(0))];
         let snapshot = snapshot_of(vec![process_on(0, 40_000)], vec![(0, 97)]);
 
-        assert_eq!(judge(&reserved, &snapshot), SlotActivity::InUse);
+        assert_eq!(judge(&reserved, &snapshot), ReservedSlotActivity::InUse);
     }
 
     #[test]
@@ -355,7 +355,7 @@ mod tests {
 
         assert_eq!(
             judge(&reserved, &snapshot),
-            SlotActivity::InUse,
+            ReservedSlotActivity::InUse,
             "稼働率を知らないことを、計算していないことの証拠にしてはいけない"
         );
     }
@@ -366,7 +366,7 @@ mod tests {
         let reserved = vec![Resource::Gpu(gpu(0)), Resource::Gpu(gpu(1))];
         let snapshot = snapshot_of(vec![process_on(0, 38_000)], vec![(0, 90), (1, 0)]);
 
-        assert_eq!(judge(&reserved, &snapshot), SlotActivity::InUse);
+        assert_eq!(judge(&reserved, &snapshot), ReservedSlotActivity::InUse);
     }
 
     #[test]
@@ -412,7 +412,7 @@ mod tests {
 
         assert_eq!(
             judge(&reserved, &snapshot),
-            SlotActivity::InUse,
+            ReservedSlotActivity::InUse,
             "デバイスが計算していることは、名義の分からなさに覆い隠されない"
         );
     }
@@ -426,7 +426,7 @@ mod tests {
 
         assert_eq!(
             judge(&reserved, &snapshot),
-            SlotActivity::InUse,
+            ReservedSlotActivity::InUse,
             "計算しているデバイスを、プロセスが見えないという理由で不在と読んではいけない"
         );
     }
@@ -452,7 +452,7 @@ mod tests {
 
         assert_eq!(
             judge(&reserved, &snapshot),
-            SlotActivity::InUse,
+            ReservedSlotActivity::InUse,
             "帰属できないことは、利用がないことを意味しない"
         );
     }

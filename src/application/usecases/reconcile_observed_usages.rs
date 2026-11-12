@@ -8,7 +8,7 @@ use crate::domain::ports::{
     ObservedUsage, ReservationProposal, ReservationProposalNotifier, ResourceUsageObserver,
     UnauthorizedUsageNotifier,
 };
-use crate::domain::read_models::SlotView;
+use crate::domain::read_models::ReservedSlotView;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -177,8 +177,8 @@ where
         // 1周の要約。個別の出来事より、件数の推移から異常に気づける
         info!(
             observed = observed.len(),
-            slots_in_progress = slots_in_progress.len(),
-            matched_to_a_slot = reserved,
+            reserved_slots_in_progress = slots_in_progress.len(),
+            matched_to_a_reserved_slot = reserved,
             unreserved_sessions = session_count,
             failures,
             elapsed_ms = (Utc::now() - started_at).num_milliseconds(),
@@ -214,7 +214,7 @@ where
     /// 終わった予約枠についての「通知済み」を忘れる
     ///
     /// 予約枠が終われば、その予約枠を巡って知らせることはもうない。
-    async fn forget_slots_that_ended(&self, in_progress: &[SlotView]) {
+    async fn forget_slots_that_ended(&self, in_progress: &[ReservedSlotView]) {
         let still_running: HashSet<&str> =
             in_progress.iter().map(|slot| slot.id().as_str()).collect();
 
@@ -267,10 +267,10 @@ where
 
     /// `now`の時点で`resource`を押さえている予約枠を探す
     fn find_running_slot<'a>(
-        slots: &'a [SlotView],
+        slots: &'a [ReservedSlotView],
         resource: &Resource,
         now: DateTime<Utc>,
-    ) -> Option<&'a SlotView> {
+    ) -> Option<&'a ReservedSlotView> {
         slots.iter().find(|slot| {
             slot.time_period().start() <= now
                 && now < slot.time_period().end()
@@ -282,7 +282,7 @@ where
     async fn reconcile_reserved(
         &self,
         observed: &ObservedUsage,
-        slot: &SlotView,
+        slot: &ReservedSlotView,
     ) -> Result<(), ApplicationError> {
         // 利用者の身元が不明な場合、無断使用かどうか原理的に判定できないためスキップする
         let Some(actual_email) = self.resolve_email(observed).await? else {
@@ -308,7 +308,7 @@ where
             resource = %observed.resource(),
             actual_user = %actual_email.as_str(),
             reserved_by = %slot.holder_email().as_str(),
-            slot_id = %slot.id().as_str(),
+            reserved_slot_id = %slot.id().as_str(),
             "notifying unauthorized usage"
         );
 

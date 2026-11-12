@@ -54,11 +54,11 @@ pub const ACTION_LINK_OS_USERNAME_INPUT: &str = "link_os_username_input";
 // 値を変えると、すでにチャンネルにあるボタンが押しても動かなくなるため、定数名だけを
 // ユビキタス言語に合わせ、値は以前のままにしている。
 /// 予約枠の期間・備考を変更するボタンのアクション
-pub const ACTION_UPDATE_SLOT: &str = "edit_reservation";
+pub const ACTION_UPDATE_RESERVED_SLOT: &str = "edit_reservation";
 /// 予約枠を取り消すボタンのアクション
-pub const ACTION_CANCEL_SLOT: &str = "cancel_reservation";
+pub const ACTION_CANCEL_RESERVED_SLOT: &str = "cancel_reservation";
 /// 予約枠を今の時点で終了するボタンのアクション
-pub const ACTION_END_SLOT_EARLY: &str = "release_reservation_early";
+pub const ACTION_END_RESERVED_SLOT_EARLY: &str = "release_reservation_early";
 
 // アクションID - 使われていない予約枠のお知らせDM（値については上と同じ理由で以前のまま）
 /// 使われていない予約枠を今の時点で終了するボタンのアクション

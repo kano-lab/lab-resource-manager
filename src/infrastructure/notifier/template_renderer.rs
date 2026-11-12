@@ -7,7 +7,7 @@ use crate::domain::aggregates::reservation::{
     Reservation, ReservationEvent, ReservedSlot, Schedule,
 };
 use crate::domain::common::TimePeriod;
-use crate::domain::read_models::SlotView;
+use crate::domain::read_models::ReservedSlotView;
 use crate::infrastructure::config::{FormatConfig, TemplateConfig};
 use crate::infrastructure::notifier::formatter::{
     format_recurrence, format_resources_styled, format_time_styled,
@@ -290,7 +290,7 @@ impl<'a> TemplateRenderer<'a> {
     pub fn render_conflict(
         &self,
         conflicting_resources: &[Resource],
-        existing_slot: &SlotView,
+        existing_slot: &ReservedSlotView,
         user_display: &str,
     ) -> String {
         let template = self
@@ -315,7 +315,7 @@ impl<'a> TemplateRenderer<'a> {
     pub fn render_conflict_item(
         &self,
         conflicting_resources: &[Resource],
-        existing_slot: &SlotView,
+        existing_slot: &ReservedSlotView,
         user_display: &str,
     ) -> String {
         let template = self
@@ -436,7 +436,7 @@ mod tests {
     use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
     use chrono::{TimeZone, Utc};
 
-    fn create_test_slot() -> SlotView {
+    fn create_test_slot() -> ReservedSlotView {
         let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
         let period = TimePeriod::new(start, end).unwrap();
@@ -446,7 +446,7 @@ mod tests {
             Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string())),
         ];
 
-        SlotView::of_new_one_time_reservation(
+        ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,
@@ -456,7 +456,7 @@ mod tests {
     }
 
     /// 予約枠の写しと同じ内容の単発予約
-    fn reservation_of(slot: &SlotView) -> Reservation {
+    fn reservation_of(slot: &ReservedSlotView) -> Reservation {
         Reservation::reconstruct(
             slot.reservation_id().clone(),
             slot.holder_email().clone(),
@@ -638,7 +638,7 @@ mod tests {
             "A100".to_string(),
         ))];
 
-        let slot = SlotView::of_new_one_time_reservation(
+        let slot = ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,

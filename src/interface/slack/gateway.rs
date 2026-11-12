@@ -147,7 +147,7 @@ where
             let action_id = action.action_id.to_string();
 
             match action_id.as_str() {
-                ACTION_UPDATE_SLOT => {
+                ACTION_UPDATE_RESERVED_SLOT => {
                     crate::interface::slack::block_actions::edit_button::handle(
                         self,
                         block_actions,
@@ -155,7 +155,7 @@ where
                     )
                     .await?
                 }
-                ACTION_CANCEL_SLOT => {
+                ACTION_CANCEL_RESERVED_SLOT => {
                     crate::interface::slack::block_actions::cancel_button::handle(
                         self,
                         block_actions,
@@ -163,7 +163,7 @@ where
                     )
                     .await?
                 }
-                ACTION_END_SLOT_EARLY => {
+                ACTION_END_RESERVED_SLOT_EARLY => {
                     crate::interface::slack::block_actions::end_early_button::handle(
                         self,
                         block_actions,
@@ -172,7 +172,7 @@ where
                     .await?
                 }
                 ACTION_IDLE_END_EARLY | ACTION_IDLE_KEEP | ACTION_IDLE_CANCEL => {
-                    crate::interface::slack::block_actions::idle_slot_buttons::handle(
+                    crate::interface::slack::block_actions::idle_reserved_slot_buttons::handle(
                         self,
                         block_actions,
                         action,
