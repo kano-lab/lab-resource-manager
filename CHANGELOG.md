@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.1](https://github.com/kano-lab/lab-resource-manager/compare/v2.0.0...v2.0.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* announce a reservation ended early as an update, not a deletion ([#169](https://github.com/kano-lab/lab-resource-manager/issues/169)) ([ebe0855](https://github.com/kano-lab/lab-resource-manager/commit/ebe08558106a2a44e450b59213ee62f2446e27d7))
+* **deps:** bump axum-server from 0.8.0 to 0.9.0 ([#180](https://github.com/kano-lab/lab-resource-manager/issues/180)) ([f776a1a](https://github.com/kano-lab/lab-resource-manager/commit/f776a1a42a9b3638e06153e0f646c849ddfb755d))
+* **deps:** bump google-calendar3 from 6.0.0 to 7.0.0 ([#183](https://github.com/kano-lab/lab-resource-manager/issues/183)) ([29af71c](https://github.com/kano-lab/lab-resource-manager/commit/29af71c84330602eaf6c7b5a29f94d60ff04ba2a))
+* **deps:** bump rmcp from 2.2.0 to 3.9.0 ([#184](https://github.com/kano-lab/lab-resource-manager/issues/184)) ([1c3d8fe](https://github.com/kano-lab/lab-resource-manager/commit/1c3d8feb51c5713610efaa34f1a6a26e8efbc26f))
+* **deps:** bump toml from 0.9.12+spec-1.1.0 to 1.2.1+spec-1.1.0 ([#182](https://github.com/kano-lab/lab-resource-manager/issues/182)) ([7032279](https://github.com/kano-lab/lab-resource-manager/commit/7032279f97b7d131381834be3e2546f6a6426b32))
+* **deps:** update dependencies to pick up security fixes, and audit them in CI ([#177](https://github.com/kano-lab/lab-resource-manager/issues/177)) ([d0a607c](https://github.com/kano-lab/lab-resource-manager/commit/d0a607c302f6c968c341d78b82a86607330901a8))
+
 ## [2.0.0](https://github.com/kano-lab/lab-resource-manager/compare/v1.8.0...v2.0.0) (2026-09-21)
 
 
