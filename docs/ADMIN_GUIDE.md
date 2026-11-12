@@ -150,6 +150,11 @@ timezone = "Asia/Tokyo"
 created = "{user} is using {resource} at {time}"
 updated = "{user} changed reservation: {resource} {time}"
 cancelled = "{user} cancelled reservation: {resource}"
+recurring_created = "{user} set up a recurring reservation: {resource} {recurrence} {time}"
+recurring_updated = "{user} changed a recurring reservation: {resource} {recurrence}"
+recurring_cancelled = "{user} cancelled a recurring reservation: {resource} {recurrence}"
+slot_updated = "{user} changed one slot of a recurring reservation: {resource} {time}"
+slot_cancelled = "{user} cancelled one slot of a recurring reservation: {resource} {time}"
 conflict = "{user} already reserved {resource} at {time}"
 conflict_item = "👤 {user}\n📅 {time}\n{resource_label}\n{resource}{notes}"
 
@@ -160,9 +165,19 @@ time_style = "smart"         # Time display style
 date_format = "md"           # Date format
 ```
 
-`created`/`updated`/`cancelled` are used when a reservation is created, changed
-(including ended early), or cancelled. The old key `deleted` is still read as
-`cancelled`.
+Notifications are about reservations (one-time or recurring). Which template is
+used:
+
+| Template | Used when |
+| --- | --- |
+| `created`/`updated`/`cancelled` | A one-time reservation is created, changed (including ended early), or cancelled |
+| `recurring_created`/`recurring_updated`/`recurring_cancelled` | A recurring reservation is created, changed across several reserved slots, or cancelled |
+| `slot_updated`/`slot_cancelled` | One reserved slot of a recurring reservation is changed (including ended early) or cancelled |
+
+A recurring reservation is announced in a single message, not once per
+reserved slot. The recurring templates can also use `{recurrence}` (the
+recurrence rule, such as "毎週 月・水"); there `{time}` is the period of the
+first reserved slot. The old key `deleted` is still read as `cancelled`.
 
 `conflict` is used when a reservation request is rejected due to a conflict.
 It is used **only when there is a single conflict**. Unlike
@@ -518,10 +533,12 @@ person).
 | `list_reserved_slots` | List every reserved slot overlapping the next 60 days (including running ones) |
 | `list_my_reserved_slots` | List the caller's reserved slots overlapping the next 60 days |
 | `get_reserved_slot` | Get a reserved slot's details by reserved slot ID |
+| `get_reservation` | Get a reservation's details by reservation ID (with its recurrence rule if recurring) |
 | `create_reservation` | Create a one-time reservation (GPU server or room) |
 | `update_reserved_slot` | Change the time or notes of one of your reserved slots |
 | `end_reserved_slot_early` | End one of your running reserved slots now, releasing the remaining time |
-| `cancel_reserved_slot` | Cancel one of your reserved slots |
+| `cancel_reserved_slot` | Cancel one of your reserved slots (other slots of a recurring reservation stay) |
+| `cancel_reservation` | Cancel one of your reservations entirely (every slot of a recurring one) |
 
 Write tools treat the email address linked to the caller's Bearer token as the reservation
 holder. Changing or cancelling someone else's reservation is rejected by the same
@@ -636,7 +653,8 @@ change detection pass finished
 
 A count that jumps or an `elapsed_ms` that grows points at a problem well before anything
 visibly breaks. `appeared`/`disappeared` count reserved slots coming and going;
-`notifications` counts the messages actually sent.
+`notifications` counts the messages actually sent. A recurring reservation's slots are
+announced together, so `notifications` can be lower than the slot changes.
 
 Set `RUST_LOG=debug` to also see per-step detail (form parsing, modal handling, individual
 Slack API calls). This is verbose and meant for investigating a specific problem, not for

@@ -42,11 +42,24 @@ pub(super) trait CalendarEventGateway: Send + Sync {
     ///
     /// `time_max`を指定した場合は、開始時刻が`time_max`より前のイベントに限定される。
     /// すなわち`time_min`〜`time_max`の期間に重なるイベントが返る。
+    ///
+    /// 繰り返しイベントは回ごとに展開せず、繰り返しイベントそのものと、規則どおりでない回
+    /// （時間などを変えた回、削除された回）のイベントとして返る。削除されたイベントも
+    /// `status: cancelled`で含まれる。
     async fn list_events(
         &self,
         calendar_id: &str,
         time_min: DateTime<Utc>,
         time_max: Option<DateTime<Utc>>,
+    ) -> Result<Vec<Event>, RepositoryError>;
+
+    /// 繰り返しイベントそのものと、その規則どおりでない回のイベントをすべて取得する
+    ///
+    /// 削除された回も`status: cancelled`で含まれる。
+    async fn list_series(
+        &self,
+        calendar_id: &str,
+        ical_uid: &str,
     ) -> Result<Vec<Event>, RepositoryError>;
 
     /// IDを指定して単一のイベントを取得する（存在しない場合は`None`）
@@ -89,9 +102,70 @@ pub(super) struct GoogleCalendarEventGateway {
     hub: CalendarHub<HttpsConnector<HttpConnector>>,
 }
 
+/// イベント一覧の絞り込み
+enum ListFilter<'a> {
+    /// 期間に重なるイベント
+    Period {
+        time_min: DateTime<Utc>,
+        time_max: Option<DateTime<Utc>>,
+    },
+    /// 1つの繰り返しイベントとその回
+    Series { ical_uid: &'a str },
+}
+
 impl GoogleCalendarEventGateway {
     pub(super) fn new(hub: CalendarHub<HttpsConnector<HttpConnector>>) -> Self {
         Self { hub }
+    }
+
+    /// イベントを、繰り返しを展開せず、削除されたものも含めて取得する
+    async fn list(
+        &self,
+        calendar_id: &str,
+        filter: ListFilter<'_>,
+    ) -> Result<Vec<Event>, RepositoryError> {
+        let mut all_events = Vec::new();
+        let mut page_token: Option<String> = None;
+
+        // 1ページに収まらない場合、続きのページを取得しないとイベントを取りこぼす
+        loop {
+            let mut call = self
+                .hub
+                .events()
+                .list(calendar_id)
+                // 繰り返しイベントは回ごとに展開しない。回は予約が自分の日程から求める
+                .single_events(false)
+                // 削除された回（規則どおりでない回の一種）も読む
+                .show_deleted(true)
+                .max_results(MAX_RESULTS_PER_PAGE);
+
+            match &filter {
+                ListFilter::Period { time_min, time_max } => {
+                    call = call.time_min(*time_min);
+                    if let Some(time_max) = time_max {
+                        call = call.time_max(*time_max);
+                    }
+                }
+                ListFilter::Series { ical_uid } => call = call.i_cal_uid(ical_uid),
+            }
+
+            if let Some(token) = &page_token {
+                call = call.page_token(token);
+            }
+
+            let (_response, events) = call.doit().await.map_err(|e| {
+                RepositoryError::ConnectionError(format!("Calendar API error: {}", e))
+            })?;
+
+            all_events.extend(events.items.unwrap_or_default());
+
+            match events.next_page_token {
+                Some(token) => page_token = Some(token),
+                None => break,
+            }
+        }
+
+        Ok(all_events)
     }
 
     /// 版を条件にした書き換え・削除を送る
@@ -180,42 +254,17 @@ impl CalendarEventGateway for GoogleCalendarEventGateway {
         time_min: DateTime<Utc>,
         time_max: Option<DateTime<Utc>>,
     ) -> Result<Vec<Event>, RepositoryError> {
-        let mut all_events = Vec::new();
-        let mut page_token: Option<String> = None;
+        self.list(calendar_id, ListFilter::Period { time_min, time_max })
+            .await
+    }
 
-        // 1ページに収まらない場合、続きのページを取得しないとイベントを取りこぼす
-        loop {
-            let mut call = self
-                .hub
-                .events()
-                .list(calendar_id)
-                .time_min(time_min)
-                // 繰り返しイベントを個々の予定へ展開する。展開しないと繰り返しの
-                // 2回目以降が取得できず、予約として扱えない
-                .single_events(true)
-                .max_results(MAX_RESULTS_PER_PAGE);
-
-            if let Some(time_max) = time_max {
-                call = call.time_max(time_max);
-            }
-
-            if let Some(token) = &page_token {
-                call = call.page_token(token);
-            }
-
-            let (_response, events) = call.doit().await.map_err(|e| {
-                RepositoryError::ConnectionError(format!("Calendar API error: {}", e))
-            })?;
-
-            all_events.extend(events.items.unwrap_or_default());
-
-            match events.next_page_token {
-                Some(token) => page_token = Some(token),
-                None => break,
-            }
-        }
-
-        Ok(all_events)
+    async fn list_series(
+        &self,
+        calendar_id: &str,
+        ical_uid: &str,
+    ) -> Result<Vec<Event>, RepositoryError> {
+        self.list(calendar_id, ListFilter::Series { ical_uid })
+            .await
     }
 
     async fn get_event(

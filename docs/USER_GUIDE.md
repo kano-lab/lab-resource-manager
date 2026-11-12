@@ -8,9 +8,11 @@
   - [1. Register Your Email Address](#1-register-your-email-address)
   - [2. Reserve a Resource](#2-reserve-a-resource)
 - [Reserving Directly in Your Calendar App](#reserving-directly-in-your-calendar-app)
+  - [Recurring Reservations](#recurring-reservations)
 - [Notifications](#notifications)
   - [Notification Content](#notification-content)
   - [Buttons on Notification Messages](#buttons-on-notification-messages)
+  - [Notifications for Recurring Reservations](#notifications-for-recurring-reservations)
   - [When a Reserved Slot Goes Unused](#when-a-reserved-slot-goes-unused)
 - [Using AI Agents via MCP (Optional)](#using-ai-agents-via-mcp-optional)
 - [Slack Command Reference](#slack-command-reference)
@@ -36,13 +38,15 @@ This guide keeps these words apart:
 
 | Word | Meaning |
 | --- | --- |
-| Reservation | A promise to hold resources for some time. It is what you create and cancel |
+| Reservation | A promise to hold resources for some time. It is what you create and cancel. It is either a one-time reservation or a recurring reservation |
 | One-time reservation | A reservation for a single period |
-| Reserved slot | A stretch of time a reservation actually holds. A one-time reservation has one |
+| Recurring reservation | A reservation created in your calendar app with a repeat setting such as "weekly" |
+| Reserved slot | A stretch of time a reservation actually holds. A one-time reservation has one; a recurring reservation has one each time it repeats |
 
-A reserved slot is time you have held with a reservation, not an open slot waiting to be
-booked. Overlap checks, unused notices, and "End now" work on reserved slots. For a one-time
-reservation, the reservation and its slot are the same thing.
+For example, a recurring reservation for "every Monday, 10:00–12:00" holds the reserved slots
+Nov 18 10:00–12:00, Nov 25 10:00–12:00, and so on. A reserved slot is time you have held with a
+reservation, not an open slot waiting to be booked. Overlap checks, unused notices, and "End now"
+work on reserved slots. For a one-time reservation, the reservation and its slot are the same thing.
 
 ## Getting Started
 
@@ -144,6 +148,12 @@ event as usual.
 Lab Meeting
 ```
 
+### Recurring Reservations
+
+Creating an event with a repeat setting such as "weekly" makes a recurring reservation. Devices
+are specified the same way as for a one-time reservation. Changing or deleting "this event only"
+changes that reserved slot alone; the recurring reservation and its other slots stay as they are.
+
 ## Notifications
 
 The system periodically checks the reservations in the calendar app and sends notifications to the
@@ -163,7 +173,8 @@ for your reservations, making it easier to notice notifications.
 
 ### Buttons on Notification Messages
 
-Reservation notifications carry buttons for acting on that reserved slot.
+Notifications about a one-time reservation, and about a single reserved slot of a recurring
+reservation, carry buttons for acting on that reserved slot.
 
 - **🔄 更新 (Update)**: Change the time or the notes of the reserved slot
 - **⏹️ 今で終了 (End now)**: End a running reserved slot at this moment and open the remaining
@@ -171,7 +182,25 @@ Reservation notifications carry buttons for acting on that reserved slot.
 - **❌ 取り消す (Cancel)**: Drop the reserved slot entirely, leaving no record of the time used
 
 Use "End now" when you finish earlier than planned, and "Cancel" when you are not going to use
-the resource at all. You can only act on your own reservations.
+the resource at all. On a slot of a recurring reservation, the button acts on that slot only;
+the recurring reservation and its other slots stay. You can only act on your own reservations.
+
+### Notifications for Recurring Reservations
+
+A recurring reservation is announced as one reservation in a single message, not once per
+reserved slot.
+
+- **Creating a recurring reservation**: one "🔁 新規定期予約" message, with the interval
+  (such as "毎週 月・水")
+- **Cancelling a recurring reservation**: one "🗑️ 定期予約取り消し" message
+- **A change reaching several reserved slots** (a new time of day, cutting it short):
+  one "🔁 定期予約変更" message
+- **Changing or ending early a single reserved slot**: one "🔄 定期予約の予約枠を変更" message
+- **Cancelling a single reserved slot**: one "🗑️ 定期予約の予約枠を取り消し" message
+- **A later slot coming into view as time passes**: nothing (no reservation was added)
+
+Notifications about a recurring reservation as a whole carry no buttons: the buttons act on one
+reserved slot, and a message about the whole reservation cannot say which.
 
 ### When a Reserved Slot Goes Unused
 
@@ -194,7 +223,9 @@ you can end the reservation and take out a smaller one.
 - **⏹️ 今で終了する (End now)**: End the reserved slot at that moment and open the remaining time
   to others (the time you used stays on record)
 - **✅ まだ使う (Still using it)**: You are about to use it — you won't be told about this slot for a while
-- **❌ 予約を取り消す (Cancel the reservation)**: Drop the reservation entirely
+- **❌ 予約を取り消す (Cancel the reservation)**: Cancel a one-time reservation. On a slot of a
+  recurring reservation the button reads "❌ この予約枠だけ取り消す" (cancel this slot only), and
+  the recurring reservation and its other slots stay
 
 This is not meant to rush you. It exists so a reserved slot you held and forgot about doesn't
 keep others waiting. If you still intend to use it, press "✅ Still using it" and carry on —
@@ -253,11 +284,11 @@ Ask your admin for the exact URL (host, port, and whether it's `http://` or `htt
 - List the resources that can be reserved (GPU servers with their device numbers, meeting rooms)
 - Check when each resource is free in a given period
 - List all upcoming reserved slots, or just your own
-- Look up a reserved slot by ID
+- Look up a reserved slot, or a reservation (with its recurrence rule if it is recurring), by ID
 - Create a one-time reservation (GPU server or meeting room)
 - Change the time or notes of one of your reserved slots
 - End one of your running reserved slots early, releasing the remaining time
-- Cancel one of your reserved slots
+- Cancel one of your reserved slots, or a whole reservation (every slot of a recurring one)
 
 Ending early shortens the reserved slot to the current time, so the time you used stays on
 record. Cancel instead when the slot should not have existed at all.

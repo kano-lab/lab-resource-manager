@@ -1,5 +1,6 @@
 use super::errors::ReservationError;
 use super::events::ReservationEvent;
+use super::recurring::{ExceptionChange, RecurringSchedule};
 use super::reserved_slot::ReservedSlot;
 use super::value_objects::{OccurrenceKey, ReservationId, ReservedSlotId, Resource, Version};
 use crate::domain::common::{EmailAddress, TimePeriod};
@@ -32,6 +33,21 @@ pub enum Schedule {
     ///
     /// 単発予約は予約枠を1つだけ持ち、その予約枠は予約と同じIDで識別される。
     OneTime(TimePeriod),
+    /// 定期: 最初の予約枠と繰り返しの規則から、回ごとの予約枠が決まる
+    ///
+    /// 予約枠は回の本来の開始時刻（[`OccurrenceKey::At`]）で識別される。
+    Recurring(RecurringSchedule),
+}
+
+impl Schedule {
+    /// 版を除いて同じ内容か
+    fn has_same_content_as(&self, other: &Schedule) -> bool {
+        match (self, other) {
+            (Schedule::OneTime(a), Schedule::OneTime(b)) => a == b,
+            (Schedule::Recurring(a), Schedule::Recurring(b)) => a.has_same_content_as(b),
+            _ => false,
+        }
+    }
 }
 
 /// 予約の状態
@@ -124,6 +140,11 @@ impl Reservation {
         &self.schedule
     }
 
+    /// 定期予約か
+    pub fn is_recurring(&self) -> bool {
+        matches!(self.schedule, Schedule::Recurring(_))
+    }
+
     /// 状態を取得
     pub fn status(&self) -> ReservationStatus {
         self.status
@@ -141,6 +162,16 @@ impl Reservation {
         self.version = version;
     }
 
+    /// 定期予約の回を保存したあとの、その回の版を記録する
+    ///
+    /// 規則どおりでない回（例外）は、回ごとに保存先での版を持つ。リポジトリの実装が、
+    /// その回を保存先へ書いたあとに呼ぶ。
+    pub fn record_occurrence_version(&mut self, start: DateTime<Utc>, version: Option<Version>) {
+        if let Schedule::Recurring(recurring) = &mut self.schedule {
+            recurring.record_exception_version(start, version);
+        }
+    }
+
     /// 版を除いて同じ内容か
     ///
     /// 保存先で版だけが変わることがある（内容を変えずに書き直されたなど）。
@@ -150,7 +181,7 @@ impl Reservation {
             && self.holder_email == other.holder_email
             && self.resources == other.resources
             && self.notes == other.notes
-            && self.schedule == other.schedule
+            && self.schedule.has_same_content_as(&other.schedule)
             && self.status == other.status
     }
 
@@ -172,17 +203,47 @@ impl Reservation {
                 time_period.clone(),
                 self.notes.clone(),
             )),
+            (Schedule::Recurring(recurring), OccurrenceKey::At(start)) => {
+                recurring.slot(*start, self.notes.as_ref())
+            }
+            _ => None,
         }
     }
 
     /// 期間に重なる予約枠を、開始順に求める
     pub fn slots_in(&self, window: &TimePeriod) -> Vec<ReservedSlot> {
+        if self.status == ReservationStatus::Cancelled {
+            return Vec::new();
+        }
         match &self.schedule {
             Schedule::OneTime(_) => self
                 .slot(&OccurrenceKey::Only)
                 .filter(|slot| slot.time_period().overlaps_with(window))
                 .into_iter()
                 .collect(),
+            Schedule::Recurring(recurring) => recurring.slots_in(window, self.notes.as_ref()),
+        }
+    }
+
+    /// 最後の予約枠が終わる時刻（定期予約の繰り返しに終わりが無ければ`None`）
+    pub fn last_end(&self) -> Option<DateTime<Utc>> {
+        match &self.schedule {
+            Schedule::OneTime(time_period) => Some(time_period.end()),
+            Schedule::Recurring(recurring) => recurring.last_end(),
+        }
+    }
+
+    /// 予約の期間（最初の予約枠の始まりから最後の予約枠の終わりまで）が、期間に重なるか
+    ///
+    /// 定期予約は、回の合間にあたる期間とも重なる。予約に起きた変化を見るときは、
+    /// 回が窓に入っているかどうかではなく、予約がその期間に続いているかで見る。
+    pub fn spans_into(&self, window: &TimePeriod) -> bool {
+        match &self.schedule {
+            Schedule::OneTime(time_period) => time_period.overlaps_with(window),
+            Schedule::Recurring(recurring) => {
+                recurring.first().start() < window.end()
+                    && self.last_end().is_none_or(|end| end > window.start())
+            }
         }
     }
 
@@ -202,11 +263,9 @@ impl Reservation {
         by: &EmailAddress,
     ) -> Result<ReservationEvent, ReservationError> {
         self.ensure_operable(by)?;
-        self.require_slot(key)?;
-        match &mut self.schedule {
-            Schedule::OneTime(current) => *current = time_period,
-        }
-        Ok(ReservationEvent::Changed(self.clone()))
+        let slot = self.require_slot(key)?;
+        let notes = slot.notes().cloned();
+        Ok(self.replace_slot(&slot, time_period, notes, false))
     }
 
     /// 予約枠の備考を書き換える
@@ -220,11 +279,9 @@ impl Reservation {
         by: &EmailAddress,
     ) -> Result<ReservationEvent, ReservationError> {
         self.ensure_operable(by)?;
-        self.require_slot(key)?;
-        match &self.schedule {
-            Schedule::OneTime(_) => self.notes = Some(notes),
-        }
-        Ok(ReservationEvent::Changed(self.clone()))
+        let slot = self.require_slot(key)?;
+        let time_period = slot.time_period().clone();
+        Ok(self.replace_slot(&slot, time_period, Some(notes), false))
     }
 
     /// 進行中の予約枠を`at`の時点で締める（今で終了）
@@ -245,15 +302,14 @@ impl Reservation {
         self.ensure_operable(by)?;
         let slot = self.require_slot(key)?;
         let shortened = Self::shorten(slot.time_period(), at)?;
-        match &mut self.schedule {
-            Schedule::OneTime(current) => *current = shortened,
-        }
-        Ok(ReservationEvent::EndedEarly(self.clone()))
+        let notes = slot.notes().cloned();
+        Ok(self.replace_slot(&slot, shortened, notes, true))
     }
 
     /// 予約枠を取り消す
     ///
-    /// 単発予約の予約枠を取り消すと、その予約も取り消し済みになる。
+    /// 単発予約の予約枠を取り消すと、その予約も取り消し済みになる。定期予約の予約枠を
+    /// 取り消しても、予約とほかの予約枠は残る。
     ///
     /// # Errors
     /// `reschedule_slot`と同じ
@@ -263,9 +319,16 @@ impl Reservation {
         by: &EmailAddress,
     ) -> Result<ReservationEvent, ReservationError> {
         self.ensure_operable(by)?;
-        self.require_slot(key)?;
-        match &self.schedule {
-            Schedule::OneTime(_) => self.cancel(by),
+        let slot = self.require_slot(key)?;
+        match (&mut self.schedule, key) {
+            (Schedule::Recurring(recurring), OccurrenceKey::At(start)) => {
+                recurring.set_exception(*start, ExceptionChange::Cancelled);
+                Ok(ReservationEvent::SlotCancelled {
+                    reservation: self.clone(),
+                    slot,
+                })
+            }
+            _ => self.cancel(by),
         }
     }
 
@@ -291,6 +354,48 @@ impl Reservation {
             return Err(ReservationError::AlreadyCancelled);
         }
         Ok(())
+    }
+
+    /// 予約枠の期間と備考を置き換え、起きた出来事を返す
+    ///
+    /// 単発予約は予約の日程と備考を書き換える。定期予約は、その回を規則どおりでない回
+    /// （例外）にし、予約のほかの回には触れない。
+    fn replace_slot(
+        &mut self,
+        slot: &ReservedSlot,
+        time_period: TimePeriod,
+        notes: Option<String>,
+        ended_early: bool,
+    ) -> ReservationEvent {
+        let replaced = ReservedSlot::new(slot.key().clone(), time_period.clone(), notes.clone());
+        match (&mut self.schedule, slot.key()) {
+            (Schedule::Recurring(recurring), OccurrenceKey::At(start)) => {
+                recurring.set_exception(*start, ExceptionChange::Changed { time_period, notes });
+                let reservation = self.clone();
+                if ended_early {
+                    ReservationEvent::SlotEndedEarly {
+                        reservation,
+                        slot: replaced,
+                    }
+                } else {
+                    ReservationEvent::SlotChanged {
+                        reservation,
+                        slot: replaced,
+                    }
+                }
+            }
+            (schedule, _) => {
+                if let Schedule::OneTime(current) = schedule {
+                    *current = time_period;
+                }
+                self.notes = notes;
+                if ended_early {
+                    ReservationEvent::EndedEarly(self.clone())
+                } else {
+                    ReservationEvent::Changed(self.clone())
+                }
+            }
+        }
     }
 
     fn require_slot(&self, key: &OccurrenceKey) -> Result<ReservedSlot, ReservationError> {

@@ -2,7 +2,7 @@
 
 ## 予約の言葉の見直し (v3.0.0)
 
-v3.0.0 では、予約を「予約」と「予約枠」の言葉で扱うように作り直しました。
+v3.0.0 では、予約を「予約（単発予約・定期予約）」と「予約枠」の言葉で扱うように作り直しました。
 カレンダーに保存されている予約、`resources.toml`、環境変数はそのまま使えます。
 利用者・管理者に影響があるのは次の3点です。
 
@@ -20,12 +20,15 @@ v3.0.0 では、予約を「予約」と「予約枠」の言葉で扱うよう�
 | `release_reservation_early` | `end_reserved_slot_early` |
 | `cancel_reservation` | `cancel_reserved_slot`（予約枠1つの取り消し） |
 
-`cancel_reserved_slot`は、以前の`cancel_reservation`と同じく予約枠を1つ取り消します。
+`get_reservation`と`cancel_reservation`は、予約（単発予約・定期予約）を丸ごと扱うツールとして
+新しく用意しました。以前の`cancel_reservation`と同じ「1つだけ取り消す」動作が必要なら`cancel_reserved_slot`を使ってください。
+予約枠の出力には、属する予約のID（`reservation_id`）と種類（`reservation_kind`）が加わりました。
 
 ### 通知テンプレートの設定キー
 
-予約の取り消しのテンプレートは`deleted`から`cancelled`に名前が変わりました。
+単発予約の取り消しのテンプレートは`deleted`から`cancelled`に名前が変わりました。
 以前の`deleted`も引き続き読み込まれますが、`cancelled`への書き換えをおすすめします。
+定期予約の予約枠1つについての通知用に、`slot_updated`と`slot_cancelled`が加わりました。
 
 ### ログのフィールド名
 

@@ -63,9 +63,9 @@ where
     // ユーザーにフィードバックメッセージを送信
     if let Some(ch_id) = channel_id {
         let message_text = match &result {
-            Ok(_) => {
+            Ok(event) => {
                 info!(reserved_slot_id = %slot_id.as_str(), origin = "slack", "reserved slot cancelled");
-                "✅ 予約を取り消しました。".to_string()
+                reservation_failure::cancelled_message(event)
             }
             Err(e) => {
                 error!(reserved_slot_id = %slot_id.as_str(), origin = "slack", error = %e, "cancelling the reservation failed");

@@ -2,8 +2,8 @@
 
 ## Reservation Vocabulary (v3.0.0)
 
-v3.0.0 rebuilds reservations around the words "reservation" and "reserved slot".
-Reservations stored in the calendar, `resources.toml`, and environment
+v3.0.0 rebuilds reservations around the words "reservation" (one-time or recurring) and
+"reserved slot". Reservations stored in the calendar, `resources.toml`, and environment
 variables work unchanged. Three things affect members and operators.
 
 ### MCP Tool Names
@@ -20,12 +20,17 @@ configuration or prompt that names tools explicitly.
 | `release_reservation_early` | `end_reserved_slot_early` |
 | `cancel_reservation` | `cancel_reserved_slot` (cancels one reserved slot) |
 
-`cancel_reserved_slot` cancels one reserved slot, as `cancel_reservation` used to.
+`get_reservation` and `cancel_reservation` are new tools that act on a whole reservation
+(one-time or recurring). For the old "cancel this one" behavior of `cancel_reservation`, use
+`cancel_reserved_slot`. Reserved slots in tool output now carry the ID (`reservation_id`) and kind
+(`reservation_kind`) of the reservation they belong to.
 
 ### Notification Template Keys
 
-The template for cancelling a reservation is renamed from `deleted` to `cancelled`.
-`deleted` is still read, but switching to `cancelled` is recommended.
+The template for cancelling a one-time reservation is renamed from `deleted` to `cancelled`.
+`deleted` is still read, but switching to `cancelled` is recommended. `slot_updated` and
+`slot_cancelled` are added for notifications about one reserved slot of a recurring
+reservation.
 
 ### Log Field Names
 
