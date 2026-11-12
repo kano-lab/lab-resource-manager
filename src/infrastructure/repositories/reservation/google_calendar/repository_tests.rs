@@ -22,7 +22,7 @@ use google_calendar3::api::{Event, EventCreator, EventDateTime};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-const SERVICE_ACCOUNT_EMAIL: &str = "service-account@example.com";
+pub(super) const SERVICE_ACCOUNT_EMAIL: &str = "service-account@example.com";
 const CALENDAR_ID: &str = "thalys-calendar-id";
 
 /// ゲートウェイが受け取った問い合わせ内容
@@ -45,7 +45,7 @@ struct ListQuery {
 /// 繰り返しイベントは実APIと同じく展開せずに返す。回のイベントID
 /// （`繰り返しイベントのID_回の開始時刻`）は、規則どおりの回でも取得・書き換え・削除でき、
 /// 削除した回は`status: cancelled`の回のイベントとして残る。
-struct FakeCalendarEventGateway {
+pub(super) struct FakeCalendarEventGateway {
     events: Vec<Event>,
     queries: Mutex<Vec<ListQuery>>,
     /// insert_eventで受け取ったイベント（calendar_id, event）
@@ -61,7 +61,7 @@ struct FakeCalendarEventGateway {
 }
 
 impl FakeCalendarEventGateway {
-    fn new(events: Vec<Event>) -> Self {
+    pub(super) fn new(events: Vec<Event>) -> Self {
         Self {
             events,
             queries: Mutex::new(Vec::new()),
@@ -210,6 +210,30 @@ fn event_end(event: &Event) -> DateTime<Utc> {
         .expect("テストイベントには終了時刻が必要")
 }
 
+/// 繰り返しイベントに、期間に重なる回があるか
+fn occurs_within(event: &Event, time_min: DateTime<Utc>, time_max: Option<DateTime<Utc>>) -> bool {
+    use crate::domain::aggregates::reservation::RecurrenceRule;
+    let Some(rule) = event
+        .recurrence
+        .clone()
+        .and_then(|lines| RecurrenceRule::parse(lines).ok())
+    else {
+        return false;
+    };
+    let time_zone = event
+        .start
+        .as_ref()
+        .and_then(|start| start.time_zone.as_deref())
+        .and_then(|name| name.parse::<chrono_tz::Tz>().ok())
+        .unwrap_or(chrono_tz::UTC);
+    let first = event_start(event);
+    let length = event_end(event) - first;
+    let until = time_max.unwrap_or(time_min + Duration::days(3650));
+    rule.occurrence_starts(first, time_zone, time_min - length, until)
+        .into_iter()
+        .any(|start| start + length > time_min && start < until)
+}
+
 #[async_trait]
 impl CalendarEventGateway for FakeCalendarEventGateway {
     async fn list_events(
@@ -227,9 +251,15 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         Ok(self
             .all_events()
             .into_iter()
-            // 繰り返しイベントは、繰り返しが続く限り期間に重なるものとして返る
-            .filter(|event| event.recurrence.is_some() || event_end(event) > time_min)
-            .filter(|event| time_max.is_none_or(|max| event_start(event) < max))
+            .filter(|event| match &event.recurrence {
+                // 実APIは、繰り返しイベントを、期間に重なる回があるときだけ返す
+                // （回と回の合間の期間には現れない）
+                Some(_) => occurs_within(event, time_min, time_max),
+                None => {
+                    event_end(event) > time_min
+                        && time_max.is_none_or(|max| event_start(event) < max)
+                }
+            })
             .collect())
     }
 
@@ -269,6 +299,11 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
                 ..Default::default()
             });
         }
+        // 実APIは作ったイベントにiCalUIDと作成時刻を付ける
+        if created.i_cal_uid.is_none() {
+            created.i_cal_uid = created.id.as_ref().map(|id| format!("{id}@google.com"));
+        }
+        created.created = Some(Utc::now());
         created.etag = Some(self.new_etag());
         self.current
             .lock()
@@ -584,7 +619,7 @@ async fn parse_failures_are_reported_once_per_event() {
 
 /// メールアドレスからOSユーザー名を引けるテスト用のIdentityLinkリポジトリ
 #[derive(Default)]
-struct StubIdentityLinkRepository {
+pub(super) struct StubIdentityLinkRepository {
     /// (email, server) -> OSユーザー名
     os_users: Vec<(String, String, String)>,
 }

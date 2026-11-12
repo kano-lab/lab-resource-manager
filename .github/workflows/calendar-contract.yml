@@ -1,0 +1,44 @@
+name: Calendar Contract
+
+# Runs the contract tests against the real test Google Calendar. They need the
+# service account key, so they run on demand rather than on every pull request.
+on:
+  workflow_dispatch:
+
+# The runs share one test calendar: let only one run at a time touch it.
+concurrency:
+  group: calendar-contract
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  contract:
+    name: Google Calendar contract
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fetch Repository
+        uses: actions/checkout@v7
+
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+
+      - name: Write the service account key
+        env:
+          SERVICE_ACCOUNT_KEY: ${{ secrets.LRM_CONTRACT_SERVICE_ACCOUNT_KEY }}
+          CALENDAR_ID: ${{ secrets.LRM_CONTRACT_CALENDAR_ID }}
+        run: |
+          if [ -z "$SERVICE_ACCOUNT_KEY" ] || [ -z "$CALENDAR_ID" ]; then
+            echo "::error::Set the LRM_CONTRACT_SERVICE_ACCOUNT_KEY and LRM_CONTRACT_CALENDAR_ID repository secrets"
+            exit 1
+          fi
+          printf '%s' "$SERVICE_ACCOUNT_KEY" > "$RUNNER_TEMP/service-account-key.json"
+
+      - name: Run the contract tests against the test calendar
+        env:
+          LRM_CONTRACT_CALENDAR_ID: ${{ secrets.LRM_CONTRACT_CALENDAR_ID }}
+          LRM_CONTRACT_SERVICE_ACCOUNT_KEY: ${{ runner.temp }}/service-account-key.json
+        run: cargo test --all-features contract_tests -- --ignored

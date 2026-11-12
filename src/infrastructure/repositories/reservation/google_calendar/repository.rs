@@ -14,13 +14,7 @@ use crate::infrastructure::config::{ResourceConfig, StorageConfig};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
-use google_calendar3::{
-    CalendarHub,
-    api::{Event, EventDateTime},
-    hyper_rustls::HttpsConnectorBuilder,
-    hyper_util::{client::legacy::Client, rt::TokioExecutor},
-    yup_oauth2,
-};
+use google_calendar3::api::{Event, EventDateTime};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -116,25 +110,11 @@ impl GoogleCalendarReservationRepository {
         identity_repo: Arc<dyn IdentityLinkRepository>,
         storage_config: StorageConfig,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let secret = yup_oauth2::read_service_account_key(service_account_key).await?;
-        let service_account_email = secret.client_email.clone();
-
-        let auth = yup_oauth2::ServiceAccountAuthenticator::builder(secret)
-            .build()
-            .await?;
-
-        let connector = HttpsConnectorBuilder::new()
-            .with_native_roots()?
-            .https_or_http()
-            .enable_http1()
-            .build();
-
-        let client = Client::builder(TokioExecutor::new()).build(connector);
-
-        let hub = CalendarHub::new(client, auth);
+        let (gateway, service_account_email) =
+            GoogleCalendarEventGateway::connect(service_account_key).await?;
 
         Ok(Self {
-            gateway: Arc::new(GoogleCalendarEventGateway::new(hub)),
+            gateway: Arc::new(gateway),
             config,
             storage_config,
             service_account_email,
