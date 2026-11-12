@@ -169,7 +169,7 @@ Notifications are about reservations (one-time or recurring). Which template is
 used:
 
 | Template | Used when |
-|---|---|
+| --- | --- |
 | `created`/`updated`/`cancelled` | A one-time reservation is created, changed (including ended early), or cancelled |
 | `recurring_created`/`recurring_updated`/`recurring_cancelled` | A recurring reservation is created, changed across several reserved slots, or cancelled |
 | `slot_updated`/`slot_cancelled` | One reserved slot of a recurring reservation is changed (including ended early) or cancelled |

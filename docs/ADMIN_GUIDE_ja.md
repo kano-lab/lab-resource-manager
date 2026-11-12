@@ -165,7 +165,7 @@ date_format = "md"           # 日付フォーマット
 通知は予約（単発予約・定期予約）を単位とし、どのテンプレートを使うかは次のとおりです。
 
 | テンプレート | 使われるとき |
-|---|---|
+| --- | --- |
 | `created`/`updated`/`cancelled` | 単発予約が作られた・変更された（今で終了を含む）・取り消された |
 | `recurring_created`/`recurring_updated`/`recurring_cancelled` | 定期予約が作られた・複数の予約枠に及んで変更された・取り消された |
 | `slot_updated`/`slot_cancelled` | 定期予約の予約枠が1つだけ変更された（今で終了を含む）・取り消された |
