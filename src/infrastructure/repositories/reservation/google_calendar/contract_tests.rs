@@ -193,10 +193,11 @@ impl Calendar {
 
 /// 設定を、環境変数から、無ければリポジトリ直下の`.env.contract`から読む
 fn setting(name: &str) -> Option<String> {
+    // 貼り付けた値の前後に改行や空白が付いていても使えるようにする
     if let Ok(value) = std::env::var(name)
-        && !value.is_empty()
+        && !value.trim().is_empty()
     {
-        return Some(value);
+        return Some(value.trim().to_string());
     }
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(".env.contract");
     std::fs::read_to_string(file)
@@ -610,6 +611,75 @@ macro_rules! contract {
             }
         }
     };
+}
+
+/// 本物のカレンダーで、どの操作がどう応えるかを書き出す（失敗の切り分け用）
+///
+/// カレンダーIDそのものは書き出さない。
+#[tokio::test]
+#[ignore = "本物のテスト用カレンダーが要る（モジュールの説明を参照）"]
+async fn diagnose_a_real_calendar() {
+    let raw_id = std::env::var("LRM_CONTRACT_CALENDAR_ID").unwrap_or_default();
+    println!(
+        "[diagnose] calendar id: {} chars, whitespace around: {}, ends with @group.calendar.google.com: {}",
+        raw_id.len(),
+        raw_id != raw_id.trim(),
+        raw_id.trim().ends_with("@group.calendar.google.com"),
+    );
+    let calendar = Calendar::real().await;
+    let gateway = &calendar.gateway;
+    let calendar_id = calendar.calendar_id.as_str();
+
+    for (label, start) in [
+        ("near", Utc::now() + Duration::days(2)),
+        ("2100+", somewhere_far_ahead()),
+    ] {
+        let id = new_event_id();
+        let end = start + Duration::hours(1);
+        let inserted = gateway
+            .insert_event(calendar_id, reservation_event(&id, start, end))
+            .await;
+        println!(
+            "[diagnose] {label}: insert -> {:?}",
+            inserted.as_ref().map(|event| event.id.is_some())
+        );
+        let Ok(inserted) = inserted else { continue };
+        for wait in [0u64, 5] {
+            tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+            let got = gateway.get_event(calendar_id, &id).await;
+            let listed = gateway
+                .list_events(
+                    calendar_id,
+                    start - Duration::hours(1),
+                    Some(end + Duration::hours(1)),
+                )
+                .await;
+            println!(
+                "[diagnose] {label}: after {wait}s get -> {:?}, list -> {:?}",
+                got.as_ref().map(|event| event.is_some()),
+                listed.as_ref().map(|events| events
+                    .iter()
+                    .any(|event| event.id.as_deref() == Some(id.as_str())))
+            );
+        }
+        if let Some(etag) = inserted.etag {
+            let updated = gateway
+                .update_event(
+                    calendar_id,
+                    &id,
+                    reservation_event(&id, start, end + Duration::hours(1)),
+                    &etag,
+                )
+                .await;
+            println!(
+                "[diagnose] {label}: update with If-Match -> {:?}",
+                updated.as_ref().map(|_| ())
+            );
+            let etag = updated.ok().and_then(|event| event.etag).unwrap_or(etag);
+            let deleted = gateway.delete_event(calendar_id, &id, &etag).await;
+            println!("[diagnose] {label}: delete -> {deleted:?}");
+        }
+    }
 }
 
 contract!(conditional_writes);

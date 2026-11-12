@@ -45,4 +45,4 @@ jobs:
         env:
           LRM_CONTRACT_CALENDAR_ID: ${{ secrets.LRM_CONTRACT_CALENDAR_ID }}
           LRM_CONTRACT_SERVICE_ACCOUNT_KEY: ${{ runner.temp }}/service-account-key.json
-        run: cargo test --all-features contract_tests -- --ignored
+        run: cargo test --all-features contract_tests -- --ignored --nocapture --test-threads=1
