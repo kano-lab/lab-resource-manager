@@ -682,6 +682,100 @@ async fn diagnose_a_real_calendar() {
     }
 }
 
+/// 本物のカレンダーで、繰り返しイベントがどう扱われるかを書き出す（失敗の切り分け用）
+#[tokio::test]
+#[ignore = "本物のテスト用カレンダーが要る（モジュールの説明を参照）"]
+async fn diagnose_recurring_events_on_a_real_calendar() {
+    let calendar = Calendar::real().await;
+    let calendar_id = calendar.calendar_id.as_str();
+    let key = setting("LRM_CONTRACT_SERVICE_ACCOUNT_KEY").unwrap();
+    let key = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join(key)
+        .to_string_lossy()
+        .into_owned();
+    let (google, _) = GoogleCalendarEventGateway::connect(&key).await.unwrap();
+    let gateway = &calendar.gateway;
+
+    let near = chrono_tz::Asia::Tokyo
+        .with_ymd_and_hms(2027, 3, 1, 10, 0, 0)
+        .unwrap()
+        .with_timezone(&Utc)
+        + Duration::days((uuid::Uuid::new_v4().as_u128() % 300) as i64);
+    for (label, first) in [("near", near), ("2100+", somewhere_far_ahead())] {
+        let id = new_event_id();
+        let inserted = gateway
+            .insert_event(calendar_id, weekly_event(&id, first))
+            .await;
+        println!(
+            "[diagnose-rec] {label}: insert -> {:?} (first {first})",
+            inserted.as_ref().map(|event| (
+                event.recurrence.clone(),
+                event
+                    .start
+                    .as_ref()
+                    .map(|s| (s.date_time, s.time_zone.clone()))
+            ))
+        );
+        if inserted.is_err() {
+            continue;
+        }
+        let instances = google.list_instances(calendar_id, &id).await;
+        match &instances {
+            Ok(instances) => {
+                println!("[diagnose-rec] {label}: {} instances", instances.len());
+                for instance in instances.iter().take(2) {
+                    println!(
+                        "[diagnose-rec] {label}:   id suffix {:?}, original start {:?}, start {:?}",
+                        instance
+                            .id
+                            .as_deref()
+                            .and_then(|instance_id| instance_id.strip_prefix(id.as_str())),
+                        original_start(instance),
+                        instance.start.as_ref().and_then(|s| s.date_time),
+                    );
+                }
+            }
+            Err(e) => println!("[diagnose-rec] {label}: instances -> {e:?}"),
+        }
+        let second = first + Duration::days(7);
+        let ours = instance_id(&id, second);
+        println!(
+            "[diagnose-rec] {label}: our instance id suffix {:?} get -> {:?}",
+            ours.strip_prefix(id.as_str()),
+            gateway
+                .get_event(calendar_id, &ours)
+                .await
+                .map(|event| event.is_some())
+        );
+        for (window, from, to) in [
+            (
+                "around 1st",
+                first - Duration::hours(1),
+                first + Duration::hours(3),
+            ),
+            (
+                "around 2nd",
+                second - Duration::hours(1),
+                second + Duration::hours(3),
+            ),
+            (
+                "between",
+                first + Duration::days(2),
+                first + Duration::days(3),
+            ),
+        ] {
+            let listed = gateway.list_events(calendar_id, from, Some(to)).await;
+            println!(
+                "[diagnose-rec] {label}: list {window} -> {:?}",
+                listed.map(|events| events
+                    .iter()
+                    .any(|event| event.id.as_deref() == Some(id.as_str())))
+            );
+        }
+        calendar.remove(&id).await;
+    }
+}
+
 contract!(conditional_writes);
 contract!(a_recurring_event_is_listed_between_its_occurrences);
 contract!(one_occurrence_is_written_by_its_instance_id);
