@@ -1,7 +1,7 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::{RepositoryError, ReservedSlotQuery};
+use crate::domain::ports::repositories::{RepositoryError, ReservationRepository};
 use crate::domain::read_models::SlotView;
 use chrono::Utc;
 use std::sync::Arc;
@@ -14,15 +14,15 @@ use tracing::info;
 ///
 /// 締める時刻は常に現在時刻とする。任意の終了時刻を指定したい場合は
 /// `UpdateSlotUseCase`が担う。
-pub struct EndSlotEarlyUseCase<R: ReservedSlotQuery> {
+pub struct EndSlotEarlyUseCase<R: ReservationRepository> {
     repository: Arc<R>,
 }
 
-impl<R: ReservedSlotQuery> EndSlotEarlyUseCase<R> {
+impl<R: ReservationRepository> EndSlotEarlyUseCase<R> {
     /// 新しいEndSlotEarlyUseCaseインスタンスを作成
     ///
     /// # Arguments
-    /// * `repository` - 予約枠リポジトリ
+    /// * `repository` - 予約リポジトリ
     pub fn new(repository: Arc<R>) -> Self {
         Self { repository }
     }
@@ -40,22 +40,29 @@ impl<R: ReservedSlotQuery> EndSlotEarlyUseCase<R> {
     /// - 指定されたIDの予約枠が見つからない場合
     /// - 操作者が予約者でない場合
     /// - 予約枠がまだ始まっていない、またはすでに終わっている場合
+    /// - 読んだあとに予約が変更または取り消されていた場合（`RepositoryError::Conflict`）
     /// - リポジトリエラー
     pub async fn execute(
         &self,
         id: &ReservedSlotId,
         requested_by: &EmailAddress,
     ) -> Result<SlotView, ApplicationError> {
-        let mut slot = self
+        let mut reservation = self
             .repository
-            .find_slot(id)
+            .find(id.reservation_id())
             .await?
             .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?;
 
         // 期間を縮める操作のため、新たに占有する時間はなく競合は起こりえない
-        slot.end_early(Utc::now(), requested_by)?;
+        reservation.end_slot_early(id.key(), Utc::now(), requested_by)?;
 
-        self.repository.save_slot(&slot).await?;
+        self.repository.save(&mut reservation).await?;
+        let slot = SlotView::of(
+            &reservation,
+            &reservation
+                .slot(id.key())
+                .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?,
+        );
 
         info!(
             slot_id = %slot.id().as_str(),

@@ -115,13 +115,6 @@ mod tests {
 
     #[async_trait]
     impl ReservedSlotQuery for StubRepository {
-        async fn find_slot(
-            &self,
-            _id: &ReservedSlotId,
-        ) -> Result<Option<SlotView>, RepositoryError> {
-            unimplemented!("このテストでは使用しない")
-        }
-
         async fn find_slots_overlapping(
             &self,
             _time_period: &TimePeriod,
@@ -134,14 +127,6 @@ mod tests {
             _holder_email: &EmailAddress,
             _time_period: &TimePeriod,
         ) -> Result<Vec<SlotView>, RepositoryError> {
-            unimplemented!("このテストでは使用しない")
-        }
-
-        async fn save_slot(&self, _slot: &SlotView) -> Result<(), RepositoryError> {
-            unimplemented!("このテストでは使用しない")
-        }
-
-        async fn remove_slot(&self, _id: &ReservedSlotId) -> Result<(), RepositoryError> {
             unimplemented!("このテストでは使用しない")
         }
     }

@@ -17,7 +17,7 @@ impl<R: ReservationRepository + ReservedSlotQuery> CreateReservationUseCase<R> {
     /// 新しいインスタンスを作成
     ///
     /// # Arguments
-    /// * `repository` - 予約を加え、既存の予約枠との競合を確かめるリポジトリ
+    /// * `repository` - 予約を保存し、既存の予約枠との競合を確かめるリポジトリ
     pub fn new(repository: Arc<R>) -> Self {
         Self {
             repository,
@@ -50,8 +50,8 @@ impl<R: ReservationRepository + ReservedSlotQuery> CreateReservationUseCase<R> {
             .check_conflicts(self.repository.as_ref(), &time_period, &resources, None)
             .await?;
 
-        let reservation = Reservation::one_time(holder_email, time_period, resources, notes)?;
-        self.repository.add_reservation(&reservation).await?;
+        let mut reservation = Reservation::one_time(holder_email, time_period, resources, notes)?;
+        self.repository.save(&mut reservation).await?;
 
         info!(
             reservation_id = %reservation.id().as_str(),

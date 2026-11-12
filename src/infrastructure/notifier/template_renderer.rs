@@ -292,6 +292,19 @@ mod tests {
         .unwrap()
     }
 
+    /// 予約枠の写しと同じ内容の単発予約
+    fn reservation_of(slot: &SlotView) -> Reservation {
+        Reservation::reconstruct(
+            slot.reservation_id().clone(),
+            slot.holder_email().clone(),
+            slot.resources().to_vec(),
+            slot.notes().cloned(),
+            Schedule::OneTime(slot.time_period().clone()),
+            None,
+        )
+        .unwrap()
+    }
+
     #[test]
     fn test_render_with_default_template() {
         let templates = TemplateConfig::default();
@@ -300,7 +313,7 @@ mod tests {
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
         let slot = create_test_slot();
 
-        let result = renderer.render_created(&Reservation::from_one_time_slot(&slot), "<@U12345>");
+        let result = renderer.render_created(&reservation_of(&slot), "<@U12345>");
 
         assert!(result.contains("🔔 新規予約"));
         assert!(result.contains("<@U12345>"));
@@ -327,7 +340,7 @@ mod tests {
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
         let slot = create_test_slot();
 
-        let result = renderer.render_created(&Reservation::from_one_time_slot(&slot), "田中太郎");
+        let result = renderer.render_created(&reservation_of(&slot), "田中太郎");
 
         assert!(result.contains("田中太郎が"));
         assert!(result.contains("Thalys 0,1")); // compact format
@@ -349,8 +362,7 @@ mod tests {
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
         let slot = create_test_slot();
 
-        let result =
-            renderer.render_updated(&Reservation::from_one_time_slot(&slot), "user@example.com");
+        let result = renderer.render_updated(&reservation_of(&slot), "user@example.com");
 
         assert!(result.contains("🔄 予約更新"));
         assert!(result.contains("Thalys")); // server only
@@ -469,7 +481,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = renderer.render_created(&Reservation::from_one_time_slot(&slot), "user");
+        let result = renderer.render_created(&reservation_of(&slot), "user");
 
         assert!(!result.contains("📝 備考"));
     }

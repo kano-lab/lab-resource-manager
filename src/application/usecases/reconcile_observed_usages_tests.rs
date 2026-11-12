@@ -8,7 +8,6 @@ use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, 
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::ReservedSlotQuery;
 use crate::domain::ports::{
     NotificationError, ObservedUsage, ReservationProposal, ReservationProposalNotifier,
     UnauthorizedUsageNotifier,
@@ -746,7 +745,7 @@ async fn the_unauthorized_notice_is_forgotten_once_the_reservation_ends() {
     assert_eq!(notifier.notified().len(), 1);
 
     // 予約が取り消され、進行中の予約がなくなる
-    repo.remove_slot(reservation.id()).await.unwrap();
+    repo.delete_reservation(reservation.reservation_id());
     usecase.poll_once().await.unwrap();
 
     // 同じ予約が戻れば、それは改めて知らせるべき無断使用である

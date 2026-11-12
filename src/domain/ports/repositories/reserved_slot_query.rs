@@ -1,16 +1,16 @@
-use crate::domain::read_models::SlotView;
 use crate::domain::{
-    aggregates::reservation::ReservedSlotId,
     common::{EmailAddress, TimePeriod},
     ports::repositories::RepositoryError,
+    read_models::SlotView,
 };
 use async_trait::async_trait;
 
-/// 予約枠のリポジトリポート
+/// 予約枠を期間で検索する、読み取りの口
 ///
-/// # 予約枠を新しく作る手段ではない
-/// 予約枠は、予約を加えることで現れる（[`super::ReservationRepository::add_reservation`]）。
-/// このリポジトリが保存するのは、既にある予約枠の変更である。
+/// # 書き込みには使わない
+/// 競合の判定、空きの計算、使われていない予約枠の検知、一覧のために、予約をまたいで
+/// 予約枠の写し（[`SlotView`]）を検索する。予約枠を変えるときは、属する予約を
+/// [`super::ReservationRepository`]から読んで操作し、予約ごと保存する。
 ///
 /// # 検索する期間
 /// 予約枠の検索は期間を指定して行う。「今後の予約枠」のように終わりのない範囲を指定する
@@ -30,9 +30,6 @@ use async_trait::async_trait;
 /// 扱う領域である。
 #[async_trait]
 pub trait ReservedSlotQuery {
-    /// IDで予約枠を検索
-    async fn find_slot(&self, id: &ReservedSlotId) -> Result<Option<SlotView>, RepositoryError>;
-
     /// 指定期間と重なる予約枠を検索
     ///
     /// 終了済みの予約枠も含めて返す。過去の期間に対する予約（実利用の検知に
@@ -51,18 +48,4 @@ pub trait ReservedSlotQuery {
         holder_email: &EmailAddress,
         time_period: &TimePeriod,
     ) -> Result<Vec<SlotView>, RepositoryError>;
-
-    /// 既にある予約枠の変更を保存する
-    ///
-    /// # Errors
-    /// 予約枠が無い場合、`RepositoryError::NotFound`
-    async fn save_slot(&self, slot: &SlotView) -> Result<(), RepositoryError>;
-
-    /// 取り消された予約枠を取り除く
-    ///
-    /// 単発予約の予約枠を取り除くと、その単発予約も無くなる。
-    ///
-    /// # Errors
-    /// 予約枠が無い場合、`RepositoryError::NotFound`
-    async fn remove_slot(&self, id: &ReservedSlotId) -> Result<(), RepositoryError>;
 }

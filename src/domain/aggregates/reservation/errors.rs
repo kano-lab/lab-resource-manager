@@ -1,3 +1,4 @@
+use super::value_objects::OccurrenceKey;
 use crate::domain::common::{EmailAddress, TimePeriodError};
 use chrono::{DateTime, Utc};
 use std::fmt;
@@ -27,6 +28,10 @@ pub enum ReservationError {
         /// 操作しようとした人
         actor: EmailAddress,
     },
+    /// 取り消し済みの予約を操作しようとした
+    AlreadyCancelled,
+    /// 予約の日程に無い回を指した（取り消した回を含む）
+    NoSuchSlot(OccurrenceKey),
     /// すでに終わった予約枠を今で終了しようとした
     AlreadyEnded {
         /// 予約枠の終了時刻
@@ -56,6 +61,10 @@ impl fmt::Display for ReservationError {
                 "予約者本人だけが操作できます（操作しようとした人: {}）",
                 actor.as_str()
             ),
+            ReservationError::AlreadyCancelled => write!(f, "すでに取り消された予約です。"),
+            ReservationError::NoSuchSlot(key) => {
+                write!(f, "この予約にその予約枠はありません（{:?}）。", key)
+            }
             ReservationError::AlreadyEnded { end, at } => {
                 write!(
                     f,

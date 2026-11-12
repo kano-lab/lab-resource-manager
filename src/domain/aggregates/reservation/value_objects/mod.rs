@@ -14,5 +14,5 @@ pub mod ids;
 /// リソース（GPU、部屋など）の値オブジェクト
 pub mod resource;
 
-pub use ids::{ReservationId, ReservedSlotId};
+pub use ids::{OccurrenceKey, ReservationId, ReservedSlotId, Version};
 pub use resource::{Gpu, Resource};

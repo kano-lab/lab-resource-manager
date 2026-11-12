@@ -10,11 +10,15 @@ use std::fmt;
 pub enum RepositoryError {
     /// リソースが見つからない
     NotFound,
+    /// 保存先の版が読んだときと違う、または保存先から消えている
+    ///
+    /// 読んでから書くまでの間に、誰かが変えたか取り消した。
+    Conflict,
     /// 接続エラー
     ConnectionError(String),
     /// 無効なメールアドレス
     InvalidEmail(EmailAddressError),
-    /// SlotViewのドメインルール違反
+    /// 予約のドメインルール違反
     InvalidReservation(ReservationError),
     /// 不明なエラー
     Unknown(String),
@@ -24,6 +28,10 @@ impl fmt::Display for RepositoryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RepositoryError::NotFound => write!(f, "リソースが見つかりません"),
+            RepositoryError::Conflict => write!(
+                f,
+                "読み込んだあとに予約が変更または取り消されました。読み直してからやり直してください"
+            ),
             RepositoryError::ConnectionError(msg) => write!(f, "接続エラー: {}", msg),
             RepositoryError::InvalidEmail(e) => write!(f, "無効なメールアドレス: {}", e),
             RepositoryError::InvalidReservation(e) => {

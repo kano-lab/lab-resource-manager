@@ -2,22 +2,24 @@ use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::{RepositoryError, ReservedSlotQuery};
+use crate::domain::ports::repositories::{
+    RepositoryError, ReservationRepository, ReservedSlotQuery,
+};
 use crate::domain::services::ResourceConflictChecker;
 use std::sync::Arc;
 use tracing::info;
 
 /// 予約枠を更新するユースケース
-pub struct UpdateSlotUseCase<R: ReservedSlotQuery> {
+pub struct UpdateSlotUseCase<R: ReservationRepository + ReservedSlotQuery> {
     repository: Arc<R>,
     conflict_checker: ResourceConflictChecker,
 }
 
-impl<R: ReservedSlotQuery> UpdateSlotUseCase<R> {
+impl<R: ReservationRepository + ReservedSlotQuery> UpdateSlotUseCase<R> {
     /// 新しいUpdateSlotUseCaseインスタンスを作成
     ///
     /// # Arguments
-    /// * `repository` - 予約枠リポジトリ
+    /// * `repository` - 予約を読み書きし、他の予約枠との競合を確かめるリポジトリ
     pub fn new(repository: Arc<R>) -> Self {
         Self {
             repository,
@@ -42,6 +44,7 @@ impl<R: ReservedSlotQuery> UpdateSlotUseCase<R> {
     /// - 指定されたIDの予約枠が見つからない場合
     /// - 操作者が予約者でない場合
     /// - 新しい時間枠が競合する場合
+    /// - 読んだあとに予約が変更または取り消されていた場合（`RepositoryError::Conflict`）
     /// - リポジトリエラー
     pub async fn execute(
         &self,
@@ -54,36 +57,39 @@ impl<R: ReservedSlotQuery> UpdateSlotUseCase<R> {
             return Ok(());
         }
 
-        let mut slot = self
+        let mut reservation = self
             .repository
-            .find_slot(id)
+            .find(id.reservation_id())
             .await?
             .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?;
 
         if let Some(new_period) = new_time_period {
             // 予約者でなければここで断る。競合の判定より先に行い、他人の予約枠の
             // 重なり具合を予約者以外へ見せない
-            slot.reschedule(new_period, requested_by)?;
+            reservation.reschedule_slot(id.key(), new_period.clone(), requested_by)?;
             // 新しい期間が他の予約枠と重ならないか（自分自身は除く）
             self.conflict_checker
                 .check_conflicts(
                     self.repository.as_ref(),
-                    slot.time_period(),
-                    slot.resources(),
-                    Some(slot.id()),
+                    &new_period,
+                    reservation.resources(),
+                    Some(id),
                 )
                 .await?;
         }
 
         if let Some(notes) = new_notes {
-            slot.change_notes(notes, requested_by)?;
+            reservation.change_slot_notes(id.key(), notes, requested_by)?;
         }
 
-        self.repository.save_slot(&slot).await?;
+        self.repository.save(&mut reservation).await?;
+        let slot = reservation
+            .slot(id.key())
+            .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?;
 
         info!(
-            slot_id = %slot.id().as_str(),
-            holder = %slot.holder_email().as_str(),
+            slot_id = %id.as_str(),
+            holder = %reservation.holder_email().as_str(),
             start = %slot.time_period().start(),
             end = %slot.time_period().end(),
             "reserved slot updated"
