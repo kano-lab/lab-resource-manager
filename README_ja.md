@@ -62,6 +62,23 @@ cargo fmt
 cargo clippy
 ```
 
+### Google カレンダーとの契約テスト
+
+Google カレンダーのアダプタが頼っている API の振る舞いは、契約テストで確かめます。
+`cargo test` では偽のゲートウェイを相手に流れ、本物のテスト用カレンダーには必要なときに流します。
+本物で流すには、ほかに何も入れていないカレンダーと、そのカレンダーの「予定の変更」権限を持つ
+サービスアカウントを用意します。
+
+```bash
+LRM_CONTRACT_CALENDAR_ID=xxxx@group.calendar.google.com \
+LRM_CONTRACT_SERVICE_ACCOUNT_KEY=/path/to/service-account-key.json \
+  cargo test --all-features contract_tests -- --ignored
+```
+
+GitHub Actions からは `Calendar Contract` ワークフローを手動で実行します。リポジトリのシークレット
+`LRM_CONTRACT_CALENDAR_ID` と `LRM_CONTRACT_SERVICE_ACCOUNT_KEY`（鍵ファイルの中身）を使い、
+同時に1本だけ流れます。
+
 ## ロードマップ
 
 - [x] リソースベースの通知ルーティング

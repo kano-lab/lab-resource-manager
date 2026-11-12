@@ -69,6 +69,23 @@ cargo fmt
 cargo clippy
 ```
 
+### Google Calendar Contract Tests
+
+The Google Calendar adapter's assumptions about the API are checked by contract tests. They
+run against an in-memory fake with `cargo test`, and against a real test calendar on demand.
+For the real calendar, use a calendar that holds nothing else and a service account that can
+make changes to its events:
+
+```bash
+LRM_CONTRACT_CALENDAR_ID=xxxx@group.calendar.google.com \
+LRM_CONTRACT_SERVICE_ACCOUNT_KEY=/path/to/service-account-key.json \
+  cargo test --all-features contract_tests -- --ignored
+```
+
+The `Calendar Contract` workflow runs the same tests from GitHub Actions. It reads the
+`LRM_CONTRACT_CALENDAR_ID` and `LRM_CONTRACT_SERVICE_ACCOUNT_KEY` (the key file's contents)
+repository secrets, and runs one at a time.
+
 ## Roadmap
 
 - [x] Resource-based notification routing

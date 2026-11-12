@@ -7,8 +7,12 @@ use google_calendar3::{
     CalendarHub,
     api::{Event, Scope},
     common, hyper,
-    hyper_rustls::HttpsConnector,
-    hyper_util::client::legacy::connect::HttpConnector,
+    hyper_rustls::{HttpsConnector, HttpsConnectorBuilder},
+    hyper_util::{
+        client::legacy::{Client, connect::HttpConnector},
+        rt::TokioExecutor,
+    },
+    yup_oauth2,
 };
 
 /// 1ページあたりの最大取得件数（Google Calendar APIの上限値）
@@ -114,7 +118,35 @@ enum ListFilter<'a> {
 }
 
 impl GoogleCalendarEventGateway {
-    pub(super) fn new(hub: CalendarHub<HttpsConnector<HttpConnector>>) -> Self {
+    /// サービスアカウントの鍵でGoogle Calendar APIにつなぐ
+    ///
+    /// # Returns
+    /// ゲートウェイと、サービスアカウントのメールアドレス（アプリが作るイベントの作成者になる）
+    pub(super) async fn connect(
+        service_account_key: &str,
+    ) -> Result<(Self, String), Box<dyn std::error::Error>> {
+        let secret = yup_oauth2::read_service_account_key(service_account_key).await?;
+        let service_account_email = secret.client_email.clone();
+
+        let auth = yup_oauth2::ServiceAccountAuthenticator::builder(secret)
+            .build()
+            .await?;
+
+        let connector = HttpsConnectorBuilder::new()
+            .with_native_roots()?
+            .https_or_http()
+            .enable_http1()
+            .build();
+
+        let client = Client::builder(TokioExecutor::new()).build(connector);
+
+        Ok((
+            Self::new(CalendarHub::new(client, auth)),
+            service_account_email,
+        ))
+    }
+
+    fn new(hub: CalendarHub<HttpsConnector<HttpConnector>>) -> Self {
         Self { hub }
     }
 

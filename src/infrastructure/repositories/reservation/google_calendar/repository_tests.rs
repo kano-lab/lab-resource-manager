@@ -22,7 +22,7 @@ use google_calendar3::api::{Event, EventCreator, EventDateTime};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-const SERVICE_ACCOUNT_EMAIL: &str = "service-account@example.com";
+pub(super) const SERVICE_ACCOUNT_EMAIL: &str = "service-account@example.com";
 const CALENDAR_ID: &str = "thalys-calendar-id";
 
 /// ゲートウェイが受け取った問い合わせ内容
@@ -45,7 +45,7 @@ struct ListQuery {
 /// 繰り返しイベントは実APIと同じく展開せずに返す。回のイベントID
 /// （`繰り返しイベントのID_回の開始時刻`）は、規則どおりの回でも取得・書き換え・削除でき、
 /// 削除した回は`status: cancelled`の回のイベントとして残る。
-struct FakeCalendarEventGateway {
+pub(super) struct FakeCalendarEventGateway {
     events: Vec<Event>,
     queries: Mutex<Vec<ListQuery>>,
     /// insert_eventで受け取ったイベント（calendar_id, event）
@@ -61,7 +61,7 @@ struct FakeCalendarEventGateway {
 }
 
 impl FakeCalendarEventGateway {
-    fn new(events: Vec<Event>) -> Self {
+    pub(super) fn new(events: Vec<Event>) -> Self {
         Self {
             events,
             queries: Mutex::new(Vec::new()),
@@ -252,6 +252,11 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
                 ..Default::default()
             });
         }
+        // 実APIは作ったイベントにiCalUIDと作成時刻を付ける
+        if created.i_cal_uid.is_none() {
+            created.i_cal_uid = created.id.as_ref().map(|id| format!("{id}@google.com"));
+        }
+        created.created = Some(Utc::now());
         created.etag = Some(self.new_etag());
         self.current
             .lock()
@@ -565,7 +570,7 @@ async fn parse_failures_are_reported_once_per_event() {
 
 /// メールアドレスからOSユーザー名を引けるテスト用のIdentityLinkリポジトリ
 #[derive(Default)]
-struct StubIdentityLinkRepository {
+pub(super) struct StubIdentityLinkRepository {
     /// (email, server) -> OSユーザー名
     os_users: Vec<(String, String, String)>,
 }
