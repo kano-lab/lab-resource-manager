@@ -17,9 +17,7 @@ pub fn create() -> SlackView {
             SlackInputBlock::new(
                 pt!("メールアドレス"),
                 SlackInputBlockElement::PlainTextInput(
-                    SlackBlockPlainTextInputElement::new(
-                        SlackActionId::new(ACTION_EMAIL_INPUT.to_string())
-                    )
+                    SlackBlockPlainTextInputElement::new().with_action_id(SlackActionId::new(ACTION_EMAIL_INPUT.to_string()))
                     .with_placeholder(pt!("your-email@gmail.com"))
                 )
             )

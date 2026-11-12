@@ -78,11 +78,9 @@ pub fn create_reserve_modal(config: &ResourceConfig, params: &ReserveModalParams
         SlackInputBlock::new(
             pt!("リソースタイプ"),
             SlackInputBlockElement::RadioButtons(
-                SlackBlockRadioButtonsElement::new(
-                    SlackActionId::new(ACTION_RESERVE_RESOURCE_TYPE.to_string()),
-                    resource_type_options,
-                )
-                .with_initial_option(initial_resource_type),
+                SlackBlockRadioButtonsElement::new(resource_type_options)
+                    .with_action_id(SlackActionId::new(ACTION_RESERVE_RESOURCE_TYPE.to_string()))
+                    .with_initial_option(initial_resource_type),
             ),
         )
         .with_dispatch_action(true),
@@ -103,10 +101,9 @@ pub fn create_reserve_modal(config: &ResourceConfig, params: &ReserveModalParams
         SlackInputBlock::new(
             pt!("備考"),
             SlackInputBlockElement::PlainTextInput(
-                SlackBlockPlainTextInputElement::new(SlackActionId::new(
-                    ACTION_RESERVE_NOTES.to_string(),
-                ))
-                .with_multiline(true),
+                SlackBlockPlainTextInputElement::new()
+                    .with_action_id(SlackActionId::new(ACTION_RESERVE_NOTES.to_string()))
+                    .with_multiline(true),
             ),
         )
         .with_optional(true),
@@ -172,11 +169,10 @@ fn add_gpu_blocks(
         .collect();
 
     // GPU Server選択フィールド
-    let mut server_select_element = SlackBlockStaticSelectElement::new(SlackActionId::new(
-        ACTION_RESERVE_SERVER_SELECT.to_string(),
-    ))
-    .with_placeholder(pt!("サーバーを選択"))
-    .with_options(server_options.clone());
+    let mut server_select_element = SlackBlockStaticSelectElement::new()
+        .with_action_id(SlackActionId::new(ACTION_RESERVE_SERVER_SELECT.to_string()))
+        .with_placeholder(pt!("サーバーを選択"))
+        .with_options(server_options.clone());
 
     // デフォルト値を設定
     // 既に選択されている場合はそれを、そうでない場合は最初のサーバーを選択
@@ -218,10 +214,8 @@ fn add_gpu_blocks(
 
     // GPU Device選択（チェックボックス）
     if !device_options.is_empty() {
-        let mut devices_element = SlackBlockCheckboxesElement::new(
-            SlackActionId::new(ACTION_RESERVE_DEVICES.to_string()),
-            device_options.clone(),
-        );
+        let mut devices_element = SlackBlockCheckboxesElement::new(device_options.clone())
+            .with_action_id(SlackActionId::new(ACTION_RESERVE_DEVICES.to_string()));
 
         // あらかじめ選んでおくデバイスは、表示中の選択肢に含まれるものだけを選ぶ
         // （別サーバーの番号が渡ってもSlackが選択肢と対応づけられないため）
@@ -266,11 +260,10 @@ fn add_room_blocks(blocks: &mut Vec<SlackBlock>, config: &ResourceConfig) {
         .collect();
 
     // Room選択フィールド
-    let mut room_select_element = SlackBlockStaticSelectElement::new(SlackActionId::new(
-        ACTION_RESERVE_ROOM_SELECT.to_string(),
-    ))
-    .with_placeholder(pt!("部屋を選択"))
-    .with_options(room_options.clone());
+    let mut room_select_element = SlackBlockStaticSelectElement::new()
+        .with_action_id(SlackActionId::new(ACTION_RESERVE_ROOM_SELECT.to_string()))
+        .with_placeholder(pt!("部屋を選択"))
+        .with_options(room_options.clone());
 
     // デフォルト値を設定（最初の部屋を選択）
     if let Some(first_room) = config.rooms.first() {
@@ -296,40 +289,36 @@ fn add_datetime_blocks(
     blocks.push(SlackBlock::Input(SlackInputBlock::new(
         pt!("開始日"),
         SlackInputBlockElement::DatePicker(
-            SlackBlockDatePickerElement::new(SlackActionId::new(
-                ACTION_RESERVE_START_DATE.to_string(),
-            ))
-            .with_initial_date(start_date.to_string()),
+            SlackBlockDatePickerElement::new()
+                .with_action_id(SlackActionId::new(ACTION_RESERVE_START_DATE.to_string()))
+                .with_initial_date(start_date.to_string()),
         ),
     )));
 
     blocks.push(SlackBlock::Input(SlackInputBlock::new(
         pt!("開始時刻"),
         SlackInputBlockElement::TimePicker(
-            SlackBlockTimePickerElement::new(SlackActionId::new(
-                ACTION_RESERVE_START_TIME.to_string(),
-            ))
-            .with_initial_time(start_time.to_string()),
+            SlackBlockTimePickerElement::new()
+                .with_action_id(SlackActionId::new(ACTION_RESERVE_START_TIME.to_string()))
+                .with_initial_time(start_time.to_string()),
         ),
     )));
 
     blocks.push(SlackBlock::Input(SlackInputBlock::new(
         pt!("終了日"),
         SlackInputBlockElement::DatePicker(
-            SlackBlockDatePickerElement::new(SlackActionId::new(
-                ACTION_RESERVE_END_DATE.to_string(),
-            ))
-            .with_initial_date(end_date.to_string()),
+            SlackBlockDatePickerElement::new()
+                .with_action_id(SlackActionId::new(ACTION_RESERVE_END_DATE.to_string()))
+                .with_initial_date(end_date.to_string()),
         ),
     )));
 
     blocks.push(SlackBlock::Input(SlackInputBlock::new(
         pt!("終了時刻"),
         SlackInputBlockElement::TimePicker(
-            SlackBlockTimePickerElement::new(SlackActionId::new(
-                ACTION_RESERVE_END_TIME.to_string(),
-            ))
-            .with_initial_time(end_time.to_string()),
+            SlackBlockTimePickerElement::new()
+                .with_action_id(SlackActionId::new(ACTION_RESERVE_END_TIME.to_string()))
+                .with_initial_time(end_time.to_string()),
         ),
     )));
 }

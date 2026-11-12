@@ -1,0 +1,29 @@
+# 依存の更新を自動で提案する
+#
+# 互換範囲の更新は1本のPRにまとめ、メジャー更新は個別のPRにする。
+# Cargoの更新は配布するバイナリに入るため、release-pleaseがパッチリリースを作るよう
+# `fix(deps)`で提案する。GitHub Actionsの更新は`ci`とする。
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: fix(deps)
+    groups:
+      cargo-compatible:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns:
+          - "*"
