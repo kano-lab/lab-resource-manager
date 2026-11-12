@@ -7,13 +7,15 @@
 //! # 本物のカレンダーで流す
 //!
 //! テスト専用のカレンダーと、そのカレンダーの「予定の変更」権限を持つサービスアカウントを
-//! 用意し、次の環境変数を設定して`--ignored`を付けて流す。
+//! 用意し、`.env.contract.example`を`.env.contract`にコピーして値を入れ、`--ignored`を付けて流す。
 //!
 //! ```text
-//! LRM_CONTRACT_CALENDAR_ID=xxxx@group.calendar.google.com \
-//! LRM_CONTRACT_SERVICE_ACCOUNT_KEY=/path/to/service-account-key.json \
-//!   cargo test --all-features contract_tests -- --ignored
+//! cp .env.contract.example .env.contract   # 値を入れる
+//! cargo test --all-features contract_tests -- --ignored
 //! ```
+//!
+//! 環境変数`LRM_CONTRACT_CALENDAR_ID`・`LRM_CONTRACT_SERVICE_ACCOUNT_KEY`が設定されていれば、
+//! そちらを使う（GitHub Actionsではこちら）。
 //!
 //! # 並列に流しても互いに触れない
 //!
@@ -40,6 +42,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use google_calendar3::api::{Event, EventDateTime};
 use std::collections::HashMap;
 use std::future::Future;
+use std::path::Path;
 use std::sync::Arc;
 
 /// 契約テストが作ったイベントの説明欄に入れる印
@@ -74,11 +77,17 @@ impl Calendar {
     }
 
     async fn real() -> Self {
-        let calendar_id = std::env::var("LRM_CONTRACT_CALENDAR_ID")
-            .expect("LRM_CONTRACT_CALENDAR_IDにテスト用カレンダーのIDを設定してください");
-        let key = std::env::var("LRM_CONTRACT_SERVICE_ACCOUNT_KEY").expect(
-            "LRM_CONTRACT_SERVICE_ACCOUNT_KEYにサービスアカウントの鍵ファイルのパスを設定してください",
+        let calendar_id = setting("LRM_CONTRACT_CALENDAR_ID").expect(
+            "LRM_CONTRACT_CALENDAR_IDにテスト用カレンダーのIDを設定してください（.env.contract）",
         );
+        let key = setting("LRM_CONTRACT_SERVICE_ACCOUNT_KEY").expect(
+            "LRM_CONTRACT_SERVICE_ACCOUNT_KEYにサービスアカウントの鍵ファイルのパスを設定してください（.env.contract）",
+        );
+        // 相対パスはリポジトリ直下から数える
+        let key = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(key)
+            .to_string_lossy()
+            .into_owned();
         let (gateway, service_account_email) = GoogleCalendarEventGateway::connect(&key)
             .await
             .expect("サービスアカウントでGoogle Calendar APIにつなげません");
@@ -177,6 +186,25 @@ impl Calendar {
             }
         }
     }
+}
+
+/// 設定を、環境変数から、無ければリポジトリ直下の`.env.contract`から読む
+fn setting(name: &str) -> Option<String> {
+    if let Ok(value) = std::env::var(name)
+        && !value.is_empty()
+    {
+        return Some(value);
+    }
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(".env.contract");
+    std::fs::read_to_string(file)
+        .ok()?
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.starts_with('#'))
+        .filter_map(|line| line.split_once('='))
+        .find(|(key, _)| key.trim() == name)
+        .map(|(_, value)| value.trim().trim_matches('"').to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn holder() -> EmailAddress {
