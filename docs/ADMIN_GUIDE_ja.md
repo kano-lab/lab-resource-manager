@@ -147,6 +147,11 @@ timezone = "Asia/Tokyo"
 created = "{user}が{resource}を{time}使います"
 updated = "{user}が予約を変更: {resource} {time}"
 cancelled = "{user}が予約を取り消し: {resource}"
+recurring_created = "{user}が{resource}を定期予約: {recurrence} {time}"
+recurring_updated = "{user}が定期予約を変更: {resource} {recurrence}"
+recurring_cancelled = "{user}が定期予約を取り消し: {resource} {recurrence}"
+slot_updated = "{user}が定期予約の予約枠を変更: {resource} {time}"
+slot_cancelled = "{user}が定期予約の予約枠を取り消し: {resource} {time}"
 conflict = "{user}が既に{resource}を{time}で予約済みです"
 conflict_item = "👤 {user}\n📅 {time}\n{resource_label}\n{resource}{notes}"
 
@@ -157,8 +162,17 @@ time_style = "smart"         # 時刻表示スタイル
 date_format = "md"           # 日付フォーマット
 ```
 
-`created`/`updated`/`cancelled`は、予約が作られた・変更された（今で終了を含む）・取り消されたときに
-使われます。以前の設定キー`deleted`は`cancelled`として読み込まれます。
+通知は予約（単発予約・定期予約）を単位とし、どのテンプレートを使うかは次のとおりです。
+
+| テンプレート | 使われるとき |
+|---|---|
+| `created`/`updated`/`cancelled` | 単発予約が作られた・変更された（今で終了を含む）・取り消された |
+| `recurring_created`/`recurring_updated`/`recurring_cancelled` | 定期予約が作られた・複数の予約枠に及んで変更された・取り消された |
+| `slot_updated`/`slot_cancelled` | 定期予約の予約枠が1つだけ変更された（今で終了を含む）・取り消された |
+
+定期予約は予約枠の数だけ通知されることはなく、1件にまとめて通知されます。
+定期予約のテンプレートでは`{recurrence}`（「毎週 月・水」などの繰り返しの規則）も使えます。
+このとき`{time}`は初回の予約枠の期間です。以前の設定キー`deleted`は`cancelled`として読み込まれます。
 
 `conflict`は予約リクエストが競合により拒否された際に使われます。
 **単一の競合**の場合のみこのテンプレートが使われます。
@@ -499,12 +513,12 @@ CA証明書を信頼させること自体は受動的な設定で、誰にも新
 | `list_slots` | 今後60日に重なる（進行中を含む）すべての予約枠を一覧表示 |
 | `list_my_slots` | 今後60日に重なる自分の予約枠を一覧表示 |
 | `get_slot` | 予約枠IDを指定して予約枠の詳細を取得 |
-| `get_reservation` | 予約IDを指定して予約の詳細を取得 |
+| `get_reservation` | 予約IDを指定して予約の詳細を取得（定期予約なら繰り返しの規則も） |
 | `create_reservation` | 単発予約を作る（GPUサーバーまたは部屋） |
 | `update_slot` | 自分の予約枠の時間・備考を変更 |
 | `end_slot_early` | 進行中の自分の予約枠を今の時点で終了し、残り時間を解放 |
-| `cancel_slot` | 自分の予約枠を1つ取り消す |
-| `cancel_reservation` | 自分の予約を取り消す |
+| `cancel_slot` | 自分の予約枠を1つ取り消す（定期予約の他の予約枠は残る） |
+| `cancel_reservation` | 自分の予約を丸ごと取り消す（定期予約ならすべての予約枠） |
 
 書き込み系ツールは、呼び出し元のBearerトークンに紐づくメールアドレスを予約者として扱います。
 他人の予約の変更・取り消しは、`/reserve`と同じ認可ルール（予約者本人のみ）により拒否されます。
@@ -615,6 +629,7 @@ change detection pass finished
 
 件数が跳ねたり`elapsed_ms`が伸びていれば、目に見える形で壊れる前に問題を捉えられます。
 `appeared`/`disappeared`は予約枠の増減、`notifications`は実際に送った通知の数です。
+定期予約は予約枠の増減を1件にまとめて伝えるため、`notifications`は増減の数より少なくなりえます。
 
 `RUST_LOG=debug`にすると、各処理の詳細（フォームの解析、モーダルの操作、個別のSlack API呼び出し）も出ます。
 量が多いため、特定の問題を調べるときに使うもので、通常運用向けではありません。

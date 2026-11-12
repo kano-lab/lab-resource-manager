@@ -107,14 +107,19 @@ impl SlackSender {
     /// メッセージブロックを構築（イベントに応じてボタンを追加）
     fn build_message_blocks(message: &str, context: &NotificationContext) -> Vec<SlackBlock> {
         // ボタンは予約枠に対する操作（更新・今で終了・取り消し）なので、対象の予約枠が
-        // まだ残っている場合にだけ付ける。単発予約は予約枠を1つだけ持つので、
-        // 予約のIDがそのまま予約枠のIDになる
+        // ちょうど1つに決まり、まだ残っている場合にだけ付ける。単発予約は予約枠を1つだけ
+        // 持つので、予約のIDがそのまま予約枠のIDになる。定期予約全体を指す通知からは
+        // 対象の予約枠を決められないため付けない
         let actionable_slot_id = match context.event {
             NotificationEvent::ReservationCreated(Reservation::OneTime(reservation))
             | NotificationEvent::ReservationUpdated(Reservation::OneTime(reservation)) => {
                 Some(reservation.id().as_str())
             }
-            NotificationEvent::ReservationCancelled(_) => None,
+            NotificationEvent::SlotUpdated(slot) => Some(slot.id().as_str()),
+            NotificationEvent::ReservationCreated(Reservation::Recurring(_))
+            | NotificationEvent::ReservationUpdated(Reservation::Recurring(_))
+            | NotificationEvent::ReservationCancelled(_)
+            | NotificationEvent::SlotCancelled(_) => None,
         };
 
         let blocks_json = if let Some(slot_id) = actionable_slot_id {

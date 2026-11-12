@@ -8,7 +8,8 @@ use tracing::info;
 
 /// 予約を取り消すユースケース
 ///
-/// 予約を取り消すと、その予約枠も無くなる。
+/// 定期予約を取り消すと、そのすべての予約枠が無くなる。予約枠を1つだけ取り消すのは
+/// `CancelSlotUseCase`が担う。
 pub struct CancelReservationUseCase<R: ReservationRepository> {
     repository: Arc<R>,
     authorization_policy: ReservationAuthorizationPolicy,
@@ -55,6 +56,7 @@ impl<R: ReservationRepository> CancelReservationUseCase<R> {
 
         info!(
             reservation_id = %id.as_str(),
+            kind = ?reservation.kind(),
             holder = %reservation.holder_email().as_str(),
             requested_by = %requested_by.as_str(),
             "reservation cancelled"
@@ -68,7 +70,7 @@ impl<R: ReservationRepository> CancelReservationUseCase<R> {
 mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::{
-        ReservedSlot,
+        RecurringReservation, ReservedSlot,
         value_objects::{Gpu, Resource, TimePeriod},
     };
     use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
@@ -93,6 +95,24 @@ mod tests {
         .unwrap()
     }
 
+    /// 毎週の定期予約と、その予約枠を3つ登録する
+    async fn weekly(repository: &MockReservationRepository) -> ReservationId {
+        let id = ReservationId::from_string("weekly".to_string());
+        let slots: Vec<ReservedSlot> = [1, 8, 15]
+            .into_iter()
+            .map(|days| slot_in(days).of_recurring_reservation(id.clone()))
+            .collect();
+        for slot in &slots {
+            repository.save_slot(slot).await.unwrap();
+        }
+        repository.put_recurring_reservation(RecurringReservation::from_first_slot(
+            id.clone(),
+            &slots[0],
+            None,
+        ));
+        id
+    }
+
     async fn remaining_slots(repository: &MockReservationRepository) -> usize {
         let window = TimePeriod::new(Utc::now(), Utc::now() + Duration::days(30)).unwrap();
         repository
@@ -100,6 +120,21 @@ mod tests {
             .await
             .unwrap()
             .len()
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_recurring_reservation_removes_every_slot() {
+        let repository = Arc::new(MockReservationRepository::new());
+        let id = weekly(&repository).await;
+        let usecase = CancelReservationUseCase::new(repository.clone());
+
+        usecase
+            .execute(&id, &email("holder@example.com"))
+            .await
+            .unwrap();
+
+        assert_eq!(remaining_slots(&repository).await, 0);
+        assert!(repository.find_reservation(&id).await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -120,12 +155,11 @@ mod tests {
     #[tokio::test]
     async fn only_the_holder_can_cancel_a_reservation() {
         let repository = Arc::new(MockReservationRepository::new());
-        let slot = slot_in(1);
-        repository.save_slot(&slot).await.unwrap();
+        let id = weekly(&repository).await;
         let usecase = CancelReservationUseCase::new(repository.clone());
 
         let error = usecase
-            .execute(slot.reservation_id(), &email("someone@example.com"))
+            .execute(&id, &email("someone@example.com"))
             .await
             .unwrap_err();
 
@@ -135,7 +169,7 @@ mod tests {
         );
         assert_eq!(
             remaining_slots(&repository).await,
-            1,
+            3,
             "拒否された操作で消えてはいけない"
         );
     }

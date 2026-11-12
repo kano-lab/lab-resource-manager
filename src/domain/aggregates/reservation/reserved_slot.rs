@@ -1,3 +1,4 @@
+use super::entity::ReservationKind;
 use super::errors::ReservationError;
 use super::value_objects::*;
 use crate::domain::common::EmailAddress;
@@ -6,13 +7,16 @@ use chrono::{DateTime, Utc};
 /// 予約枠
 ///
 /// 予約が実際に押さえている、ひとつながりの時間。リソースと期間を持つ。
-/// 単発予約は予約枠を1つ持つ。
+/// 単発予約は予約枠を1つ、定期予約は繰り返しの数だけ持つ。
 ///
 /// 競合の判定、空きの計算、使われていない予約枠の検知、今で終了は、予約枠に対して行う。
+/// 定期予約の予約枠を1つ変更・取り消しても、その予約枠は定期予約に属したままであり、
+/// 他の予約枠には及ばない。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReservedSlot {
     id: ReservedSlotId,
     reservation_id: ReservationId,
+    reservation_kind: ReservationKind,
     holder_email: EmailAddress,
     time_period: TimePeriod,
     resources: Vec<Resource>,
@@ -49,6 +53,8 @@ impl ReservedSlot {
 
     /// 単発予約の予約枠を、既存のIDで再構築する（リポジトリからの再構築用）
     ///
+    /// 定期予約の予約枠として再構築する場合は、続けて[`Self::of_recurring_reservation`]を呼ぶ。
+    ///
     /// # Arguments
     /// * `id` - 既存の予約枠ID
     /// * `holder_email` - 予約者のメールアドレス
@@ -71,12 +77,23 @@ impl ReservedSlot {
 
         Ok(Self {
             reservation_id: ReservationId::from_string(id.as_str().to_string()),
+            reservation_kind: ReservationKind::OneTime,
             id,
             holder_email,
             time_period,
             resources,
             notes,
         })
+    }
+
+    /// 定期予約の予約枠として位置づける（リポジトリからの再構築用）
+    ///
+    /// # Arguments
+    /// * `reservation_id` - この予約枠が属する定期予約のID
+    pub fn of_recurring_reservation(mut self, reservation_id: ReservationId) -> Self {
+        self.reservation_id = reservation_id;
+        self.reservation_kind = ReservationKind::Recurring;
+        self
     }
 
     /// 予約枠IDを取得
@@ -87,6 +104,11 @@ impl ReservedSlot {
     /// この予約枠が属する予約のIDを取得
     pub fn reservation_id(&self) -> &ReservationId {
         &self.reservation_id
+    }
+
+    /// この予約枠が属する予約の種類を取得
+    pub fn reservation_kind(&self) -> ReservationKind {
+        self.reservation_kind
     }
 
     /// 予約者のメールアドレスを取得
@@ -229,10 +251,28 @@ mod tests {
         let start = Utc::now();
         let slot = slot_running_from(start, start + Duration::hours(1));
 
+        assert_eq!(slot.reservation_kind(), ReservationKind::OneTime);
         assert_eq!(
             slot.reservation_id().as_str(),
             slot.id().as_str(),
             "単発予約と予約枠は同じ識別子を持つ"
+        );
+    }
+
+    #[test]
+    fn ending_one_slot_early_keeps_it_part_of_its_recurring_reservation() {
+        let start = Utc::now() - Duration::hours(1);
+        let weekly = ReservationId::from_string("weekly-meeting".to_string());
+        let mut slot = slot_running_from(start, start + Duration::hours(4))
+            .of_recurring_reservation(weekly.clone());
+
+        slot.end_early(start + Duration::minutes(30)).unwrap();
+
+        assert_eq!(slot.reservation_kind(), ReservationKind::Recurring);
+        assert_eq!(
+            slot.reservation_id(),
+            &weekly,
+            "締めるのはこの予約枠だけで、定期予約から外れるわけではない"
         );
     }
 

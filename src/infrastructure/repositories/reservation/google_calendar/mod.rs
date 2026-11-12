@@ -1,6 +1,7 @@
 //! Google Calendar APIを使用した予約リポジトリ実装
 
 mod event_gateway;
+mod recurrence;
 mod repository;
 #[cfg(test)]
 mod repository_tests;

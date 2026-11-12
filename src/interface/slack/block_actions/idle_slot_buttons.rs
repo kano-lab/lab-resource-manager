@@ -144,7 +144,7 @@ where
         .execute(slot_id, requested_by)
         .await
     {
-        Ok(()) => "✅ 予約を取り消しました。".to_string(),
+        Ok(cancelled) => reservation_failure::cancelled_message(&cancelled),
         Err(failure) => {
             warn!(
                 slot_id = %slot_id.as_str(),

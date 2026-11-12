@@ -3,7 +3,7 @@ use crate::domain::aggregates::reservation::{Reservation, ReservationId};
 use crate::domain::ports::repositories::{RepositoryError, ReservationRepository};
 use std::sync::Arc;
 
-/// IDで予約を取得するユースケース
+/// IDで予約（単発予約・定期予約）を取得するユースケース
 pub struct GetReservationUseCase<R: ReservationRepository> {
     repository: Arc<R>,
 }

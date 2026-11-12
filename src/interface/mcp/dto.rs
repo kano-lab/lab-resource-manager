@@ -3,12 +3,33 @@
 //! ドメインエンティティはserde非依存のため、JSON出力専用のDTOをここに定義する。
 
 use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
-use crate::domain::aggregates::reservation::{Reservation, ReservedSlot};
+use crate::domain::aggregates::reservation::{
+    RecurrenceEnd, RecurrenceFrequency, RecurrenceRule, Reservation, ReservationKind, ReservedSlot,
+};
 use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::infrastructure::config::ResourceConfig;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, Weekday};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+/// 予約の種類の出力用表現
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReservationKindDto {
+    /// 単発予約
+    OneTime,
+    /// 定期予約
+    Recurring,
+}
+
+impl From<ReservationKind> for ReservationKindDto {
+    fn from(kind: ReservationKind) -> Self {
+        match kind {
+            ReservationKind::OneTime => Self::OneTime,
+            ReservationKind::Recurring => Self::Recurring,
+        }
+    }
+}
 
 /// 予約枠の出力用DTO
 #[derive(Debug, Serialize)]
@@ -17,8 +38,10 @@ pub struct SlotDto {
     pub id: String,
     /// この予約枠が属する予約のID（`get_reservation`・`cancel_reservation`に指定できる）
     ///
-    /// 単発予約では予約枠IDと同じ値になる。
+    /// 単発予約では予約枠IDと同じ値になる。同じ値を持つ予約枠は、同じ定期予約に属する。
     pub reservation_id: String,
+    /// この予約枠が属する予約の種類
+    pub reservation_kind: ReservationKindDto,
     pub holder_email: String,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
@@ -31,12 +54,62 @@ impl From<&ReservedSlot> for SlotDto {
         Self {
             id: slot.id().as_str().to_string(),
             reservation_id: slot.reservation_id().as_str().to_string(),
+            reservation_kind: slot.reservation_kind().into(),
             holder_email: slot.holder_email().as_str().to_string(),
             start: slot.time_period().start(),
             end: slot.time_period().end(),
             resources: slot.resources().iter().map(|r| r.to_string()).collect(),
             notes: slot.notes().cloned(),
         }
+    }
+}
+
+/// 繰り返しの規則の出力用DTO
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct RecurrenceDto {
+    /// 繰り返しの単位（"daily"・"weekly"・"monthly"・"yearly"）
+    pub frequency: &'static str,
+    /// 何単位ごとに繰り返すか
+    pub interval: u32,
+    /// 繰り返す曜日（"mon"〜"sun"、指定がなければ空）
+    pub weekdays: Vec<&'static str>,
+    /// この時刻まで繰り返す（終わりが回数で決まる、または決まっていない場合は`null`）
+    pub until: Option<DateTime<Utc>>,
+    /// この回数まで繰り返す（終わりが時刻で決まる、または決まっていない場合は`null`）
+    pub count: Option<u32>,
+}
+
+impl From<&RecurrenceRule> for RecurrenceDto {
+    fn from(rule: &RecurrenceRule) -> Self {
+        let (until, count) = match rule.end() {
+            RecurrenceEnd::Never => (None, None),
+            RecurrenceEnd::Until(until) => (Some(until), None),
+            RecurrenceEnd::AfterOccurrences(count) => (None, Some(count)),
+        };
+        Self {
+            frequency: match rule.frequency() {
+                RecurrenceFrequency::Daily => "daily",
+                RecurrenceFrequency::Weekly => "weekly",
+                RecurrenceFrequency::Monthly => "monthly",
+                RecurrenceFrequency::Yearly => "yearly",
+            },
+            interval: rule.interval(),
+            weekdays: rule.weekdays().iter().map(weekday_name).collect(),
+            until,
+            count,
+        }
+    }
+}
+
+fn weekday_name(weekday: &Weekday) -> &'static str {
+    match weekday {
+        Weekday::Mon => "mon",
+        Weekday::Tue => "tue",
+        Weekday::Wed => "wed",
+        Weekday::Thu => "thu",
+        Weekday::Fri => "fri",
+        Weekday::Sat => "sat",
+        Weekday::Sun => "sun",
     }
 }
 
@@ -53,6 +126,17 @@ pub enum ReservationDto {
         resources: Vec<String>,
         notes: Option<String>,
     },
+    /// 定期予約
+    Recurring {
+        id: String,
+        holder_email: String,
+        resources: Vec<String>,
+        notes: Option<String>,
+        /// 初回の予約枠の期間（各予約枠の時刻と長さはこれに従う）
+        first_slot: PeriodDto,
+        /// 繰り返しの規則（カレンダーの指定を読み取れなかった場合は`null`）
+        recurrence: Option<RecurrenceDto>,
+    },
 }
 
 impl From<&Reservation> for ReservationDto {
@@ -66,6 +150,14 @@ impl From<&Reservation> for ReservationDto {
                 end: one_time.time_period().end(),
                 resources: resources(one_time.resources()),
                 notes: one_time.notes().cloned(),
+            },
+            Reservation::Recurring(recurring) => Self::Recurring {
+                id: recurring.id().as_str().to_string(),
+                holder_email: recurring.holder_email().as_str().to_string(),
+                resources: resources(recurring.resources()),
+                notes: recurring.notes().cloned(),
+                first_slot: PeriodDto::from(recurring.first_slot_period()),
+                recurrence: recurring.rule().map(RecurrenceDto::from),
             },
         }
     }

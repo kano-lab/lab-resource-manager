@@ -1,5 +1,5 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::reservation::ReservedSlotId;
+use crate::domain::aggregates::reservation::{ReservedSlot, ReservedSlotId};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{RepositoryError, ReservationRepository};
 use crate::domain::services::{AuthorizationPolicy, ReservationAuthorizationPolicy};
@@ -8,7 +8,8 @@ use tracing::info;
 
 /// 予約枠を取り消すユースケース
 ///
-/// 単発予約の予約枠を取り消すと、その単発予約も無くなる。
+/// 単発予約の予約枠を取り消すと、その単発予約も無くなる。定期予約の予約枠を取り消しても、
+/// 定期予約と他の予約枠は残る。定期予約を丸ごと取り消すのは`CancelReservationUseCase`が担う。
 pub struct CancelSlotUseCase<R: ReservationRepository> {
     repository: Arc<R>,
     authorization_policy: ReservationAuthorizationPolicy,
@@ -28,6 +29,9 @@ impl<R: ReservationRepository> CancelSlotUseCase<R> {
 
     /// 予約枠を取り消す
     ///
+    /// # Returns
+    /// 取り消した予約枠（どの予約に属していたかを、呼び出し側が伝えられるように）
+    ///
     /// # Arguments
     /// * `id` - 予約枠ID
     /// * `requested_by` - 操作者のメールアドレス（権限チェック用）
@@ -40,7 +44,7 @@ impl<R: ReservationRepository> CancelSlotUseCase<R> {
         &self,
         id: &ReservedSlotId,
         requested_by: &EmailAddress,
-    ) -> Result<(), ApplicationError> {
+    ) -> Result<ReservedSlot, ApplicationError> {
         let slot = self
             .repository
             .find_slot(id)
@@ -63,6 +67,6 @@ impl<R: ReservationRepository> CancelSlotUseCase<R> {
             "reserved slot cancelled"
         );
 
-        Ok(())
+        Ok(slot)
     }
 }

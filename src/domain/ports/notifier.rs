@@ -1,6 +1,6 @@
 // NOTE: これ以上肥大化するようであればnotifierディレクトリを作成してその中に適宜分割する
 use crate::domain::{
-    aggregates::reservation::{Reservation, value_objects::Resource},
+    aggregates::reservation::{Reservation, ReservedSlot, value_objects::Resource},
     common::EmailAddress,
     errors::DomainError,
     ports::PortError,
@@ -10,15 +10,24 @@ use std::fmt;
 
 /// 通知イベントの種類
 ///
-/// 予約は作る・取り消すの単位であり、通知も予約を単位とする。
+/// 予約は作る・取り消すの単位であり、通知も予約を単位とする。定期予約を1件作れば、
+/// 予約枠がいくつあっても1件として伝える。定期予約の予約枠が1つだけ変わったときに限り、
+/// その予約枠を単位として伝える。
 #[derive(Debug, Clone)]
 pub enum NotificationEvent {
     /// 予約が作られた
     ReservationCreated(Reservation),
-    /// 予約が変更された（予約枠の変更や今で終了を含む）
+    /// 予約が変更された
+    ///
+    /// 単発予約では、その予約枠の変更や今で終了を含む。定期予約では、時間帯や
+    /// 繰り返しの規則の変更、途中からの打ち切りなど、複数の予約枠に及ぶ変更を指す。
     ReservationUpdated(Reservation),
     /// 予約が取り消された
     ReservationCancelled(Reservation),
+    /// 定期予約の予約枠が1つだけ変更された（今で終了を含む）
+    SlotUpdated(ReservedSlot),
+    /// 定期予約の予約枠が1つだけ取り消された
+    SlotCancelled(ReservedSlot),
 }
 
 impl NotificationEvent {
@@ -28,6 +37,7 @@ impl NotificationEvent {
             Self::ReservationCreated(reservation)
             | Self::ReservationUpdated(reservation)
             | Self::ReservationCancelled(reservation) => reservation.holder_email(),
+            Self::SlotUpdated(slot) | Self::SlotCancelled(slot) => slot.holder_email(),
         }
     }
 
@@ -37,15 +47,17 @@ impl NotificationEvent {
             Self::ReservationCreated(reservation)
             | Self::ReservationUpdated(reservation)
             | Self::ReservationCancelled(reservation) => reservation.resources(),
+            Self::SlotUpdated(slot) | Self::SlotCancelled(slot) => slot.resources(),
         }
     }
 
-    /// イベントの対象の予約のID
+    /// イベントの対象（予約または予約枠）のID
     pub fn subject_id(&self) -> &str {
         match self {
             Self::ReservationCreated(reservation)
             | Self::ReservationUpdated(reservation)
             | Self::ReservationCancelled(reservation) => reservation.id().as_str(),
+            Self::SlotUpdated(slot) | Self::SlotCancelled(slot) => slot.id().as_str(),
         }
     }
 }
