@@ -1,12 +1,13 @@
 use crate::domain::aggregates::identity_link::entity::IdentityLink;
-use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
+use crate::domain::aggregates::reservation::ReservationEvent;
+use crate::domain::ports::notifier::NotificationError;
 use crate::infrastructure::config::NotificationCustomization;
 use async_trait::async_trait;
 
 /// 通知送信に必要なコンテキスト情報
 pub struct NotificationContext<'a> {
     /// 通知イベント
-    pub event: &'a NotificationEvent,
+    pub event: &'a ReservationEvent,
     /// ユーザーのID紐付け情報（オプション）
     pub identity_link: Option<&'a IdentityLink>,
     /// タイムゾーン（オプション）

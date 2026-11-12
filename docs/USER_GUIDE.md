@@ -3,6 +3,7 @@
 ## Table of Contents
 
 - [Introduction](#introduction)
+  - [Reservations and Reserved Slots](#reservations-and-reserved-slots)
 - [Getting Started](#getting-started)
   - [1. Register Your Email Address](#1-register-your-email-address)
   - [2. Reserve a Resource](#2-reserve-a-resource)
@@ -10,7 +11,7 @@
 - [Notifications](#notifications)
   - [Notification Content](#notification-content)
   - [Buttons on Notification Messages](#buttons-on-notification-messages)
-  - [When a Reservation Goes Unused](#when-a-reservation-goes-unused)
+  - [When a Reserved Slot Goes Unused](#when-a-reserved-slot-goes-unused)
 - [Using AI Agents via MCP (Optional)](#using-ai-agents-via-mcp-optional)
 - [Slack Command Reference](#slack-command-reference)
   - [`/register-calendar`](#register-calendar)
@@ -28,6 +29,20 @@ There are two ways to reserve a resource: use the `/reserve` command in Slack to
 produce the same kind of reservation, so feel free to stick with whichever one you like.
 
 The full list of commands is in the [Slack Command Reference](#slack-command-reference) at the end.
+
+### Reservations and Reserved Slots
+
+This guide keeps these words apart:
+
+| Word | Meaning |
+| --- | --- |
+| Reservation | A promise to hold resources for some time. It is what you create and cancel |
+| One-time reservation | A reservation for a single period |
+| Reserved slot | A stretch of time a reservation actually holds. A one-time reservation has one |
+
+A reserved slot is time you have held with a reservation, not an open slot waiting to be
+booked. Overlap checks, unused notices, and "End now" work on reserved slots. For a one-time
+reservation, the reservation and its slot are the same thing.
 
 ## Getting Started
 
@@ -131,7 +146,7 @@ Lab Meeting
 
 ## Notifications
 
-The system periodically monitors resource usage in the calendar app and sends notifications to the
+The system periodically checks the reservations in the calendar app and sends notifications to the
 configured Slack channels when changes are detected.
 
 ### Notification Content
@@ -148,20 +163,20 @@ for your reservations, making it easier to notice notifications.
 
 ### Buttons on Notification Messages
 
-Reservation notifications carry buttons for acting on your own reservations.
+Reservation notifications carry buttons for acting on that reserved slot.
 
-- **🔄 Update**: Change the time or the notes of the reservation
-- **⏹️ End now**: End a running reservation at this moment and open the remaining time to
-  others. The time you actually used stays on record
-- **❌ Cancel**: Drop the reservation entirely, leaving no record of the time used
+- **🔄 更新 (Update)**: Change the time or the notes of the reserved slot
+- **⏹️ 今で終了 (End now)**: End a running reserved slot at this moment and open the remaining
+  time to others. The time you actually used stays on record
+- **❌ 取り消す (Cancel)**: Drop the reserved slot entirely, leaving no record of the time used
 
-Use "⏹️ End now" when you finish earlier than planned, and "❌ Cancel" when you are not
-going to use the resource at all. You can only act on reservations you own.
+Use "End now" when you finish earlier than planned, and "Cancel" when you are not going to use
+the resource at all. You can only act on your own reservations.
 
-### When a Reservation Goes Unused
+### When a Reserved Slot Goes Unused
 
 When GPU usage monitoring is enabled, the bot sends you a direct message when a
-GPU you reserved has gone unused for a while. There are two cases:
+GPU in your reserved slot has gone unused for a while. There are two cases:
 
 - **None of your processes are there**: nothing of yours is running on the GPU you reserved
 - **Held without computing**: your processes are running and GPU memory is allocated, but no
@@ -176,30 +191,29 @@ GPUs are judged one at a time. Reserve eight and run one, and you hear about the
 If you are still using the rest, leave things as they are; if you are done with all of them,
 you can end the reservation and take out a smaller one.
 
-- **⏹️ End now**: End the reservation at that moment and open the remaining time to others
-  (the time you used stays on record)
-- **✅ Still using it**: You are about to use it — you won't be told about this reservation for a while
-- **❌ Cancel**: Drop the reservation entirely
+- **⏹️ 今で終了する (End now)**: End the reserved slot at that moment and open the remaining time
+  to others (the time you used stays on record)
+- **✅ まだ使う (Still using it)**: You are about to use it — you won't be told about this slot for a while
+- **❌ 予約を取り消す (Cancel the reservation)**: Drop the reservation entirely
 
-This is not meant to rush you. It exists so a reservation you held and forgot about doesn't
+This is not meant to rush you. It exists so a reserved slot you held and forgot about doesn't
 keep others waiting. If you still intend to use it, press "✅ Still using it" and carry on —
 though the quiet lasts a while rather than forever. If it still goes unused after that, you
 will hear about it again.
 
 Whose processes they are does not matter: computation running inside Docker or any other
-container still counts as your reservation being used.
+container still counts as your reserved slot being used.
 
-Some reservations are never reported:
+Some reserved slots are never reported:
 
-- Reservations on a server that cannot be observed (without a report, whether it is in use
-  is unknown)
-- Meeting room reservations
-- Reservations that are about to end
+- Slots on a server that cannot be observed (without a report, whether it is in use is unknown)
+- Meeting room slots
+- Slots that are about to end
 
 ## Using AI Agents via MCP (Optional)
 
 If the MCP (Model Context Protocol) server is enabled, you can let agents like
-Claude Code view, create, update, end early, and cancel reservations directly on your
+Claude Code view, create, change, end early, and cancel reservations directly on your
 behalf, without going through Slack for every request.
 
 ### Get Your Access Token
@@ -236,20 +250,20 @@ Ask your admin for the exact URL (host, port, and whether it's `http://` or `htt
 
 ### What You Can Do
 
-- List all upcoming reservations, or just your own
-- Look up a reservation by ID
-- Create a new reservation (GPU server or meeting room)
-- Update the time or notes on a reservation you own
-- End a running reservation of yours early, releasing the remaining time
-- Cancel a reservation you own
 - List the resources that can be reserved (GPU servers with their device numbers, meeting rooms)
 - Check when each resource is free in a given period
+- List all upcoming reserved slots, or just your own
+- Look up a reserved slot by ID
+- Create a one-time reservation (GPU server or meeting room)
+- Change the time or notes of one of your reserved slots
+- End one of your running reserved slots early, releasing the remaining time
+- Cancel one of your reserved slots
 
-Ending early shortens the reservation to the current time, so the time you used stays on
-record. Cancel instead when the reservation should not have existed at all.
+Ending early shortens the reserved slot to the current time, so the time you used stays on
+record. Cancel instead when the slot should not have existed at all.
 
-You can only update, end early, or cancel reservations you own yourself — the same rule
-that applies to `/reserve` in Slack.
+You can only change, end early, or cancel your own reservations — the same rule that applies
+to `/reserve` in Slack.
 
 ## Slack Command Reference
 

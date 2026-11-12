@@ -21,7 +21,7 @@
 /// ポート共通のエラー定義
 pub mod error;
 /// 使われていない予約の通知ポート
-pub mod idle_reservation_notifier;
+pub mod idle_reserved_slot_notifier;
 /// 通知サービスポート
 pub mod notifier;
 /// リポジトリポート
@@ -36,8 +36,8 @@ pub mod resource_usage_observer;
 pub mod unauthorized_usage_notifier;
 
 pub use error::PortError;
-pub use idle_reservation_notifier::{IdleEvidence, IdleReservation, IdleReservationNotifier};
-pub use notifier::{NotificationError, NotificationEvent, Notifier};
+pub use idle_reserved_slot_notifier::{IdleEvidence, IdleReservedSlot, IdleReservedSlotNotifier};
+pub use notifier::{NotificationError, Notifier};
 pub use reservation_proposal::{ReservationProposal, ReservationProposalNotifier};
 pub use resource_collection_access::{
     ResourceCollectionAccessError, ResourceCollectionAccessService,

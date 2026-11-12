@@ -1,5 +1,53 @@
 # Migration Guide
 
+## Reservation Vocabulary (v3.0.0)
+
+v3.0.0 rebuilds reservations around the words "reservation" and "reserved slot".
+Reservations stored in the calendar, `resources.toml`, and environment
+variables work unchanged. Three things affect members and operators.
+
+### MCP Tool Names
+
+Agents re-read the tool list on every connection, so usually nothing needs doing. Update any
+configuration or prompt that names tools explicitly.
+
+| Before | v3.0.0 |
+| --- | --- |
+| `list_all_reservations` | `list_reserved_slots` |
+| `list_my_reservations` | `list_my_reserved_slots` |
+| `get_reservation` | `get_reserved_slot` (gets a reserved slot) |
+| `update_reservation` | `update_reserved_slot` |
+| `release_reservation_early` | `end_reserved_slot_early` |
+| `cancel_reservation` | `cancel_reserved_slot` (cancels one reserved slot) |
+
+`cancel_reserved_slot` cancels one reserved slot, as `cancel_reservation` used to.
+
+### Notification Template Keys
+
+The template for cancelling a reservation is renamed from `deleted` to `cancelled`.
+`deleted` is still read, but switching to `cancelled` is recommended.
+
+### Log Field Names
+
+The log field `usage_id` is now `reserved_slot_id` (a reserved slot) or `reservation_id` (a
+reservation), and `owner` is now `holder`. The summary lines of each pass read:
+
+```text
+reconcile pass finished
+  observed=6 reserved_slots_in_progress=5 matched_to_a_reserved_slot=5
+  unreserved_sessions=1 failures=0 elapsed_ms=412
+idle reserved slot pass finished
+  reserved_slots_in_progress=5 servers_observed=3 absent=0 held=1 held_partially=0
+  notified=1 withheld=0 unreachable=0 failures=0 elapsed_ms=95
+change detection pass finished
+  reservations=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
+```
+
+`reservations_in_progress` is now `reserved_slots_in_progress`, `matched_to_a_reservation` is now
+`matched_to_a_reserved_slot`, and `idle reservation pass finished` is now `idle reserved slot pass finished`.
+
+Update any journalctl filters that rely on these fields.
+
 ## Storage Configuration Schema Change (v2.0.0)
 
 v2.0.0 introduces a breaking change to the `resources.toml` configuration format: calendar

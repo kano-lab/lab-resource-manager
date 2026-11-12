@@ -10,8 +10,8 @@
 
 use super::days::DayOption;
 use super::{context, day_actions, format_resource, section};
-use crate::domain::aggregates::resource_usage::value_objects::TimePeriod;
-use crate::domain::services::resource_usage::availability::ResourceAvailability;
+use crate::domain::common::TimePeriod;
+use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::infrastructure::notifier::formatter::to_zoned;
 use chrono::NaiveDate;
 use slack_morphism::prelude::*;
@@ -131,10 +131,10 @@ fn format_period(period: &TimePeriod, window: &TimePeriod, timezone: Option<&str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-    use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::EmailAddress;
-    use crate::domain::services::resource_usage::availability::calculate;
+    use crate::domain::read_models::ReservedSlotView;
+    use crate::domain::services::reservation::availability::calculate;
     use chrono::{DateTime, TimeZone, Utc};
 
     const TOKYO: Option<&str> = Some("Asia/Tokyo");
@@ -165,8 +165,8 @@ mod tests {
         resources: Vec<Resource>,
         from: DateTime<Utc>,
         to: DateTime<Utc>,
-    ) -> ResourceUsage {
-        ResourceUsage::new(
+    ) -> ReservedSlotView {
+        ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new("sato@example.com".to_string()).unwrap(),
             TimePeriod::new(from, to).unwrap(),
             resources,
@@ -177,10 +177,10 @@ mod tests {
 
     fn availabilities(
         resources: &[Resource],
-        usages: &[ResourceUsage],
+        slots: &[ReservedSlotView],
         window: &TimePeriod,
     ) -> Vec<ResourceAvailability> {
-        calculate(resources, window, usages)
+        calculate(resources, window, slots)
     }
 
     /// メッセージに載っている文言をつないで取り出す
@@ -234,8 +234,8 @@ mod tests {
     #[test]
     fn a_gap_touching_the_start_of_the_day_drops_its_opening_time() {
         let window = whole_day();
-        let usages = vec![reservation(vec![gpu(0)], jst(3, 13), jst(3, 17))];
-        let availabilities = availabilities(&[gpu(0)], &usages, &window);
+        let slots = vec![reservation(vec![gpu(0)], jst(3, 13), jst(3, 17))];
+        let availabilities = availabilities(&[gpu(0)], &slots, &window);
 
         let text = rendered(&build(
             &availabilities,
@@ -255,11 +255,11 @@ mod tests {
     #[test]
     fn a_gap_in_the_middle_carries_both_times() {
         let window = whole_day();
-        let usages = vec![
+        let slots = vec![
             reservation(vec![gpu(0)], jst(3, 0), jst(3, 9)),
             reservation(vec![gpu(0)], jst(3, 15), jst(4, 0)),
         ];
-        let availabilities = availabilities(&[gpu(0)], &usages, &window);
+        let availabilities = availabilities(&[gpu(0)], &slots, &window);
 
         let text = rendered(&build(
             &availabilities,
@@ -276,8 +276,8 @@ mod tests {
     #[test]
     fn resources_with_no_gap_are_named_at_the_end_instead_of_listed() {
         let window = whole_day();
-        let usages = vec![reservation(vec![gpu(1)], jst(3, 0), jst(4, 0))];
-        let availabilities = availabilities(&[gpu(0), gpu(1)], &usages, &window);
+        let slots = vec![reservation(vec![gpu(1)], jst(3, 0), jst(4, 0))];
+        let availabilities = availabilities(&[gpu(0), gpu(1)], &slots, &window);
 
         let text = rendered(&build(
             &availabilities,
@@ -299,8 +299,8 @@ mod tests {
     #[test]
     fn a_fully_booked_day_says_so() {
         let window = whole_day();
-        let usages = vec![reservation(vec![gpu(0)], jst(3, 0), jst(4, 0))];
-        let availabilities = availabilities(&[gpu(0)], &usages, &window);
+        let slots = vec![reservation(vec![gpu(0)], jst(3, 0), jst(4, 0))];
+        let availabilities = availabilities(&[gpu(0)], &slots, &window);
 
         let text = rendered(&build(
             &availabilities,

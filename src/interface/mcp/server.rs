@@ -1,26 +1,25 @@
 //! LRM MCPサーバー
 //!
 //! 既存のユースケース層をそのまま呼び出す薄いアダプタ。新しい業務ロジックは持たない。
+//!
+//! ツールの名前はユビキタス言語に従う。予約は作る・取り消すの単位、
+//! 予約枠は予約が実際に押さえている時間で、一覧・更新・今で終了は予約枠に対して行う。
 
-use crate::application::usecases::check_resource_availability::CheckResourceAvailabilityUseCase;
-use crate::application::usecases::create_resource_usage::CreateResourceUsageUseCase;
-use crate::application::usecases::delete_resource_usage::DeleteResourceUsageUseCase;
-use crate::application::usecases::get_resource_usage_by_id::GetResourceUsageByIdUseCase;
-use crate::application::usecases::list_all_future_resource_usages::ListAllFutureResourceUsagesUseCase;
-use crate::application::usecases::list_user_resource_usages::ListUserResourceUsagesUseCase;
-use crate::application::usecases::release_resource_usage_early::ReleaseResourceUsageEarlyUseCase;
-use crate::application::usecases::update_resource_usage::UpdateResourceUsageUseCase;
-use crate::domain::aggregates::resource_usage::value_objects::{
-    Gpu, Resource, TimePeriod, UsageId,
+use crate::application::usecases::{
+    CancelReservedSlotUseCase, CheckResourceAvailabilityUseCase, CreateReservationUseCase,
+    EndReservedSlotEarlyUseCase, GetReservedSlotUseCase, ListReservedSlotsHeldByUseCase,
+    ListReservedSlotsUseCase, UpdateReservedSlotUseCase,
 };
+use crate::domain::aggregates::reservation::ReservedSlotId;
+use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::ResourceUsageRepository;
+use crate::domain::common::TimePeriod;
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::infrastructure::config::ResourceConfig;
 use crate::interface::mcp::auth::ResolvedCaller;
 use crate::interface::mcp::dto::{
-    CancelReservationParams, CheckAvailabilityParams, CreateReservationParams,
-    GetReservationParams, ReleaseReservationEarlyParams, ReservationDto, ResourceAvailabilityDto,
-    ResourceCatalogDto, UpdateReservationParams, resources_to_check,
+    CheckAvailabilityParams, CreateReservationParams, ReservedSlotDto, ReservedSlotIdParams,
+    ResourceAvailabilityDto, ResourceCatalogDto, UpdateReservedSlotParams, resources_to_check,
 };
 use rmcp::ErrorData;
 use rmcp::handler::server::tool::Extension;
@@ -29,33 +28,39 @@ use rmcp::model::{CallToolResult, ContentBlock, ServerCapabilities, ServerConfig
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use std::sync::Arc;
 
+/// MCPサーバーが呼び出すユースケース
+pub struct McpUseCases<R: ReservationRepository + ReservedSlotQuery> {
+    /// 単発予約を作る
+    pub create_reservation: Arc<CreateReservationUseCase<R>>,
+    /// 指定期間の予約枠を一覧する
+    pub list_reserved_slots: Arc<ListReservedSlotsUseCase<R>>,
+    /// 予約者の予約枠を一覧する
+    pub list_reserved_slots_held_by: Arc<ListReservedSlotsHeldByUseCase<R>>,
+    /// 予約枠を取得する
+    pub get_reserved_slot: Arc<GetReservedSlotUseCase<R>>,
+    /// 予約枠の期間・備考を更新する
+    pub update_reserved_slot: Arc<UpdateReservedSlotUseCase<R>>,
+    /// 進行中の予約枠を今で終了する
+    pub end_reserved_slot_early: Arc<EndReservedSlotEarlyUseCase<R>>,
+    /// 予約枠を取り消す
+    pub cancel_reserved_slot: Arc<CancelReservedSlotUseCase<R>>,
+    /// リソースの空きを調べる
+    pub check_resource_availability: Arc<CheckResourceAvailabilityUseCase<R>>,
+}
+
 /// LRMの予約をMCPツールとして公開するサーバー
 ///
 /// 全フィールドが`Arc`のため安価に`Clone`でき、接続ごとに新しいインスタンスを渡せる。
 /// `R: Clone`を要求しないよう`Clone`は手動実装する（`derive(Clone)`は`R: Clone`を要求してしまう）。
-pub struct LrmMcpServer<R: ResourceUsageRepository> {
-    create_usecase: Arc<CreateResourceUsageUseCase<R>>,
-    update_usecase: Arc<UpdateResourceUsageUseCase<R>>,
-    delete_usecase: Arc<DeleteResourceUsageUseCase<R>>,
-    release_early_usecase: Arc<ReleaseResourceUsageEarlyUseCase<R>>,
-    list_all_usecase: Arc<ListAllFutureResourceUsagesUseCase<R>>,
-    list_mine_usecase: Arc<ListUserResourceUsagesUseCase<R>>,
-    get_by_id_usecase: Arc<GetResourceUsageByIdUseCase<R>>,
-    check_availability_usecase: Arc<CheckResourceAvailabilityUseCase<R>>,
+pub struct LrmMcpServer<R: ReservationRepository + ReservedSlotQuery> {
+    usecases: Arc<McpUseCases<R>>,
     resource_config: Arc<ResourceConfig>,
 }
 
-impl<R: ResourceUsageRepository> Clone for LrmMcpServer<R> {
+impl<R: ReservationRepository + ReservedSlotQuery> Clone for LrmMcpServer<R> {
     fn clone(&self) -> Self {
         Self {
-            create_usecase: self.create_usecase.clone(),
-            update_usecase: self.update_usecase.clone(),
-            delete_usecase: self.delete_usecase.clone(),
-            release_early_usecase: self.release_early_usecase.clone(),
-            list_all_usecase: self.list_all_usecase.clone(),
-            list_mine_usecase: self.list_mine_usecase.clone(),
-            get_by_id_usecase: self.get_by_id_usecase.clone(),
-            check_availability_usecase: self.check_availability_usecase.clone(),
+            usecases: self.usecases.clone(),
             resource_config: self.resource_config.clone(),
         }
     }
@@ -78,25 +83,25 @@ fn resolved_caller(parts: &http::request::Parts) -> Result<EmailAddress, ErrorDa
         })
 }
 
-/// アプリケーションエラーをツールレベルのエラーとして呼び出し元に見せる
-/// 予約一覧が対象とする期間の長さ
+/// 予約枠の一覧が対象とする期間の長さ
 ///
-/// 繰り返し予約は個々の予定へ展開されるため、上限を設けないと数十年先の予定まで返る。
-/// エージェントが把握したいのは手近な予定なので、ここで区切る。
+/// カレンダーの繰り返しの予定は個々の予約枠へ展開されるため、上限を設けないと数十年先の
+/// 予約枠まで返る。エージェントが把握したいのは手近な予約枠なので、ここで区切る。
 const LISTING_WINDOW_DAYS: i64 = 60;
 
 /// 一覧の対象期間（現在時刻から`LISTING_WINDOW_DAYS`日先まで）
-fn listing_window()
--> Result<TimePeriod, crate::domain::aggregates::resource_usage::errors::ResourceUsageError> {
+fn listing_window() -> Result<TimePeriod, crate::domain::common::TimePeriodError> {
     let now = chrono::Utc::now();
     TimePeriod::new(now, now + chrono::Duration::days(LISTING_WINDOW_DAYS))
 }
 
 /// 空きを一度に調べられる期間の上限
 ///
-/// 繰り返し予約は個々の予定へ展開されるため、上限を設けないと際限なく予定を読むことになる。
+/// カレンダーの繰り返しの予定は個々の予約枠へ展開されるため、上限を設けないと
+/// 際限なく予約枠を読むことになる。
 const AVAILABILITY_WINDOW_MAX_DAYS: i64 = 60;
 
+/// アプリケーションエラーをツールレベルのエラーとして呼び出し元に見せる
 fn tool_error(message: impl std::fmt::Display) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(message.to_string())])
 }
@@ -109,33 +114,19 @@ fn success_json<T: serde::Serialize>(value: &T) -> CallToolResult {
     }
 }
 
+fn success_text(message: &str) -> CallToolResult {
+    CallToolResult::success(vec![ContentBlock::text(message)])
+}
+
 #[tool_router]
 impl<R> LrmMcpServer<R>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
 {
     /// 新しいLrmMcpServerを作成
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        create_usecase: Arc<CreateResourceUsageUseCase<R>>,
-        update_usecase: Arc<UpdateResourceUsageUseCase<R>>,
-        delete_usecase: Arc<DeleteResourceUsageUseCase<R>>,
-        release_early_usecase: Arc<ReleaseResourceUsageEarlyUseCase<R>>,
-        list_all_usecase: Arc<ListAllFutureResourceUsagesUseCase<R>>,
-        list_mine_usecase: Arc<ListUserResourceUsagesUseCase<R>>,
-        get_by_id_usecase: Arc<GetResourceUsageByIdUseCase<R>>,
-        check_availability_usecase: Arc<CheckResourceAvailabilityUseCase<R>>,
-        resource_config: Arc<ResourceConfig>,
-    ) -> Self {
+    pub fn new(usecases: McpUseCases<R>, resource_config: Arc<ResourceConfig>) -> Self {
         Self {
-            create_usecase,
-            update_usecase,
-            delete_usecase,
-            release_early_usecase,
-            list_all_usecase,
-            list_mine_usecase,
-            get_by_id_usecase,
-            check_availability_usecase,
+            usecases: Arc::new(usecases),
             resource_config,
         }
     }
@@ -199,151 +190,6 @@ where
         }
     }
 
-    #[tool(description = "今後（進行中含む）の全ての予約を一覧表示する")]
-    async fn list_all_reservations(&self) -> Result<CallToolResult, ErrorData> {
-        let window = match listing_window() {
-            Ok(window) => window,
-            Err(e) => return Ok(tool_error(e)),
-        };
-        match self.list_all_usecase.execute(&window).await {
-            Ok(usages) => {
-                let dtos: Vec<ReservationDto> = usages.iter().map(ReservationDto::from).collect();
-                Ok(success_json(&dtos))
-            }
-            Err(e) => Ok(tool_error(e)),
-        }
-    }
-
-    #[tool(description = "自分が所有する予約を一覧表示する")]
-    async fn list_my_reservations(
-        &self,
-        Extension(parts): Extension<http::request::Parts>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let caller = resolved_caller(&parts)?;
-        let window = match listing_window() {
-            Ok(window) => window,
-            Err(e) => return Ok(tool_error(e)),
-        };
-        match self.list_mine_usecase.execute(&caller, &window).await {
-            Ok(usages) => {
-                let dtos: Vec<ReservationDto> = usages.iter().map(ReservationDto::from).collect();
-                Ok(success_json(&dtos))
-            }
-            Err(e) => Ok(tool_error(e)),
-        }
-    }
-
-    #[tool(description = "IDを指定して予約の詳細を取得する")]
-    async fn get_reservation(
-        &self,
-        Parameters(params): Parameters<GetReservationParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let id = UsageId::from_string(params.id);
-        match self.get_by_id_usecase.execute(&id).await {
-            Ok(usage) => Ok(success_json(&ReservationDto::from(&usage))),
-            Err(e) => Ok(tool_error(e)),
-        }
-    }
-
-    #[tool(description = "新しい予約を作成する（GPUサーバーまたは部屋）")]
-    async fn create_reservation(
-        &self,
-        Extension(parts): Extension<http::request::Parts>,
-        Parameters(params): Parameters<CreateReservationParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let caller = resolved_caller(&parts)?;
-
-        let time_period = match TimePeriod::new(params.start, params.end) {
-            Ok(time_period) => time_period,
-            Err(e) => return Ok(tool_error(e)),
-        };
-
-        let resources = match self.resolve_resources(&params) {
-            Ok(resources) => resources,
-            Err(message) => return Ok(tool_error(message)),
-        };
-
-        match self
-            .create_usecase
-            .execute(caller, time_period, resources, params.notes)
-            .await
-        {
-            Ok(usage_id) => Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-                "予約を作成しました。予約ID: {}",
-                usage_id.as_str()
-            ))])),
-            Err(e) => Ok(tool_error(e)),
-        }
-    }
-
-    #[tool(description = "自分が所有する予約の時間または備考を更新する")]
-    async fn update_reservation(
-        &self,
-        Extension(parts): Extension<http::request::Parts>,
-        Parameters(params): Parameters<UpdateReservationParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let caller = resolved_caller(&parts)?;
-        let id = UsageId::from_string(params.id);
-
-        let time_period = match (params.start, params.end) {
-            (Some(start), Some(end)) => match TimePeriod::new(start, end) {
-                Ok(time_period) => Some(time_period),
-                Err(e) => return Ok(tool_error(e)),
-            },
-            (None, None) => None,
-            _ => {
-                return Ok(tool_error(
-                    "startとendは両方指定するか、両方省略してください",
-                ));
-            }
-        };
-
-        match self
-            .update_usecase
-            .execute(&id, &caller, time_period, params.notes)
-            .await
-        {
-            Ok(()) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                "予約を更新しました",
-            )])),
-            Err(e) => Ok(tool_error(e)),
-        }
-    }
-
-    #[tool(
-        description = "進行中の自分の予約を今の時点で終了し、残り時間を解放する。使った分は予約として残るため、予約そのものを無かったことにしたい場合はcancel_reservationを使う"
-    )]
-    async fn release_reservation_early(
-        &self,
-        Extension(parts): Extension<http::request::Parts>,
-        Parameters(params): Parameters<ReleaseReservationEarlyParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let caller = resolved_caller(&parts)?;
-        let id = UsageId::from_string(params.id);
-
-        match self.release_early_usecase.execute(&id, &caller).await {
-            Ok(usage) => Ok(success_json(&ReservationDto::from(&usage))),
-            Err(e) => Ok(tool_error(e)),
-        }
-    }
-
-    #[tool(description = "自分が所有する予約をキャンセルする")]
-    async fn cancel_reservation(
-        &self,
-        Extension(parts): Extension<http::request::Parts>,
-        Parameters(params): Parameters<CancelReservationParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let caller = resolved_caller(&parts)?;
-        let id = UsageId::from_string(params.id);
-
-        match self.delete_usecase.execute(&id, &caller).await {
-            Ok(()) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                "予約をキャンセルしました",
-            )])),
-            Err(e) => Ok(tool_error(e)),
-        }
-    }
-
     #[tool(
         description = "予約できるリソース（GPUサーバーとそのデバイス番号・モデル、部屋）を一覧表示する。create_reservationに指定できる名前と番号はここで確認できる"
     )]
@@ -354,7 +200,7 @@ where
     }
 
     #[tool(
-        description = "指定した期間における各リソースの空きを調べる。リソースごとに空いている区間と、予約で埋まっている区間（予約者つき）を返す。serverまたはroomで絞り込める（省略時は全リソース）。調べられる期間は最長60日。予約されないまま使われているリソースは空きとして現れる"
+        description = "指定した期間における各リソースの空きを調べる。リソースごとに空いている区間と、予約枠で埋まっている区間（予約者つき）を返す。serverまたはroomで絞り込める（省略時は全リソース）。調べられる期間は最長60日。予約されないまま使われているリソースは空きとして現れる"
     )]
     async fn check_availability(
         &self,
@@ -380,7 +226,8 @@ where
         };
 
         match self
-            .check_availability_usecase
+            .usecases
+            .check_resource_availability
             .execute(&resources, &window)
             .await
         {
@@ -394,19 +241,179 @@ where
             Err(e) => Ok(tool_error(e)),
         }
     }
+
+    #[tool(description = "今後60日に重なる（進行中を含む）すべての予約枠を開始順に一覧表示する")]
+    async fn list_reserved_slots(&self) -> Result<CallToolResult, ErrorData> {
+        let window = match listing_window() {
+            Ok(window) => window,
+            Err(e) => return Ok(tool_error(e)),
+        };
+        match self.usecases.list_reserved_slots.execute(&window).await {
+            Ok(slots) => Ok(success_json(
+                &slots.iter().map(ReservedSlotDto::from).collect::<Vec<_>>(),
+            )),
+            Err(e) => Ok(tool_error(e)),
+        }
+    }
+
+    #[tool(description = "今後60日に重なる（進行中を含む）自分の予約枠を開始順に一覧表示する")]
+    async fn list_my_reserved_slots(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let caller = resolved_caller(&parts)?;
+        let window = match listing_window() {
+            Ok(window) => window,
+            Err(e) => return Ok(tool_error(e)),
+        };
+        match self
+            .usecases
+            .list_reserved_slots_held_by
+            .execute(&caller, &window)
+            .await
+        {
+            Ok(slots) => Ok(success_json(
+                &slots.iter().map(ReservedSlotDto::from).collect::<Vec<_>>(),
+            )),
+            Err(e) => Ok(tool_error(e)),
+        }
+    }
+
+    #[tool(description = "予約枠IDを指定して予約枠の詳細を取得する")]
+    async fn get_reserved_slot(
+        &self,
+        Parameters(params): Parameters<ReservedSlotIdParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let id = ReservedSlotId::from_string(params.id);
+        match self.usecases.get_reserved_slot.execute(&id).await {
+            Ok(slot) => Ok(success_json(&ReservedSlotDto::from(&slot))),
+            Err(e) => Ok(tool_error(e)),
+        }
+    }
+
+    #[tool(description = "単発予約を作る（GPUサーバーまたは部屋）")]
+    async fn create_reservation(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<CreateReservationParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let caller = resolved_caller(&parts)?;
+
+        let time_period = match TimePeriod::new(params.start, params.end) {
+            Ok(time_period) => time_period,
+            Err(e) => return Ok(tool_error(e)),
+        };
+
+        let resources = match self.resolve_resources(&params) {
+            Ok(resources) => resources,
+            Err(message) => return Ok(tool_error(message)),
+        };
+
+        match self
+            .usecases
+            .create_reservation
+            .execute(caller, time_period, resources, params.notes)
+            .await
+        {
+            Ok(reservation_id) => Ok(success_text(&format!(
+                "単発予約を作りました。予約ID（予約枠IDと同じ）: {}",
+                reservation_id.as_str()
+            ))),
+            Err(e) => Ok(tool_error(e)),
+        }
+    }
+
+    #[tool(description = "自分の予約枠の期間または備考を変更する")]
+    async fn update_reserved_slot(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<UpdateReservedSlotParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let caller = resolved_caller(&parts)?;
+        let id = ReservedSlotId::from_string(params.id);
+
+        let time_period = match (params.start, params.end) {
+            (Some(start), Some(end)) => match TimePeriod::new(start, end) {
+                Ok(time_period) => Some(time_period),
+                Err(e) => return Ok(tool_error(e)),
+            },
+            (None, None) => None,
+            _ => {
+                return Ok(tool_error(
+                    "startとendは両方指定するか、両方省略してください",
+                ));
+            }
+        };
+
+        match self
+            .usecases
+            .update_reserved_slot
+            .execute(&id, &caller, time_period, params.notes)
+            .await
+        {
+            Ok(()) => Ok(success_text("予約枠を変更しました")),
+            Err(e) => Ok(tool_error(e)),
+        }
+    }
+
+    #[tool(
+        description = "進行中の自分の予約枠を今の時点で終了し、残りの時間を空きに戻す。使った分は予約枠として残るため、無かったことにしたい場合はcancel_reserved_slotを使う"
+    )]
+    async fn end_reserved_slot_early(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<ReservedSlotIdParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let caller = resolved_caller(&parts)?;
+        let id = ReservedSlotId::from_string(params.id);
+
+        match self
+            .usecases
+            .end_reserved_slot_early
+            .execute(&id, &caller)
+            .await
+        {
+            Ok(slot) => Ok(success_json(&ReservedSlotDto::from(&slot))),
+            Err(e) => Ok(tool_error(e)),
+        }
+    }
+
+    #[tool(description = "自分の予約枠を1つ取り消す。単発予約の予約枠なら、その単発予約も無くなる")]
+    async fn cancel_reserved_slot(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<ReservedSlotIdParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let caller = resolved_caller(&parts)?;
+        let id = ReservedSlotId::from_string(params.id);
+
+        match self
+            .usecases
+            .cancel_reserved_slot
+            .execute(&id, &caller)
+            .await
+        {
+            Ok(event) => Ok(success_text(&format!(
+                "予約枠を取り消しました。単発予約 {} も無くなりました",
+                event.subject_id()
+            ))),
+            Err(e) => Ok(tool_error(e)),
+        }
+    }
 }
 
 #[tool_handler]
 impl<R> ServerHandler for LrmMcpServer<R>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
 {
     fn get_info(&self) -> ServerConfig {
         let mut info = ServerConfig::new(ServerCapabilities::builder().enable_tools().build());
         info.instructions = Some(
-            "lab-resource-manager の予約を閲覧・作成・更新・早期終了・キャンセルし、\
-            予約できるリソースとその空きを調べるツール群。\
-            書き込み系ツールは呼び出し元のBearerトークンに紐づくメールアドレスを所有者として扱う。"
+            "lab-resource-manager の予約を扱うツール群。予約は作る・取り消すの単位、\
+            予約枠は予約が実際に押さえている時間で、単発予約は予約枠を1つ持つ。\
+            一覧・変更・今で終了は予約枠に対して行う。予約できるリソースとその空きも調べられる。\
+            書き込み系ツールは呼び出し元のBearerトークンに紐づくメールアドレスを予約者として扱う。"
                 .to_string(),
         );
         info

@@ -6,10 +6,11 @@
 //! 日を切り替えたときは、新しいメッセージを積まずに元のメッセージを差し替えます。
 //! 積み上がると、どれがいまの状態なのか読み手が判断できなくなります。
 
-use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::Resource;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ResourceUsageRepository;
-use crate::domain::services::resource_usage::availability::ResourceAvailability;
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
+use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::slack_client::{messages, modals};
 use crate::interface::slack::utility::availability_report;
@@ -26,7 +27,7 @@ pub async fn handle_day_change<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let Some(response_url) = &block_actions.response_url else {
@@ -87,7 +88,7 @@ pub async fn handle_reserve<R, N>(
     block_actions: &SlackInteractionBlockActionsEvent,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
@@ -176,10 +177,10 @@ fn server_with_most_free_devices(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-    use crate::domain::aggregates::resource_usage::value_objects::Gpu;
+    use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::common::EmailAddress;
-    use crate::domain::services::resource_usage::availability::calculate;
+    use crate::domain::read_models::ReservedSlotView;
+    use crate::domain::services::reservation::availability::calculate;
     use chrono::{DateTime, TimeZone};
 
     fn at(hour: u32) -> DateTime<Utc> {
@@ -198,8 +199,8 @@ mod tests {
         ))
     }
 
-    fn reservation(resources: Vec<Resource>) -> ResourceUsage {
-        ResourceUsage::new(
+    fn reservation(resources: Vec<Resource>) -> ReservedSlotView {
+        ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new("sato@example.com".to_string()).unwrap(),
             TimePeriod::new(at(9), at(18)).unwrap(),
             resources,
@@ -210,9 +211,9 @@ mod tests {
 
     fn availabilities(
         resources: &[Resource],
-        usages: &[ResourceUsage],
+        slots: &[ReservedSlotView],
     ) -> Vec<ResourceAvailability> {
-        calculate(resources, &window(), usages)
+        calculate(resources, &window(), slots)
     }
 
     #[test]
@@ -224,10 +225,10 @@ mod tests {
             gpu("gpu-server-2", 1),
             gpu("gpu-server-2", 2),
         ];
-        let usages = vec![reservation(vec![gpu("gpu-server-1", 1)])];
+        let slots = vec![reservation(vec![gpu("gpu-server-1", 1)])];
 
         let (server, devices) =
-            server_with_most_free_devices(&availabilities(&resources, &usages), at(12)).unwrap();
+            server_with_most_free_devices(&availabilities(&resources, &slots), at(12)).unwrap();
 
         assert_eq!(server, "gpu-server-2");
         assert_eq!(devices, vec![0, 1, 2]);
@@ -246,10 +247,10 @@ mod tests {
     #[test]
     fn a_fully_booked_lab_offers_no_server() {
         let resources = vec![gpu("gpu-server-1", 0)];
-        let usages = vec![reservation(vec![gpu("gpu-server-1", 0)])];
+        let slots = vec![reservation(vec![gpu("gpu-server-1", 0)])];
 
         assert_eq!(
-            server_with_most_free_devices(&availabilities(&resources, &usages), at(12)),
+            server_with_most_free_devices(&availabilities(&resources, &slots), at(12)),
             None
         );
     }

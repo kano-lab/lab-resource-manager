@@ -149,7 +149,7 @@ timezone = "Asia/Tokyo"
 [servers.notifications.templates]
 created = "{user} is using {resource} at {time}"
 updated = "{user} changed reservation: {resource} {time}"
-deleted = "{user} cancelled reservation: {resource}"
+cancelled = "{user} cancelled reservation: {resource}"
 conflict = "{user} already reserved {resource} at {time}"
 conflict_item = "👤 {user}\n📅 {time}\n{resource_label}\n{resource}{notes}"
 
@@ -160,11 +160,15 @@ time_style = "smart"         # Time display style
 date_format = "md"           # Date format
 ```
 
+`created`/`updated`/`cancelled` are used when a reservation is created, changed
+(including ended early), or cancelled. The old key `deleted` is still read as
+`cancelled`.
+
 `conflict` is used when a reservation request is rejected due to a conflict.
 It is used **only when there is a single conflict**. Unlike
-`created`/`updated`/`deleted`, its placeholders refer to the **existing**
-reservation that caused the conflict, not the request that was rejected:
-`{user}` is the existing reservation's owner, `{time}` is its period, and
+`created`/`updated`/`cancelled`, its placeholders refer to the **existing**
+reserved slot that caused the conflict, not the request that was rejected:
+`{user}` is its holder, `{time}` is its period, and
 `{resource}` is the specific resource that conflicted. It is shown to the
 user who attempted the reservation, using the format/template settings of
 the conflicting resource's notification config (not a resource-wide
@@ -329,10 +333,10 @@ the same shared directory used by `gpu-usage-reporter` above to enable it:
 | `GPU_USAGE_REPORTS_DIR` | (unset = feature disabled) | Shared directory read by `SharedFileResourceUsageObserver` |
 | `GPU_USAGE_MAX_STALENESS_SECS` | `300` | How old a report can be before it's ignored |
 | `UNRESERVED_USAGE_THRESHOLD_SECS` | `600` | How long unreserved usage must continue before a proposal is sent |
-| `IDLE_RESERVATION_THRESHOLD_SECS` | `1800` | How long a reservation must go without any observed usage before the owner is told. Reservations with less time left than this are left alone |
-| `IDLE_HELD_GPU_THRESHOLD_SECS` | `3600` | How long a GPU must be held without computation before the owner is told |
+| `IDLE_RESERVATION_THRESHOLD_SECS` | `1800` | How long a reservation must go without any observed usage before its holder is told. Reservations with less time left than this are left alone |
+| `IDLE_HELD_GPU_THRESHOLD_SECS` | `3600` | How long a GPU must be held without computation before the reservation holder is told |
 | `COMPUTING_GPU_UTILIZATION_PERCENT` | `5` | The utilization at or above which a GPU counts as computing. Setting it to `0` effectively turns off the held-without-computing check |
-| `IDLE_HELD_GPU_NOTICES` | `observe` | Whether a GPU held without computation is reported to its owner (`notify`) or only counted in the logs (`observe`) |
+| `IDLE_HELD_GPU_NOTICES` | `observe` | Whether a GPU held without computation is reported to the reservation holder (`notify`) or only counted in the logs (`observe`) |
 | `IDLE_NOTICE_SILENCE_SECS` | `14400` | How long to stay quiet about a reservation after speaking up about it once |
 | `RESERVATION_PROPOSAL_DURATION_CANDIDATES_HOURS` | `1,2,3,5,8` | Comma-separated hour candidates offered in the Slack DM |
 
@@ -340,7 +344,7 @@ the same shared directory used by `gpu-usage-reporter` above to enable it:
 computation running on it. Where memory is allocated and then left waiting — a resident
 inference server, an open notebook, a stalled training job — the GPU is unavailable to
 everyone else while nothing moves forward. If a GPU carrying processes does not
-reach `COMPUTING_GPU_UTILIZATION_PERCENT` for `IDLE_HELD_GPU_THRESHOLD_SECS`, the owner gets
+reach `COMPUTING_GPU_UTILIZATION_PERCENT` for `IDLE_HELD_GPU_THRESHOLD_SECS`, the reservation holder gets
 a DM.
 
 The judgement does not ask whose processes they are. Container workloads (Docker and the
@@ -405,7 +409,7 @@ thresholds are short, other people's reservations get DMs too — keep that wind
 
 ### 7. MCP Server Setup (Optional)
 
-Agents such as Claude Code can view, create, update, and cancel reservations through an
+Agents such as Claude Code can view, create, change, end early, and cancel reservations through an
 embedded MCP (Model Context Protocol) server that runs inside the main
 `lab-resource-manager` process. No new binary or systemd service is needed — the HTTP/SSE
 listener is started as an additional task within the existing process. The Google service
@@ -509,19 +513,19 @@ person).
 
 | Tool | Description |
 | --- | --- |
-| `list_all_reservations` | List all future (including ongoing) reservations |
-| `list_my_reservations` | List reservations owned by the caller |
-| `get_reservation` | Get a reservation's details by ID |
-| `create_reservation` | Create a new reservation (GPU server or room) |
-| `update_reservation` | Update the time or notes of a reservation you own |
-| `release_reservation_early` | End a running reservation of yours now, releasing the remaining time |
-| `cancel_reservation` | Cancel a reservation you own |
 | `list_resources` | List the resources that can be reserved (GPU servers with their devices, rooms) |
 | `check_availability` | Check when each resource is free in a period (up to 60 days, filterable by server or room) |
+| `list_reserved_slots` | List every reserved slot overlapping the next 60 days (including running ones) |
+| `list_my_reserved_slots` | List the caller's reserved slots overlapping the next 60 days |
+| `get_reserved_slot` | Get a reserved slot's details by reserved slot ID |
+| `create_reservation` | Create a one-time reservation (GPU server or room) |
+| `update_reserved_slot` | Change the time or notes of one of your reserved slots |
+| `end_reserved_slot_early` | End one of your running reserved slots now, releasing the remaining time |
+| `cancel_reserved_slot` | Cancel one of your reserved slots |
 
-Write tools (create/update/cancel) treat the email address linked to the caller's Bearer
-token as the owner. Updating or cancelling someone else's reservation is rejected by the
-same existing authorization rule used by `/reserve` (owner only).
+Write tools treat the email address linked to the caller's Bearer token as the reservation
+holder. Changing or cancelling someone else's reservation is rejected by the same
+authorization rule used by `/reserve` (holder only).
 
 TLS itself (handshake succeeding with a self-signed certificate, rejection when the CA
 isn't trusted, and the auth middleware still requiring a Bearer token independently of the
@@ -624,14 +628,15 @@ is off:
 
 ```text
 reconcile pass finished
-  observed=6 reservations_in_progress=5 matched_to_a_reservation=5
+  observed=6 reserved_slots_in_progress=5 matched_to_a_reserved_slot=5
   unreserved_sessions=1 failures=0 elapsed_ms=412
 change detection pass finished
-  reservations=23 created=0 deleted=0 elapsed_ms=380
+  reservations=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
 ```
 
 A count that jumps or an `elapsed_ms` that grows points at a problem well before anything
-visibly breaks.
+visibly breaks. `appeared`/`disappeared` count reserved slots coming and going;
+`notifications` counts the messages actually sent.
 
 Set `RUST_LOG=debug` to also see per-step detail (form parsing, modal handling, individual
 Slack API calls). This is verbose and meant for investigating a specific problem, not for

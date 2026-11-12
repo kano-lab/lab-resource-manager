@@ -1,5 +1,5 @@
-use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
-use crate::infrastructure::notifier::template_renderer::TemplateRenderer;
+use crate::domain::ports::notifier::NotificationError;
+use crate::infrastructure::notifier::template_renderer::{TemplateRenderer, render_event};
 use async_trait::async_trait;
 
 use super::sender::{NotificationContext, Sender};
@@ -28,17 +28,8 @@ impl MockSender {
             context.timezone,
         );
 
-        match context.event {
-            NotificationEvent::ResourceUsageCreated(usage) => {
-                renderer.render_created(usage, usage.owner_email().as_str())
-            }
-            NotificationEvent::ResourceUsageUpdated(usage) => {
-                renderer.render_updated(usage, usage.owner_email().as_str())
-            }
-            NotificationEvent::ResourceUsageDeleted(usage) => {
-                renderer.render_deleted(usage, usage.owner_email().as_str())
-            }
-        }
+        let user_display = context.event.holder_email().as_str();
+        render_event(&renderer, context.event, user_display)
     }
 }
 

@@ -1,26 +1,17 @@
 // NOTE: これ以上肥大化するようであればnotifierディレクトリを作成してその中に適宜分割する
 use crate::domain::{
-    aggregates::resource_usage::entity::ResourceUsage, errors::DomainError, ports::PortError,
+    aggregates::reservation::ReservationEvent, errors::DomainError, ports::PortError,
 };
 use async_trait::async_trait;
 use std::fmt;
 
-/// 通知イベントの種類
-#[derive(Debug, Clone)]
-pub enum NotificationEvent {
-    /// リソース使用予定が作成された
-    ResourceUsageCreated(ResourceUsage),
-    /// リソース使用予定が更新された
-    ResourceUsageUpdated(ResourceUsage),
-    /// リソース使用予定が削除された
-    ResourceUsageDeleted(ResourceUsage),
-}
-
-/// 通知サービスのポート
+/// 予約に起きた出来事を予約チャンネルへ知らせるポート
+///
+/// 何をどの言葉で知らせるか（テンプレート、宛先、ボタン）は実装が決める。
 #[async_trait]
 pub trait Notifier: Send + Sync {
-    /// イベントを通知する
-    async fn notify(&self, event: NotificationEvent) -> Result<(), NotificationError>;
+    /// 出来事を知らせる
+    async fn notify(&self, event: ReservationEvent) -> Result<(), NotificationError>;
 }
 
 /// 通知エラー

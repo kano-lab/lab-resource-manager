@@ -2,9 +2,10 @@
 
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
-use crate::domain::aggregates::resource_usage::value_objects::{TimePeriod, UsageId};
+use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ResourceUsageRepository;
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use crate::interface::slack::utility::conflict_message;
@@ -19,16 +20,16 @@ pub async fn handle<R, N>(
     view_submission: &SlackInteractionViewSubmissionEvent,
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let user_id = view_submission.user.id.clone();
 
-    // private_metadataからusage_idを取得
-    let usage_id_str = extract_form_data::get_private_metadata(view_submission)
-        .ok_or("usage_idがprivate_metadataに設定されていません")?;
+    // private_metadataからslot_idを取得
+    let slot_id_str = extract_form_data::get_private_metadata(view_submission)
+        .ok_or("slot_idがprivate_metadataに設定されていません")?;
 
-    let usage_id = UsageId::from_string(usage_id_str.clone());
+    let slot_id = ReservedSlotId::from_string(slot_id_str.clone());
 
     // 開始・終了日時を取得
     let start_date =
@@ -59,13 +60,13 @@ where
         .await?
         .ok_or("ユーザーが登録されていません。まず /register-calendar を実行してください")?;
 
-    let owner_email = identity_link.email().clone();
+    let holder_email = identity_link.email().clone();
 
     // 予約を更新
     let update_result = app
         .usecases()
-        .update_resource_usage
-        .execute(&usage_id, &owner_email, Some(time_period), notes)
+        .update_reserved_slot
+        .execute(&slot_id, &holder_email, Some(time_period), notes)
         .await;
 
     // channel_id を取得

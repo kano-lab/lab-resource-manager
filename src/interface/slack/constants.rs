@@ -48,20 +48,24 @@ pub const ACTION_LINK_SERVER_SELECT: &str = "link_server_select";
 /// OSユーザー名入力フィールドのアクション
 pub const ACTION_LINK_OS_USERNAME_INPUT: &str = "link_os_username_input";
 
-// アクションID - 予約リストボタン
-/// 予約編集ボタンのアクション
-pub const ACTION_EDIT_RESERVATION: &str = "edit_reservation";
-/// 予約キャンセルボタンのアクション
-pub const ACTION_CANCEL_RESERVATION: &str = "cancel_reservation";
-/// 予約を今の時点で終了するボタンのアクション
-pub const ACTION_RELEASE_RESERVATION_EARLY: &str = "release_reservation_early";
+// アクションID - 通知に付く予約枠のボタン
+//
+// 値はSlackとの間でやり取りする識別子で、投稿済みのメッセージのボタンにも埋め込まれている。
+// 値を変えると、すでにチャンネルにあるボタンが押しても動かなくなるため、定数名だけを
+// ユビキタス言語に合わせ、値は以前のままにしている。
+/// 予約枠の期間・備考を変更するボタンのアクション
+pub const ACTION_UPDATE_RESERVED_SLOT: &str = "edit_reservation";
+/// 予約枠を取り消すボタンのアクション
+pub const ACTION_CANCEL_RESERVED_SLOT: &str = "cancel_reservation";
+/// 予約枠を今の時点で終了するボタンのアクション
+pub const ACTION_END_RESERVED_SLOT_EARLY: &str = "release_reservation_early";
 
-// アクションID - 未使用予約のお知らせDM
-/// 使われていない予約を今の時点で終了するボタンのアクション
-pub const ACTION_IDLE_RELEASE: &str = "idle_release_reservation";
-/// 使われていない予約をこれから使うと答えるボタンのアクション
+// アクションID - 使われていない予約枠のお知らせDM（値については上と同じ理由で以前のまま）
+/// 使われていない予約枠を今の時点で終了するボタンのアクション
+pub const ACTION_IDLE_END_EARLY: &str = "idle_release_reservation";
+/// 使われていない予約枠をこれから使うと答えるボタンのアクション
 pub const ACTION_IDLE_KEEP: &str = "idle_keep_reservation";
-/// 使われていない予約を取り消すボタンのアクション
+/// 使われていない予約枠を取り消すボタンのアクション
 pub const ACTION_IDLE_CANCEL: &str = "idle_cancel_reservation";
 
 // アクションID - 事後予約提案DM

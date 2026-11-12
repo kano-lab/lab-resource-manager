@@ -1,4 +1,5 @@
-use crate::domain::ports::notifier::{NotificationError, NotificationEvent, Notifier};
+use crate::domain::aggregates::reservation::ReservationEvent;
+use crate::domain::ports::notifier::{NotificationError, Notifier};
 use crate::domain::ports::repositories::IdentityLinkRepository;
 use crate::infrastructure::config::{NotificationConfig, ResourceConfig};
 use async_trait::async_trait;
@@ -37,15 +38,9 @@ impl NotificationRouter {
         }
     }
 
-    fn collect_notification_configs(&self, event: &NotificationEvent) -> Vec<NotificationConfig> {
-        let resources = match event {
-            NotificationEvent::ResourceUsageCreated(usage)
-            | NotificationEvent::ResourceUsageUpdated(usage)
-            | NotificationEvent::ResourceUsageDeleted(usage) => usage.resources(),
-        };
-
+    fn collect_notification_configs(&self, event: &ReservationEvent) -> Vec<NotificationConfig> {
         let mut configs = HashSet::new();
-        for resource in resources {
+        for resource in event.resources() {
             let resource_configs = self.config.get_notifications_for_resource(resource);
             configs.extend(resource_configs);
         }
@@ -56,15 +51,9 @@ impl NotificationRouter {
     async fn send_to_destination(
         &self,
         config: &NotificationConfig,
-        event: &NotificationEvent,
+        event: &ReservationEvent,
     ) -> Result<(), NotificationError> {
-        let usage = match event {
-            NotificationEvent::ResourceUsageCreated(u)
-            | NotificationEvent::ResourceUsageUpdated(u)
-            | NotificationEvent::ResourceUsageDeleted(u) => u,
-        };
-
-        let user_email = usage.owner_email();
+        let user_email = event.holder_email();
 
         // IdentityLinkを取得
         // Ok(None) = IdentityLinkが未登録（正常ケース）
@@ -108,7 +97,7 @@ impl NotificationRouter {
 
 #[async_trait]
 impl Notifier for NotificationRouter {
-    async fn notify(&self, event: NotificationEvent) -> Result<(), NotificationError> {
+    async fn notify(&self, event: ReservationEvent) -> Result<(), NotificationError> {
         let notification_configs = self.collect_notification_configs(&event);
 
         if notification_configs.is_empty() {

@@ -1,6 +1,6 @@
 //! 使われていない予約について、同じ予約で繰り返し声をかけないための記録
 
-use crate::domain::aggregates::resource_usage::value_objects::UsageId;
+use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -33,28 +33,25 @@ impl IdleNoticeLog {
     }
 
     /// この予約について、しばらく声をかけないようにする
-    pub fn silence(&self, usage_id: &UsageId, now: DateTime<Utc>) {
+    pub fn silence(&self, slot_id: &ReservedSlotId, now: DateTime<Utc>) {
         self.silenced_until
             .lock()
             .unwrap()
-            .insert(usage_id.as_str().to_string(), now + self.silence_duration);
+            .insert(slot_id.as_str().to_string(), now + self.silence_duration);
     }
 
     /// この予約について、いま声をかけずにいるか
-    pub fn is_silenced(&self, usage_id: &UsageId, now: DateTime<Utc>) -> bool {
+    pub fn is_silenced(&self, slot_id: &ReservedSlotId, now: DateTime<Utc>) -> bool {
         self.silenced_until
             .lock()
             .unwrap()
-            .get(usage_id.as_str())
+            .get(slot_id.as_str())
             .is_some_and(|until| now < *until)
     }
 
     /// ふたたび声をかける対象に戻す
-    pub fn resume(&self, usage_id: &UsageId) {
-        self.silenced_until
-            .lock()
-            .unwrap()
-            .remove(usage_id.as_str());
+    pub fn resume(&self, slot_id: &ReservedSlotId) {
+        self.silenced_until.lock().unwrap().remove(slot_id.as_str());
     }
 
     /// いま覚えておく意味のある予約についてだけ記録を残す
@@ -65,7 +62,7 @@ impl IdleNoticeLog {
         self.silenced_until
             .lock()
             .unwrap()
-            .retain(|usage_id, _| is_worth_remembering(usage_id));
+            .retain(|slot_id, _| is_worth_remembering(slot_id));
     }
 }
 
@@ -80,13 +77,13 @@ mod tests {
     #[test]
     fn a_notice_log_keeps_only_what_is_worth_remembering() {
         let now = Utc::now();
-        let kept = UsageId::from_string("running".to_string());
-        let dropped = UsageId::from_string("finished".to_string());
+        let kept = ReservedSlotId::from_string("running".to_string());
+        let dropped = ReservedSlotId::from_string("finished".to_string());
         let log = log();
         log.silence(&kept, now);
         log.silence(&dropped, now);
 
-        log.retain_only(|usage_id| usage_id == kept.as_str());
+        log.retain_only(|slot_id| slot_id == kept.as_str());
 
         assert!(log.is_silenced(&kept, now));
         assert!(
@@ -98,27 +95,27 @@ mod tests {
     #[test]
     fn silencing_and_resuming_are_reversible() {
         let now = Utc::now();
-        let usage_id = UsageId::from_string("running".to_string());
+        let slot_id = ReservedSlotId::from_string("running".to_string());
         let log = log();
 
-        assert!(!log.is_silenced(&usage_id, now));
-        log.silence(&usage_id, now);
-        assert!(log.is_silenced(&usage_id, now));
-        log.resume(&usage_id);
-        assert!(!log.is_silenced(&usage_id, now));
+        assert!(!log.is_silenced(&slot_id, now));
+        log.silence(&slot_id, now);
+        assert!(log.is_silenced(&slot_id, now));
+        log.resume(&slot_id);
+        assert!(!log.is_silenced(&slot_id, now));
     }
 
     #[test]
     fn silence_wears_off_so_a_promise_to_use_it_is_looked_at_again() {
         let now = Utc::now();
-        let usage_id = UsageId::from_string("running".to_string());
+        let slot_id = ReservedSlotId::from_string("running".to_string());
         let log = log();
 
-        log.silence(&usage_id, now);
+        log.silence(&slot_id, now);
 
-        assert!(log.is_silenced(&usage_id, now + Duration::hours(3)));
+        assert!(log.is_silenced(&slot_id, now + Duration::hours(3)));
         assert!(
-            !log.is_silenced(&usage_id, now + Duration::hours(4)),
+            !log.is_silenced(&slot_id, now + Duration::hours(4)),
             "「まだ使う」と答えたきり使わない予約に、二度と声をかけられないのはおかしい"
         );
     }

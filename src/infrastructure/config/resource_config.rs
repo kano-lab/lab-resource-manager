@@ -1,4 +1,4 @@
-use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
+use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::infrastructure::config::notification_format::{
     FormatConfig, NotificationCustomization, TemplateConfig,
 };

@@ -17,7 +17,7 @@ pub struct ReserveModalParams<'a> {
     /// あらかじめ選んでおくデバイス番号（GPU選択時のみ）
     pub selected_devices: &'a [u32],
     /// 更新対象の予約ID（Noneの場合は新規作成）
-    pub usage_id: Option<&'a str>,
+    pub slot_id: Option<&'a str>,
     /// モーダルのコールバックID（デフォルト: "reserve_submit"）
     pub callback_id: Option<&'a str>,
     /// モーダルのタイトル（デフォルト: "リソース予約"）
@@ -39,7 +39,7 @@ pub fn create_reserve_modal(config: &ResourceConfig, params: &ReserveModalParams
         resource_type,
         selected_server,
         selected_devices,
-        usage_id,
+        slot_id,
         callback_id,
         title,
         submit_text,
@@ -119,8 +119,8 @@ pub fn create_reserve_modal(config: &ResourceConfig, params: &ReserveModalParams
         .with_submit(pt!(submit_text))
         .with_close(pt!("キャンセル"));
 
-    // usage_idがあればprivate_metadataに設定
-    if let Some(id) = usage_id {
+    // slot_idがあればprivate_metadataに設定
+    if let Some(id) = slot_id {
         modal_view = modal_view.with_private_metadata(id.into());
     }
 

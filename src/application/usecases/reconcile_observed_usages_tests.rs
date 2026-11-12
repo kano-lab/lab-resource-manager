@@ -5,15 +5,15 @@
 use crate::application::usecases::reconcile_observed_usages::ReconcileObservedUsagesUseCase;
 use crate::application::usecases::test_support::InMemoryIdentityLinkRepository;
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
-use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::ResourceUsageRepository;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::{
     NotificationError, ObservedUsage, ReservationProposal, ReservationProposalNotifier,
     UnauthorizedUsageNotifier,
 };
-use crate::infrastructure::repositories::resource_usage::mock::MockUsageRepository;
+use crate::domain::read_models::ReservedSlotView;
+use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
 use crate::infrastructure::reservation_proposal::MockReservationProposalNotifier;
 use crate::infrastructure::resource_usage_observer::MockResourceUsageObserver;
 use async_trait::async_trait;
@@ -24,11 +24,11 @@ use std::sync::Mutex as StdMutex;
 
 #[derive(Clone, Default)]
 struct RecordingUnauthorizedUsageNotifier {
-    notified: Arc<StdMutex<Vec<(ResourceUsage, EmailAddress)>>>,
+    notified: Arc<StdMutex<Vec<(ReservedSlotView, EmailAddress)>>>,
 }
 
 impl RecordingUnauthorizedUsageNotifier {
-    fn notified(&self) -> Vec<(ResourceUsage, EmailAddress)> {
+    fn notified(&self) -> Vec<(ReservedSlotView, EmailAddress)> {
         self.notified.lock().unwrap().clone()
     }
 }
@@ -37,7 +37,7 @@ impl RecordingUnauthorizedUsageNotifier {
 impl UnauthorizedUsageNotifier for RecordingUnauthorizedUsageNotifier {
     async fn notify(
         &self,
-        reserved_usage: &ResourceUsage,
+        reserved_usage: &ReservedSlotView,
         actual_user_email: &EmailAddress,
     ) -> Result<(), NotificationError> {
         self.notified
@@ -85,7 +85,7 @@ impl FailingReservationProposalNotifier {
 impl ReservationProposalNotifier for FailingReservationProposalNotifier {
     async fn propose(&self, proposal: ReservationProposal) -> Result<(), NotificationError> {
         *self.call_count.lock().unwrap() += 1;
-        let email = proposal.owner_email().as_str().to_string();
+        let email = proposal.holder_email().as_str().to_string();
         if self.fail_for_emails.lock().unwrap().contains(&email) {
             return Err(NotificationError::SendFailure(
                 "test induced failure".to_string(),
@@ -115,10 +115,15 @@ fn os_system() -> ExternalSystem {
     }
 }
 
-fn make_reservation(owner_email: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> ResourceUsage {
-    let email = EmailAddress::new(owner_email.to_string()).unwrap();
+fn make_reservation(
+    holder_email: &str,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> ReservedSlotView {
+    let email = EmailAddress::new(holder_email.to_string()).unwrap();
     let period = TimePeriod::new(start, end).unwrap();
-    ResourceUsage::new(email, period, vec![gpu_resource()], None).unwrap()
+    ReservedSlotView::of_new_one_time_reservation(email, period, vec![gpu_resource()], None)
+        .unwrap()
 }
 
 #[allow(clippy::type_complexity)]
@@ -126,19 +131,19 @@ fn make_usecase(
     threshold_minutes: i64,
 ) -> (
     ReconcileObservedUsagesUseCase<
-        MockUsageRepository,
+        MockReservationRepository,
         MockResourceUsageObserver,
         InMemoryIdentityLinkRepository,
         MockReservationProposalNotifier,
         RecordingUnauthorizedUsageNotifier,
     >,
-    Arc<MockUsageRepository>,
+    Arc<MockReservationRepository>,
     Arc<MockResourceUsageObserver>,
     Arc<InMemoryIdentityLinkRepository>,
     MockReservationProposalNotifier,
     RecordingUnauthorizedUsageNotifier,
 ) {
-    let repository = Arc::new(MockUsageRepository::new());
+    let repository = Arc::new(MockReservationRepository::new());
     let observer = Arc::new(MockResourceUsageObserver::new());
     let identity_repo = Arc::new(InMemoryIdentityLinkRepository::default());
     let proposal_notifier = MockReservationProposalNotifier::new();
@@ -169,7 +174,7 @@ fn make_usecase_with_failing_notifier(
     threshold_minutes: i64,
 ) -> (
     ReconcileObservedUsagesUseCase<
-        MockUsageRepository,
+        MockReservationRepository,
         MockResourceUsageObserver,
         InMemoryIdentityLinkRepository,
         FailingReservationProposalNotifier,
@@ -179,7 +184,7 @@ fn make_usecase_with_failing_notifier(
     Arc<InMemoryIdentityLinkRepository>,
     FailingReservationProposalNotifier,
 ) {
-    let repository = Arc::new(MockUsageRepository::new());
+    let repository = Arc::new(MockReservationRepository::new());
     let observer = Arc::new(MockResourceUsageObserver::new());
     let identity_repo = Arc::new(InMemoryIdentityLinkRepository::default());
     let proposal_notifier = FailingReservationProposalNotifier::new();
@@ -232,7 +237,7 @@ async fn test_unreserved_past_threshold_proposes_once() {
 
     let proposals = proposal_notifier.sent_proposals();
     assert_eq!(proposals.len(), 1);
-    assert_eq!(proposals[0].owner_email().as_str(), "user@example.com");
+    assert_eq!(proposals[0].holder_email().as_str(), "user@example.com");
     assert_eq!(proposals[0].duration_candidates().len(), 3);
 }
 
@@ -263,7 +268,7 @@ async fn test_reserved_matching_owner_no_notification() {
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
-    repo.save(&reservation).await.unwrap();
+    repo.put_slot(&reservation);
 
     observer.set_active_usages(vec![ObservedUsage::new(
         gpu_resource(),
@@ -288,7 +293,7 @@ async fn test_reserved_mismatched_owner_notifies_unauthorized() {
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
-    repo.save(&reservation).await.unwrap();
+    repo.put_slot(&reservation);
 
     observer.set_active_usages(vec![ObservedUsage::new(
         gpu_resource(),
@@ -301,7 +306,7 @@ async fn test_reserved_mismatched_owner_notifies_unauthorized() {
     let notified = notifier.notified();
     assert_eq!(notified.len(), 1);
     let (reserved_usage, actual_user_email) = &notified[0];
-    assert_eq!(reserved_usage.owner_email().as_str(), "owner@example.com");
+    assert_eq!(reserved_usage.holder_email().as_str(), "owner@example.com");
     assert_eq!(actual_user_email.as_str(), "other@example.com");
 
     // 未予約提案は発生しない（既に予約が存在するため）
@@ -319,7 +324,7 @@ async fn test_unauthorized_notification_deduplicated_per_observation_session() {
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
-    repo.save(&reservation).await.unwrap();
+    repo.put_slot(&reservation);
 
     let active_since = now - Duration::minutes(30);
     observer.set_active_usages(vec![ObservedUsage::new(
@@ -355,7 +360,7 @@ async fn test_reserved_unknown_identity_skips_notification() {
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
-    repo.save(&reservation).await.unwrap();
+    repo.put_slot(&reservation);
 
     observer.set_active_usages(vec![ObservedUsage::new(
         gpu_resource(),
@@ -511,7 +516,7 @@ async fn test_reserved_resource_is_excluded_from_the_grouped_proposal() {
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
-    repo.save(&reservation).await.unwrap();
+    repo.put_slot(&reservation);
 
     let active_since = now - Duration::minutes(20);
     observer.set_active_usages(vec![
@@ -579,7 +584,7 @@ async fn a_reservation_that_starts_later_today_does_not_count_as_in_progress() {
         now + Duration::hours(3),
         now + Duration::hours(5),
     );
-    repo.save(&later_today).await.unwrap();
+    repo.put_slot(&later_today);
 
     observer.set_active_usages(vec![ObservedUsage::new(
         gpu_resource(),
@@ -596,7 +601,7 @@ async fn a_reservation_that_starts_later_today_does_not_count_as_in_progress() {
         1,
         "先の予約は突合の相手にならず、今の利用は未予約として扱われるべき"
     );
-    assert_eq!(proposals[0].owner_email().as_str(), "user@example.com");
+    assert_eq!(proposals[0].holder_email().as_str(), "user@example.com");
     // 予約者が違う相手と照合してしまうと無断使用として通知されてしまう
     assert!(
         notifier.notified().is_empty(),
@@ -611,14 +616,14 @@ async fn using_several_gpus_of_one_reservation_notifies_once() {
 
     // 1件の予約が2枚のGPUを押さえていて、別の利用者がその2枚を使っている
     let now = Utc::now();
-    let reservation = ResourceUsage::new(
+    let reservation = ReservedSlotView::of_new_one_time_reservation(
         EmailAddress::new("owner@example.com".to_string()).unwrap(),
         TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap(),
         vec![gpu_resource(), gpu_resource_device1()],
         None,
     )
     .unwrap();
-    repo.save(&reservation).await.unwrap();
+    repo.put_slot(&reservation);
 
     let active_since = now - Duration::minutes(20);
     observer.set_active_usages(vec![
@@ -658,14 +663,14 @@ async fn using_gpus_of_two_different_reservations_notifies_for_each() {
         ("owner-a@example.com", gpu_resource()),
         ("owner-b@example.com", gpu_resource_device1()),
     ] {
-        let reservation = ResourceUsage::new(
+        let reservation = ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new(owner.to_string()).unwrap(),
             TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap(),
             vec![resource],
             None,
         )
         .unwrap();
-        repo.save(&reservation).await.unwrap();
+        repo.put_slot(&reservation);
     }
 
     let active_since = now - Duration::minutes(20);
@@ -733,7 +738,7 @@ async fn the_unauthorized_notice_is_forgotten_once_the_reservation_ends() {
         now - Duration::hours(1),
         now + Duration::hours(1),
     );
-    repo.save(&reservation).await.unwrap();
+    repo.put_slot(&reservation);
 
     observer.set_active_usages(vec![ObservedUsage::new(
         gpu_resource(),
@@ -745,11 +750,11 @@ async fn the_unauthorized_notice_is_forgotten_once_the_reservation_ends() {
     assert_eq!(notifier.notified().len(), 1);
 
     // 予約が取り消され、進行中の予約がなくなる
-    repo.delete(reservation.id()).await.unwrap();
+    repo.delete_reservation(reservation.reservation_id());
     usecase.poll_once().await.unwrap();
 
     // 同じ予約が戻れば、それは改めて知らせるべき無断使用である
-    repo.save(&reservation).await.unwrap();
+    repo.put_slot(&reservation);
     usecase.poll_once().await.unwrap();
 
     assert_eq!(

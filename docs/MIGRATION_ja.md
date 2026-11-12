@@ -1,5 +1,53 @@
 # マイグレーションガイド
 
+## 予約の言葉の見直し (v3.0.0)
+
+v3.0.0 では、予約を「予約」と「予約枠」の言葉で扱うように作り直しました。
+カレンダーに保存されている予約、`resources.toml`、環境変数はそのまま使えます。
+利用者・管理者に影響があるのは次の3点です。
+
+### MCPツール名の変更
+
+エージェントは接続のたびにツール一覧を読み直すため、通常は何もしなくて構いません。
+ツール名を固定で書いた設定やプロンプトがある場合は書き換えてください。
+
+| 以前 | v3.0.0 |
+| --- | --- |
+| `list_all_reservations` | `list_reserved_slots` |
+| `list_my_reservations` | `list_my_reserved_slots` |
+| `get_reservation` | `get_reserved_slot`（予約枠の取得） |
+| `update_reservation` | `update_reserved_slot` |
+| `release_reservation_early` | `end_reserved_slot_early` |
+| `cancel_reservation` | `cancel_reserved_slot`（予約枠1つの取り消し） |
+
+`cancel_reserved_slot`は、以前の`cancel_reservation`と同じく予約枠を1つ取り消します。
+
+### 通知テンプレートの設定キー
+
+予約の取り消しのテンプレートは`deleted`から`cancelled`に名前が変わりました。
+以前の`deleted`も引き続き読み込まれますが、`cancelled`への書き換えをおすすめします。
+
+### ログのフィールド名
+
+ログのフィールド`usage_id`は`reserved_slot_id`（予約枠）または`reservation_id`（予約）に、
+`owner`は`holder`になりました。各ポーリングの要約行は次の形になります。
+
+```text
+reconcile pass finished
+  observed=6 reserved_slots_in_progress=5 matched_to_a_reserved_slot=5
+  unreserved_sessions=1 failures=0 elapsed_ms=412
+idle reserved slot pass finished
+  reserved_slots_in_progress=5 servers_observed=3 absent=0 held=1 held_partially=0
+  notified=1 withheld=0 unreachable=0 failures=0 elapsed_ms=95
+change detection pass finished
+  reservations=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
+```
+
+以前の`reservations_in_progress`は`reserved_slots_in_progress`に、`matched_to_a_reservation`は
+`matched_to_a_reserved_slot`に、`idle reservation pass finished`は`idle reserved slot pass finished`になりました。
+
+journalctlでこれらのフィールドを絞り込みに使っている場合は書き換えてください。
+
 ## ストレージ設定スキーマの変更 (v2.0.0)
 
 v2.0.0 では `resources.toml` 設定ファイルの形式に破壊的変更が入ります。カレンダーID

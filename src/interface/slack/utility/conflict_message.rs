@@ -1,7 +1,7 @@
 //! リソース競合メッセージ構築
 //!
 //! `ApplicationError::ResourceConflict`が持つ構造化データ（競合したリソースと
-//! 既存の使用予定の一覧）から、通知メッセージと同じ仕組み（`TemplateRenderer`）を
+//! 既存の予約枠の一覧）から、通知メッセージと同じ仕組み（`TemplateRenderer`）を
 //! 使ってユーザー向けメッセージを組み立てます。
 //!
 //! 複数リソースをまとめて予約しようとして複数件が競合した場合は、
@@ -12,7 +12,7 @@
 //! 一貫した表示になります。
 
 use crate::domain::ports::repositories::IdentityLinkRepository;
-use crate::domain::services::resource_usage::errors::ResourceConflictError;
+use crate::domain::services::reservation::errors::ResourceConflictError;
 use crate::infrastructure::config::{NotificationCustomization, ResourceConfig};
 use crate::infrastructure::notifier::template_renderer::TemplateRenderer;
 use crate::interface::slack::utility::user_resolver;
@@ -21,9 +21,9 @@ use std::sync::Arc;
 /// リソース競合エラー（複数件）からユーザー向けメッセージを構築
 ///
 /// # 引数
-/// * `conflicts` - 競合した全件（競合したリソースと既存の使用予定の組）
+/// * `conflicts` - 競合した全件（競合したリソースと既存の予約枠の組）
 /// * `resource_config` - リソース設定（競合先リソースの通知設定を参照するため）
-/// * `identity_repo` - ID紐付けリポジトリ（既存予約の所有者表示名解決のため）
+/// * `identity_repo` - ID紐付けリポジトリ（既存予約の予約者表示名解決のため）
 ///
 /// # 動作
 /// - 1件の競合: `conflict` テンプレートを使用（見出し含む）
@@ -91,8 +91,8 @@ async fn build_one(
     resource_config: &ResourceConfig,
     identity_repo: &Arc<dyn IdentityLinkRepository>,
 ) -> String {
-    let owner_display =
-        user_resolver::resolve_display_name(conflict.existing_usage.owner_email(), identity_repo)
+    let holder_display =
+        user_resolver::resolve_display_name(conflict.existing_slot.holder_email(), identity_repo)
             .await;
 
     let (customization, timezone_owned) =
@@ -106,8 +106,8 @@ async fn build_one(
 
     renderer.render_conflict(
         &conflict.resources,
-        &conflict.existing_usage,
-        &owner_display,
+        &conflict.existing_slot,
+        &holder_display,
     )
 }
 
@@ -117,8 +117,8 @@ async fn build_item(
     resource_config: &ResourceConfig,
     identity_repo: &Arc<dyn IdentityLinkRepository>,
 ) -> String {
-    let owner_display =
-        user_resolver::resolve_display_name(conflict.existing_usage.owner_email(), identity_repo)
+    let holder_display =
+        user_resolver::resolve_display_name(conflict.existing_slot.holder_email(), identity_repo)
             .await;
 
     let (customization, timezone_owned) =
@@ -132,8 +132,8 @@ async fn build_item(
 
     renderer.render_conflict_item(
         &conflict.resources,
-        &conflict.existing_usage,
-        &owner_display,
+        &conflict.existing_slot,
+        &holder_display,
     )
 }
 
@@ -142,10 +142,11 @@ mod tests {
     use super::*;
     use crate::domain::aggregates::identity_link::entity::IdentityLink;
     use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
-    use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-    use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource, TimePeriod};
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::EmailAddress;
+    use crate::domain::common::TimePeriod;
     use crate::domain::ports::repositories::RepositoryError;
+    use crate::domain::read_models::ReservedSlotView;
     use crate::infrastructure::config::{DeviceConfig, ServerConfig};
     use async_trait::async_trait;
     use chrono::{Duration, Utc};
@@ -199,10 +200,10 @@ mod tests {
         }
     }
 
-    fn reservation(owner: &str, resources: Vec<Resource>) -> ResourceUsage {
+    fn reservation(holder: &str, resources: Vec<Resource>) -> ReservedSlotView {
         let now = Utc::now();
-        ResourceUsage::new(
-            EmailAddress::new(owner.to_string()).unwrap(),
+        ReservedSlotView::of_new_one_time_reservation(
+            EmailAddress::new(holder.to_string()).unwrap(),
             TimePeriod::new(now, now + Duration::hours(2)).unwrap(),
             resources,
             None,
@@ -212,7 +213,7 @@ mod tests {
 
     #[tokio::test]
     async fn conflicts_with_one_reservation_are_reported_as_one_message() {
-        let existing = reservation("owner@example.com", vec![gpu(0), gpu(1), gpu(2)]);
+        let existing = reservation("holder@example.com", vec![gpu(0), gpu(1), gpu(2)]);
         let conflicts = vec![ResourceConflictError::new(
             vec![gpu(0), gpu(1), gpu(2)],
             existing,
@@ -236,8 +237,8 @@ mod tests {
 
     #[tokio::test]
     async fn conflicts_with_separate_reservations_are_reported_separately() {
-        let first = reservation("owner-a@example.com", vec![gpu(0)]);
-        let second = reservation("owner-b@example.com", vec![gpu(1)]);
+        let first = reservation("holder-a@example.com", vec![gpu(0)]);
+        let second = reservation("holder-b@example.com", vec![gpu(1)]);
         let conflicts = vec![
             ResourceConflictError::new(vec![gpu(0)], first),
             ResourceConflictError::new(vec![gpu(1)], second),
@@ -257,13 +258,13 @@ mod tests {
             message.starts_with("2件の予約と重複しています"),
             "複数競合は件数行を先頭に付けるべき: {message}"
         );
-        assert!(message.contains("owner-a@example.com"));
-        assert!(message.contains("owner-b@example.com"));
+        assert!(message.contains("holder-a@example.com"));
+        assert!(message.contains("holder-b@example.com"));
     }
 
     #[tokio::test]
     async fn single_conflict_shows_heading() {
-        let existing = reservation("owner@example.com", vec![gpu(0)]);
+        let existing = reservation("holder@example.com", vec![gpu(0)]);
         let conflicts = vec![ResourceConflictError::new(vec![gpu(0)], existing)];
         let repo: Arc<dyn IdentityLinkRepository> = Arc::new(NoLinks);
 
@@ -279,9 +280,9 @@ mod tests {
 
     #[tokio::test]
     async fn multiple_conflicts_show_count_without_heading() {
-        let first = reservation("owner-a@example.com", vec![gpu(0)]);
-        let second = reservation("owner-b@example.com", vec![gpu(1)]);
-        let third = reservation("owner-c@example.com", vec![gpu(2)]);
+        let first = reservation("holder-a@example.com", vec![gpu(0)]);
+        let second = reservation("holder-b@example.com", vec![gpu(1)]);
+        let third = reservation("holder-c@example.com", vec![gpu(2)]);
         let conflicts = vec![
             ResourceConflictError::new(vec![gpu(0)], first),
             ResourceConflictError::new(vec![gpu(1)], second),

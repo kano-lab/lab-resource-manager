@@ -4,13 +4,11 @@
 //!
 //! # モジュール
 //!
-//! - `authorization` - リソース操作の認可を管理
-//! - `resource_usage` - リソース使用予定に関するビジネスロジック
+//! - `reservation` - 予約と予約枠に関するビジネスロジック
+//!
+//! 「予約者本人だけが変えられる」という決まりは、予約枠の操作そのもの
+//! （`ReservedSlotView::reschedule`など）が確かめる。操作と別の認可サービスは置かない。
 
-pub mod authorization;
-pub mod resource_usage;
+pub mod reservation;
 
-pub use authorization::{
-    AuthorizationError, AuthorizationPolicy, ResourceUsageAuthorizationPolicy,
-};
-pub use resource_usage::ResourceConflictChecker;
+pub use reservation::{ReservationChangeInterpreter, ResourceConflictChecker};

@@ -1,0 +1,65 @@
+use crate::domain::ports::idle_reserved_slot_notifier::{
+    IdleReservedSlot, IdleReservedSlotNotifier,
+};
+use crate::domain::ports::notifier::NotificationError;
+use async_trait::async_trait;
+use std::sync::{Arc, Mutex};
+
+/// テスト/開発用の記録専用実装
+///
+/// 送信内容を標準出力に表示しつつ、テストからの検証用に内部へ保持する。
+#[derive(Clone, Default)]
+pub struct MockIdleReservedSlotNotifier {
+    notices: Arc<Mutex<Vec<IdleReservedSlot>>>,
+    fails: Arc<Mutex<bool>>,
+    recipient_unknown: Arc<Mutex<bool>>,
+}
+
+impl MockIdleReservedSlotNotifier {
+    /// 新しいモック実装を作成
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// これまでに送信された通知の一覧を取得
+    pub fn sent_notices(&self) -> Vec<IdleReservedSlot> {
+        self.notices.lock().unwrap().clone()
+    }
+
+    /// 以降の送信を失敗させるかどうかを切り替える
+    pub fn set_failing(&self, failing: bool) {
+        *self.fails.lock().unwrap() = failing;
+    }
+
+    /// 以降の送信を「宛先が分からない」で断るかどうかを切り替える
+    pub fn set_recipient_unknown(&self, unknown: bool) {
+        *self.recipient_unknown.lock().unwrap() = unknown;
+    }
+}
+
+#[async_trait]
+impl IdleReservedSlotNotifier for MockIdleReservedSlotNotifier {
+    async fn notify_idle(&self, idle: IdleReservedSlot) -> Result<(), NotificationError> {
+        if *self.fails.lock().unwrap() {
+            return Err(NotificationError::SendFailure(
+                "test induced failure".to_string(),
+            ));
+        }
+
+        if *self.recipient_unknown.lock().unwrap() {
+            return Err(NotificationError::RecipientUnknown(
+                "test recipient unknown".to_string(),
+            ));
+        }
+
+        println!(
+            "📤 [MockIdleReservedSlotNotifier] {} の予約 {} が {} から使われていない（{:?}）",
+            idle.slot().holder_email().as_str(),
+            idle.slot().id().as_str(),
+            idle.idle_since(),
+            idle.evidence()
+        );
+        self.notices.lock().unwrap().push(idle);
+        Ok(())
+    }
+}

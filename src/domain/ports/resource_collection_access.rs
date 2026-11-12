@@ -39,7 +39,7 @@ impl std::error::Error for ResourceCollectionAccessError {}
 
 /// リソースコレクションアクセスサービスのインターフェース
 ///
-/// ResourceUsageを管理するコレクション（例：Googleカレンダー）へのアクセス権限を管理する。
+/// ReservedSlotViewを管理するコレクション（例：Googleカレンダー）へのアクセス権限を管理する。
 /// このサービスはユーザーにリソース予約権限を付与・剥奪する責務を持つ。
 #[async_trait]
 pub trait ResourceCollectionAccessService: Send + Sync {

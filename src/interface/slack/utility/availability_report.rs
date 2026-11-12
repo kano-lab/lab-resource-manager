@@ -3,13 +3,13 @@
 //! `/free`コマンドと、その応答に置いたボタンの両方から使います。
 //! どちらの入口から来ても同じ見え方になるよう、調べる範囲と表示の組み立てを1箇所に置きます。
 
-use crate::domain::aggregates::resource_usage::value_objects::TimePeriod;
 use crate::domain::common::EmailAddress;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::{IdentityLinkRepository, ResourceUsageRepository};
-use crate::domain::services::resource_usage::availability::{
-    AvailabilityState, ResourceAvailability,
+use crate::domain::ports::repositories::{
+    IdentityLinkRepository, ReservationRepository, ReservedSlotQuery,
 };
+use crate::domain::services::reservation::availability::{AvailabilityState, ResourceAvailability};
 use crate::infrastructure::config::ResourceConfig;
 use crate::infrastructure::notifier::formatter::{start_of_day, to_zoned};
 use crate::interface::slack::app::SlackApp;
@@ -33,7 +33,7 @@ pub async fn now_view<R, N>(
     app: &SlackApp<R, N>,
 ) -> Result<SlackMessageContent, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
@@ -41,14 +41,14 @@ where
     let window = TimePeriod::new(now, now + Duration::days(LOOKAHEAD_DAYS))?;
 
     let availabilities = availabilities_in(app, &window).await?;
-    let owner_displays =
-        resolve_owner_displays(&availabilities, now, &app.repositories().identity_link).await;
+    let holder_displays =
+        resolve_holder_displays(&availabilities, now, &app.repositories().identity_link).await;
 
     Ok(availability_message::build(
         &availabilities,
         now,
         timezone.as_deref(),
-        &owner_displays,
+        &holder_displays,
         &day_options(now, timezone.as_deref()),
     ))
 }
@@ -61,7 +61,7 @@ pub async fn day_view<R, N>(
     date: NaiveDate,
 ) -> Result<SlackMessageContent, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
@@ -87,7 +87,7 @@ pub async fn availabilities_in<R, N>(
     window: &TimePeriod,
 ) -> Result<Vec<ResourceAvailability>, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let resources = app.resource_config().all_resources();
@@ -122,25 +122,25 @@ fn day_window(date: NaiveDate, now: DateTime<Utc>, timezone: Option<&str>) -> Op
 /// いま使用中の予約について、予約者の表示名を解決する
 ///
 /// 解決できなかった予約者は結果に含めない（ビューがメールアドレスで表示する）。
-pub async fn resolve_owner_displays(
+pub async fn resolve_holder_displays(
     availabilities: &[ResourceAvailability],
     now: DateTime<Utc>,
     identity_repo: &Arc<dyn IdentityLinkRepository>,
 ) -> HashMap<EmailAddress, String> {
-    let mut owners: Vec<EmailAddress> = Vec::new();
+    let mut holders: Vec<EmailAddress> = Vec::new();
 
     for availability in availabilities {
         if let AvailabilityState::Busy(busy) = availability.state_at(now)
-            && !owners.contains(busy.owner_email())
+            && !holders.contains(busy.holder_email())
         {
-            owners.push(busy.owner_email().clone());
+            holders.push(busy.holder_email().clone());
         }
     }
 
-    let mut displays = HashMap::with_capacity(owners.len());
-    for owner in owners {
-        let display = user_resolver::resolve_display_name(&owner, identity_repo).await;
-        displays.insert(owner, display);
+    let mut displays = HashMap::with_capacity(holders.len());
+    for holder in holders {
+        let display = user_resolver::resolve_display_name(&holder, identity_repo).await;
+        displays.insert(holder, display);
     }
 
     displays
