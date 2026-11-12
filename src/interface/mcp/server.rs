@@ -41,7 +41,7 @@ pub struct McpUseCases<R: ReservationRepository + ReservedSlotQuery> {
     /// 指定期間の予約枠を一覧する
     pub list_reserved_slots: Arc<ListReservedSlotsUseCase<R>>,
     /// 予約者の予約枠を一覧する
-    pub list_slots_held_by: Arc<ListReservedSlotsHeldByUseCase<R>>,
+    pub list_reserved_slots_held_by: Arc<ListReservedSlotsHeldByUseCase<R>>,
     /// 予約枠を取得する
     pub get_reserved_slot: Arc<GetReservedSlotUseCase<R>>,
     /// 予約枠の期間・備考を更新する
@@ -276,7 +276,7 @@ where
         };
         match self
             .usecases
-            .list_slots_held_by
+            .list_reserved_slots_held_by
             .execute(&caller, &window)
             .await
         {
