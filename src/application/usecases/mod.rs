@@ -43,8 +43,6 @@
 
 /// 事後予約提案の受諾
 pub mod accept_reservation_proposal;
-/// 予約を取り消すユースケース
-pub mod cancel_reservation;
 /// 予約枠を取り消すユースケース
 pub mod cancel_slot;
 /// 指定期間における各リソースの空きを調べるユースケース
@@ -59,8 +57,6 @@ pub mod detect_idle_slots;
 mod detect_idle_slots_tests;
 /// 進行中の予約枠を今の時点で締めるユースケース
 pub mod end_slot_early;
-/// IDで予約を取得するユースケース
-pub mod get_reservation;
 /// IDで予約枠を取得するユースケース
 pub mod get_slot;
 /// ユーザーにリソースアクセス権を付与するユースケース
@@ -81,14 +77,12 @@ pub mod test_support;
 pub mod update_slot;
 
 pub use accept_reservation_proposal::AcceptReservationProposalUseCase;
-pub use cancel_reservation::CancelReservationUseCase;
 pub use cancel_slot::CancelSlotUseCase;
 pub use check_resource_availability::CheckResourceAvailabilityUseCase;
 pub use create_reservation::CreateReservationUseCase;
 pub use describe_monitoring::DescribeMonitoringUseCase;
 pub use detect_idle_slots::{DetectIdleSlotsUseCase, IdleCriteria};
 pub use end_slot_early::EndSlotEarlyUseCase;
-pub use get_reservation::GetReservationUseCase;
 pub use get_slot::GetSlotUseCase;
 pub use grant_user_resource_access::GrantUserResourceAccessUseCase;
 pub use list_slots::ListSlotsUseCase;

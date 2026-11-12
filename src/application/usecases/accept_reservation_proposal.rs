@@ -496,20 +496,6 @@ mod tests {
                 .push(reservation.one_time_slot().unwrap());
             Ok(())
         }
-
-        async fn find_reservation(
-            &self,
-            _id: &crate::domain::aggregates::reservation::ReservationId,
-        ) -> Result<Option<Reservation>, RepositoryError> {
-            unimplemented!("このテストでは使用しない")
-        }
-
-        async fn remove_reservation(
-            &self,
-            _id: &crate::domain::aggregates::reservation::ReservationId,
-        ) -> Result<(), RepositoryError> {
-            unimplemented!("このテストでは使用しない")
-        }
     }
 
     #[tokio::test]

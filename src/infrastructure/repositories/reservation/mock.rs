@@ -1,8 +1,6 @@
 use crate::domain::common::TimePeriod;
 use crate::domain::{
-    aggregates::reservation::{
-        Reservation, ReservationId, ReservationKind, ReservedSlot, ReservedSlotId,
-    },
+    aggregates::reservation::{Reservation, ReservedSlot, ReservedSlotId},
     common::EmailAddress,
     ports::repositories::{RepositoryError, ReservationRepository, ReservedSlotRepository},
 };
@@ -14,7 +12,6 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone)]
 pub struct MockReservationRepository {
     slots: Arc<Mutex<HashMap<String, ReservedSlot>>>,
-    recurring_reservations: Arc<Mutex<HashMap<String, Reservation>>>,
 }
 
 impl Default for MockReservationRepository {
@@ -28,24 +25,7 @@ impl MockReservationRepository {
     pub fn new() -> Self {
         Self {
             slots: Arc::new(Mutex::new(HashMap::new())),
-            recurring_reservations: Arc::new(Mutex::new(HashMap::new())),
         }
-    }
-
-    /// 定期予約を、保存先に既にあるものとして置く（予約枠は別途`put_slot`する）
-    pub fn put_recurring_reservation(&self, reservation: Reservation) {
-        self.recurring_reservations
-            .lock()
-            .unwrap()
-            .insert(reservation.id().as_str().to_string(), reservation);
-    }
-
-    /// 定期予約の定義だけを取り除く（予約枠は別途`remove_slot`する）
-    pub fn remove_recurring_reservation(&self, id: &ReservationId) {
-        self.recurring_reservations
-            .lock()
-            .unwrap()
-            .remove(id.as_str());
     }
 
     /// 予約枠を、保存先に既にあるものとして置く
@@ -68,45 +48,6 @@ impl ReservationRepository for MockReservationRepository {
             .ok_or_else(|| RepositoryError::Unknown("単発予約以外は扱えません".to_string()))?;
         self.put_slot(&slot);
         Ok(())
-    }
-
-    async fn find_reservation(
-        &self,
-        id: &ReservationId,
-    ) -> Result<Option<Reservation>, RepositoryError> {
-        if let Some(recurring) = self.recurring_reservations.lock().unwrap().get(id.as_str()) {
-            return Ok(Some(recurring.clone()));
-        }
-
-        Ok(self
-            .slots
-            .lock()
-            .unwrap()
-            .values()
-            .find(|slot| {
-                slot.reservation_kind() == ReservationKind::OneTime && &slot.reservation_id() == id
-            })
-            .map(Reservation::from_one_time_slot))
-    }
-
-    async fn remove_reservation(&self, id: &ReservationId) -> Result<(), RepositoryError> {
-        let removed_definition = self
-            .recurring_reservations
-            .lock()
-            .unwrap()
-            .remove(id.as_str())
-            .is_some();
-
-        let mut slots = self.slots.lock().unwrap();
-        let before = slots.len();
-        slots.retain(|_, slot| &slot.reservation_id() != id);
-        let removed_slots = slots.len() < before;
-
-        if removed_definition || removed_slots {
-            Ok(())
-        } else {
-            Err(RepositoryError::NotFound)
-        }
     }
 }
 

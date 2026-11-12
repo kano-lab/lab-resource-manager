@@ -11,4 +11,4 @@
 
 pub mod reservation;
 
-pub use reservation::{ReservationChangeInterpreter, ResourceConflictChecker, WatchedReservations};
+pub use reservation::{ReservationChangeInterpreter, ResourceConflictChecker};

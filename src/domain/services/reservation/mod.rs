@@ -22,9 +22,7 @@ pub mod errors;
 pub mod slot_activity;
 
 pub use availability::{AvailabilityState, BusyPeriod, ResourceAvailability};
-pub use change_interpreter::{
-    InterpretedChanges, ReservationChangeInterpreter, WatchedReservations,
-};
+pub use change_interpreter::{InterpretedChanges, ReservationChangeInterpreter};
 pub use conflict_checker::ResourceConflictChecker;
 pub use errors::ResourceConflictError;
 pub use slot_activity::{GpusAtRest, SlotActivity, judge_slot_activity};

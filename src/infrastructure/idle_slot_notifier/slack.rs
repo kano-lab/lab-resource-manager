@@ -1,7 +1,7 @@
 //! Slack DM経由の未使用予約の通知実装
 
+use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::Gpu;
-use crate::domain::aggregates::reservation::{ReservationKind, ReservedSlot};
 use crate::domain::ports::idle_slot_notifier::{IdleEvidence, IdleSlot, IdleSlotNotifier};
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::repositories::IdentityLinkRepository;
@@ -149,12 +149,6 @@ fn format_memory(used_memory_mib: u64) -> String {
 /// 未使用の予約を知らせるDMのBlock Kitメッセージを構築する（純粋関数、ユニットテスト対象）
 fn build_idle_blocks(slot: &ReservedSlot, text: &str) -> Vec<SlackBlock> {
     let slot_id = slot.id().as_str();
-    // 定期予約の予約枠を取り消しても、定期予約と他の予約枠は残る。ボタンの文言で
-    // 定期予約ごと消えるように読めないよう、取り消す範囲を言い分ける
-    let cancel_label = match slot.reservation_kind() {
-        ReservationKind::OneTime => "❌ 予約を取り消す",
-        ReservationKind::Recurring => "❌ この予約枠だけ取り消す",
-    };
 
     let blocks_json = serde_json::json!([
         {
@@ -190,7 +184,7 @@ fn build_idle_blocks(slot: &ReservedSlot, text: &str) -> Vec<SlackBlock> {
                     "type": "button",
                     "text": {
                         "type": "plain_text",
-                        "text": cancel_label
+                        "text": "❌ 予約を取り消す"
                     },
                     "style": "danger",
                     "action_id": ACTION_IDLE_CANCEL,
@@ -278,30 +272,6 @@ mod tests {
     fn memory_is_shown_in_a_unit_that_reads_at_a_glance() {
         assert_eq!(format_memory(38_000), "37.1 GiB");
         assert_eq!(format_memory(512), "512 MiB");
-    }
-
-    use crate::domain::aggregates::reservation::ReservationId;
-
-    fn cancel_label(slot: &ReservedSlot) -> String {
-        let json = serde_json::to_value(build_idle_blocks(slot, "test message")).unwrap();
-        json[1]["elements"][2]["text"]["text"]
-            .as_str()
-            .unwrap()
-            .to_string()
-    }
-
-    #[test]
-    fn cancelling_a_slot_of_a_recurring_reservation_says_only_that_slot_goes() {
-        let one_time = sample_slot();
-        let recurring = sample_slot()
-            .of_recurring_reservation(ReservationId::from_string("weekly".to_string()));
-
-        assert_eq!(cancel_label(&one_time), "❌ 予約を取り消す");
-        assert_eq!(
-            cancel_label(&recurring),
-            "❌ この予約枠だけ取り消す",
-            "定期予約ごと消えるように読めてはいけない"
-        );
     }
 
     #[test]

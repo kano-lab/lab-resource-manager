@@ -65,7 +65,7 @@
 //! let notifier = NotificationRouter::new(resource_config, identity_repo);
 //!
 //! // Create and run use case. The watch window states how far ahead changes are tracked;
-//! // a recurring reservation holds one reserved slot per repetition, so it cannot be unbounded.
+//! // recurring calendar events expand into individual reserved slots, so it cannot be unbounded.
 //! let usecase = NotifyReservationChangesUseCase::new(
 //!     repository,
 //!     notifier,
@@ -90,7 +90,6 @@
 //!
 //! - Google Calendar integration for resource reservations
 //! - Slack notifications when reservations are created, updated, or cancelled
-//!   (a recurring reservation is announced once, not once per reserved slot)
 //! - DDD Factory Pattern for device specification parsing
 //! - Mock implementations for testing
 //! - CLI arguments for flexible deployment
@@ -124,8 +123,7 @@ pub mod prelude {
 
     // Domain types
     pub use crate::domain::aggregates::reservation::{
-        BelongsTo, RecurrenceEnd, RecurrenceFrequency, RecurrenceRule, Reservation,
-        ReservationEvent, ReservationId, ReservationKind, ReservedSlot, ReservedSlotId, Schedule,
+        Reservation, ReservationEvent, ReservationId, ReservedSlot, ReservedSlotId, Schedule,
         errors::ReservationError,
         factory::{ResourceFactory, ResourceFactoryError},
         value_objects::{Gpu, Resource},

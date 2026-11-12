@@ -1,6 +1,4 @@
 /// 予約の識別子
-///
-/// 単発予約と定期予約のどちらも、この識別子で指す。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ReservationId(String);
 
@@ -30,7 +28,7 @@ impl ReservationId {
 /// 予約枠の識別子
 ///
 /// 予約枠のIDは予約から決まる。単発予約の予約枠は、その予約と同じ識別子を持つ
-/// （予約と予約枠が1対1のため）。定期予約の予約枠は、繰り返しの1回ごとに別の識別子を持つ。
+/// （予約と予約枠が1対1のため）。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ReservedSlotId(String);
 

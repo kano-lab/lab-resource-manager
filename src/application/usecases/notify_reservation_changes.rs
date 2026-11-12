@@ -2,9 +2,9 @@ use crate::application::ApplicationError;
 use crate::domain::aggregates::reservation::{ReservedSlot, ReservedSlotId};
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::Notifier;
-use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
-use crate::domain::services::{ReservationChangeInterpreter, WatchedReservations};
-use chrono::{DateTime, Duration, Utc};
+use crate::domain::ports::repositories::ReservedSlotRepository;
+use crate::domain::services::ReservationChangeInterpreter;
+use chrono::{Duration, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
@@ -17,14 +17,13 @@ use tracing::info;
 /// 読み取った出来事を送ることに責務を持つ。
 ///
 /// カレンダーは人の手でも直接編集されるため、アプリの操作ではなく保存先の変化を見る。
-/// 定期予約は、予約枠がいくつあっても1件の予約として伝わる。
 ///
 /// # スコープ
 /// 監視するのは、現在時刻から`watch_window`先までに重なる予約枠である。
 /// 予定どおり終わった予約枠は自然に監視範囲から外れ、何も伝えない。
 pub struct NotifyReservationChangesUseCase<R, N>
 where
-    R: ReservationRepository + ReservedSlotRepository,
+    R: ReservedSlotRepository,
     N: Notifier,
 {
     repository: Arc<R>,
@@ -35,12 +34,12 @@ where
     /// 前回と今回の状態を突き合わせて差分を通知するため、範囲を狭めると
     /// 範囲外に出た予約枠が取り消しとして扱われる。用途に見合う長さを与える必要がある。
     watch_window: Duration,
-    previous: tokio::sync::Mutex<WatchedReservations>,
+    previous_slots: tokio::sync::Mutex<HashMap<ReservedSlotId, ReservedSlot>>,
 }
 
 impl<R, N> NotifyReservationChangesUseCase<R, N>
 where
-    R: ReservationRepository + ReservedSlotRepository,
+    R: ReservedSlotRepository,
     N: Notifier,
 {
     /// 新しいインスタンスを作成し、初期状態を取得する
@@ -59,21 +58,13 @@ where
         notifier: N,
         watch_window: Duration,
     ) -> Result<Self, ApplicationError> {
-        let (slots, window_end) = Self::fetch_current_slots(&repository, watch_window).await?;
-        let interpreter = ReservationChangeInterpreter::new();
-        let recurring_reservations = interpreter
-            .recurring_reservations_of(repository.as_ref(), &slots)
-            .await?;
+        let slots = Self::fetch_current_slots(&repository, watch_window).await?;
         Ok(Self {
             repository,
             notifier,
-            interpreter,
+            interpreter: ReservationChangeInterpreter::new(),
             watch_window,
-            previous: tokio::sync::Mutex::new(WatchedReservations {
-                slots,
-                window_end,
-                recurring_reservations,
-            }),
+            previous_slots: tokio::sync::Mutex::new(slots),
         })
     }
 
@@ -83,15 +74,14 @@ where
     /// リポジトリアクセスまたは通知送信に失敗した場合
     pub async fn poll_once(&self) -> Result<(), ApplicationError> {
         let started_at = Utc::now();
-        let (current_slots, window_end) =
-            Self::fetch_current_slots(&self.repository, self.watch_window).await?;
-        let mut previous = self.previous.lock().await;
+        let current_slots = Self::fetch_current_slots(&self.repository, self.watch_window).await?;
+        let mut previous_slots = self.previous_slots.lock().await;
 
         let changes = self
             .interpreter
             .interpret(
                 self.repository.as_ref(),
-                &previous,
+                &previous_slots,
                 &current_slots,
                 started_at,
             )
@@ -102,8 +92,7 @@ where
             self.notifier.notify(event).await?;
         }
 
-        // 1周の要約。件数の推移から、取得範囲や取りこぼしの異常に気づける。
-        // 定期予約は予約枠の増減をまとめて伝えるため、通知の数は増減の数より少なくなりうる
+        // 1周の要約。件数の推移から、取得範囲や取りこぼしの異常に気づける
         info!(
             slots = current_slots.len(),
             appeared = changes.appeared,
@@ -113,31 +102,24 @@ where
             "change detection pass finished"
         );
 
-        *previous = WatchedReservations {
-            slots: current_slots,
-            window_end,
-            recurring_reservations: changes.recurring_reservations,
-        };
+        *previous_slots = current_slots;
 
         Ok(())
     }
 
-    /// 監視範囲の予約枠と、その範囲の終わりを取得する
+    /// 監視範囲の予約枠を取得する
     async fn fetch_current_slots(
         repository: &R,
         watch_window: Duration,
-    ) -> Result<(HashMap<ReservedSlotId, ReservedSlot>, DateTime<Utc>), ApplicationError> {
+    ) -> Result<HashMap<ReservedSlotId, ReservedSlot>, ApplicationError> {
         // 監視する期間は現在時刻を起点に取り直す。ポーリングごとに窓が前へ進む
         let now = Utc::now();
         let window = TimePeriod::new(now, now + watch_window)?;
         let slots = repository.find_slots_overlapping(&window).await?;
-        Ok((
-            slots
-                .into_iter()
-                .map(|slot| (slot.id().clone(), slot))
-                .collect(),
-            window.end(),
-        ))
+        Ok(slots
+            .into_iter()
+            .map(|slot| (slot.id().clone(), slot))
+            .collect())
     }
 }
 
