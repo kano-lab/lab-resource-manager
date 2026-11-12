@@ -12,7 +12,7 @@ Agents re-read the tool list on every connection, so usually nothing needs doing
 configuration or prompt that names tools explicitly.
 
 | Before | v3.0.0 |
-|---|---|
+| --- | --- |
 | `list_all_reservations` | `list_slots` |
 | `list_my_reservations` | `list_my_slots` |
 | `get_reservation` | `get_slot` (gets a reserved slot) |
@@ -214,13 +214,13 @@ with systemd.
 
 v1.0.0 introduces a breaking change in the deployment method:
 
-| Item       | Before (Docker) | After (v1.0.0)          |
-|------------|-----------------|-------------------------|
-| Deployment | Docker Compose  | Binary + systemd        |
-| Config     | `config/`       | `/etc/lab-resource-manager/` |
-| Data       | `data/`         | `/var/lib/lab-resource-manager/` |
-| Env        | `.env`          | `/etc/default/lab-resource-manager` |
-| Binary     | Container       | `/usr/local/bin/lab-resource-manager` |
+| Item | Before (Docker) | After (v1.0.0) |
+| --- | --- | --- |
+| Deployment | Docker Compose | Binary + systemd |
+| Config | `config/` | `/etc/lab-resource-manager/` |
+| Data | `data/` | `/var/lib/lab-resource-manager/` |
+| Env | `.env` | `/etc/default/lab-resource-manager` |
+| Binary | Container | `/usr/local/bin/lab-resource-manager` |
 
 ### Prerequisites
 
