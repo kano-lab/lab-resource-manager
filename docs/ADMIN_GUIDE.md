@@ -58,7 +58,7 @@ cargo run --bin slack-app-manifest -- --format json
 Three bot token scopes are required.
 
 | Scope | What it is for |
-|-------|----------------|
+| --- | --- |
 | `commands` | Receiving slash commands |
 | `chat:write` | Posting reservation notifications, replying to actions, rewriting sent messages |
 | `im:write` | Opening the DM channel used to reach someone directly |
@@ -188,7 +188,7 @@ silently dropped.
 **Placeholders:**
 
 | Placeholder | Description |
-|-------------|-------------|
+| --- | --- |
 | `{user}` | User name/Slack mention |
 | `{resource}` | Resource information |
 | `{time}` | Time period |
@@ -198,7 +198,7 @@ silently dropped.
 **resource_style options:**
 
 | Value | Example Output |
-|-------|----------------|
+| --- | --- |
 | `full` (default) | gpu-server-1 / A100 80GB PCIe / GPU:0 |
 | `compact` | gpu-server-1 0,1,2 |
 | `server_only` | gpu-server-1 |
@@ -206,7 +206,7 @@ silently dropped.
 **time_style options:**
 
 | Value | Example Output |
-|-------|----------------|
+| --- | --- |
 | `full` (default) | 2024-01-15 19:00 - 2024-01-15 21:00 (Asia/Tokyo) |
 | `smart` | 1/15 19:00-21:00 (omits end date if same day) |
 | `relative` | 今日 19:00-21:00, 明日 10:00-12:00 |
@@ -214,7 +214,7 @@ silently dropped.
 **date_format options:**
 
 | Value | Example Output |
-|-------|----------------|
+| --- | --- |
 | `ymd` (default) | 2024-01-15 |
 | `md` | 1/15 |
 | `md_japanese` | 1月15日 |
@@ -227,7 +227,7 @@ it can be adapted to each lab's infrastructure. Two implementations are currentl
 available:
 
 | Implementation | Purpose |
-|-----------------|---------|
+| --- | --- |
 | Mock | Testing/development only (always returns empty results) |
 | `SharedFileResourceUsageObserver` | Reads GPU usage per server via a shared filesystem |
 
@@ -325,7 +325,7 @@ notifying on unauthorized usage) is disabled by default. Set `GPU_USAGE_REPORTS_
 the same shared directory used by `gpu-usage-reporter` above to enable it:
 
 | Environment variable | Default | Purpose |
-|-----------------------|---------|---------|
+| --- | --- | --- |
 | `GPU_USAGE_REPORTS_DIR` | (unset = feature disabled) | Shared directory read by `SharedFileResourceUsageObserver` |
 | `GPU_USAGE_MAX_STALENESS_SECS` | `300` | How old a report can be before it's ignored |
 | `UNRESERVED_USAGE_THRESHOLD_SECS` | `600` | How long unreserved usage must continue before a proposal is sent |
@@ -417,7 +417,7 @@ over the same LAN. Exposing it to the internet is out of scope.
 **Environment variables:**
 
 | Environment variable | Default | Purpose |
-|-----------------------|---------|---------|
+| --- | --- | --- |
 | `MCP_LISTEN_ADDR` | (unset = feature disabled) | HTTP/SSE listen address for the MCP server (e.g. `0.0.0.0:8787`) |
 | `MCP_TOKENS_FILE` | `/var/lib/lab-resource-manager/mcp_tokens.json` | Persistence file for MCP access tokens |
 | `MCP_ALLOWED_HOSTS` | (required; startup fails if unset while `MCP_LISTEN_ADDR` is set) | Comma-separated list of `Host` header values to accept (e.g. `<LRM host>:8787,192.168.1.10:8787`) |
@@ -508,7 +508,7 @@ person).
 **Available tools:**
 
 | Tool | Description |
-|------|--------------|
+| --- | --- |
 | `list_all_reservations` | List all future (including ongoing) reservations |
 | `list_my_reservations` | List reservations owned by the caller |
 | `get_reservation` | Get a reservation's details by ID |
@@ -594,7 +594,7 @@ arriving.
 ```
 
 | Mark | State | Where to look |
-|------|-------|---------------|
+| --- | --- | --- |
 | ✅ | Usage is known | — |
 | ⚠️ | A report arrives, but it is old | Whether `gpu-usage-reporter` on that server is falling behind |
 | ❌ | No report, or it cannot be read | The cron entry, and write access to the shared directory |
