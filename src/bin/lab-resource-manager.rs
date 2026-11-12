@@ -270,7 +270,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 list_reserved_slots: Arc::new(ListReservedSlotsUseCase::new(
                     reservation_repo.clone(),
                 )),
-                list_slots_held_by: Arc::new(ListReservedSlotsHeldByUseCase::new(
+                list_reserved_slots_held_by: Arc::new(ListReservedSlotsHeldByUseCase::new(
                     reservation_repo.clone(),
                 )),
                 get_reserved_slot: Arc::new(GetReservedSlotUseCase::new(reservation_repo.clone())),
