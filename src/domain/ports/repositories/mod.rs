@@ -21,10 +21,10 @@
 //! ### 2. ドメイン駆動のクエリ
 //! ```rust,ignore
 //! // ✅ ドメインの言葉
-//! async fn find_overlapping(&self, time_period: &TimePeriod) -> Result<Vec<ResourceUsage>>;
+//! async fn find_slots_overlapping(&self, time_period: &TimePeriod) -> Result<Vec<ReservedSlot>>;
 //!
 //! // ❌ 技術の言葉
-//! async fn find_by_sql(&self, query: &str) -> Result<Vec<ResourceUsage>>;
+//! async fn find_by_sql(&self, query: &str) -> Result<Vec<ReservedSlot>>;
 //! ```
 //!
 //! ### 3. 集約単位で定義
@@ -37,10 +37,10 @@ pub mod errors;
 pub mod identity_link;
 /// McpTokenリポジトリポート
 pub mod mcp_token;
-/// ResourceUsageリポジトリポート
-pub mod resource_usage;
+/// 予約リポジトリポート
+pub mod reservation;
 
 pub use errors::RepositoryError;
 pub use identity_link::IdentityLinkRepository;
 pub use mcp_token::McpTokenRepository;
-pub use resource_usage::ResourceUsageRepository;
+pub use reservation::ReservationRepository;

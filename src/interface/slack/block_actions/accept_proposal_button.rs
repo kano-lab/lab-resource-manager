@@ -1,11 +1,11 @@
 //! 事後予約提案の受諾ボタンハンドラ
 
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::resource_usage::value_objects::{Gpu, Resource};
+use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ResourceUsageRepository;
-use crate::domain::services::resource_usage::errors::ResourceConflictError;
+use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::services::reservation::errors::ResourceConflictError;
 use crate::infrastructure::reservation_proposal::ProposalAcceptPayload;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::utility::{conflict_message, interaction_reply};
@@ -20,7 +20,7 @@ pub async fn handle<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let Some(value) = &action.value else {
@@ -129,7 +129,7 @@ fn conflicts_only_with_own_reservations(
 ) -> bool {
     conflicts
         .iter()
-        .all(|conflict| conflict.existing_usage.owner_email() == accepted_by)
+        .all(|conflict| conflict.existing_slot.holder_email() == accepted_by)
 }
 
 /// 受諾できなかった事実を記録する
@@ -143,7 +143,7 @@ fn log_failure(failure: &AcceptFailure) {
             accepted_by,
             error: ApplicationError::ResourceConflict { conflicts },
         } => warn!(
-            owner = %accepted_by.as_str(),
+            holder = %accepted_by.as_str(),
             conflicts = conflicts.len(),
             origin = "slack",
             "reservation rejected: resources already booked"
@@ -158,7 +158,7 @@ fn log_failure(failure: &AcceptFailure) {
 /// `/reserve`と同じ整形を通し、相手が本人であれば予約しなくてよいことを伝える。
 async fn build_failure_message<R, N>(app: &SlackApp<R, N>, failure: &AcceptFailure) -> String
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let AcceptFailure::Rejected {
@@ -191,7 +191,7 @@ async fn create_reservation_from_payload<R, N>(
     value: &str,
 ) -> Result<(), AcceptFailure>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let payload: ProposalAcceptPayload = serde_json::from_str(value)?;
@@ -199,25 +199,25 @@ where
     info!(
         server = %payload.server,
         devices = ?payload.device_numbers,
-        owner = %payload.owner_email,
+        holder = %payload.holder_email,
         duration_minutes = payload.duration_minutes,
         "accepting a post-hoc reservation proposal"
     );
 
     let resources = resolve_gpu_resources(app, &payload.server, &payload.device_numbers)?;
-    let owner_email = EmailAddress::new(payload.owner_email)?;
+    let holder_email = EmailAddress::new(payload.holder_email)?;
 
     app.usecases()
         .accept_reservation_proposal
         .execute(
-            owner_email.clone(),
+            holder_email.clone(),
             resources,
             payload.active_since,
             Duration::minutes(payload.duration_minutes),
         )
         .await
         .map_err(|error| AcceptFailure::Rejected {
-            accepted_by: owner_email,
+            accepted_by: holder_email,
             error,
         })?;
 
@@ -233,7 +233,7 @@ fn resolve_gpu_resources<R, N>(
     device_numbers: &[u32],
 ) -> Result<Vec<Resource>, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let server = app
@@ -264,9 +264,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-    use crate::domain::aggregates::resource_usage::value_objects::TimePeriod;
-    use crate::domain::services::resource_usage::errors::ResourceConflictError;
+    use crate::domain::aggregates::reservation::ReservedSlot;
+    use crate::domain::aggregates::reservation::value_objects::TimePeriod;
+    use crate::domain::services::reservation::errors::ResourceConflictError;
     use chrono::Utc;
 
     fn gpu(device_number: u32) -> Resource {
@@ -277,10 +277,10 @@ mod tests {
         ))
     }
 
-    fn conflict_with(owner: &str, device_number: u32) -> ResourceConflictError {
+    fn conflict_with(holder: &str, device_number: u32) -> ResourceConflictError {
         let now = Utc::now();
-        let existing_usage = ResourceUsage::new(
-            EmailAddress::new(owner.to_string()).unwrap(),
+        let existing_slot = ReservedSlot::new(
+            EmailAddress::new(holder.to_string()).unwrap(),
             TimePeriod::new(now, now + Duration::hours(2)).unwrap(),
             vec![gpu(device_number)],
             None,
@@ -289,7 +289,7 @@ mod tests {
 
         ResourceConflictError {
             resources: vec![gpu(device_number)],
-            existing_usage,
+            existing_slot,
         }
     }
 

@@ -3,7 +3,7 @@
 //! 受信したSlackイベントを適切なハンドラにルーティング
 
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ResourceUsageRepository;
+use crate::domain::ports::repositories::ReservationRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use slack_morphism::prelude::*;
@@ -11,7 +11,7 @@ use tracing::error;
 
 impl<R, N> SlackApp<R, N>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     /// スラッシュコマンドイベントをルーティング
@@ -147,7 +147,7 @@ where
             let action_id = action.action_id.to_string();
 
             match action_id.as_str() {
-                ACTION_EDIT_RESERVATION => {
+                ACTION_UPDATE_SLOT => {
                     crate::interface::slack::block_actions::edit_button::handle(
                         self,
                         block_actions,
@@ -155,7 +155,7 @@ where
                     )
                     .await?
                 }
-                ACTION_CANCEL_RESERVATION => {
+                ACTION_CANCEL_SLOT => {
                     crate::interface::slack::block_actions::cancel_button::handle(
                         self,
                         block_actions,
@@ -163,16 +163,16 @@ where
                     )
                     .await?
                 }
-                ACTION_RELEASE_RESERVATION_EARLY => {
-                    crate::interface::slack::block_actions::release_early_button::handle(
+                ACTION_END_SLOT_EARLY => {
+                    crate::interface::slack::block_actions::end_early_button::handle(
                         self,
                         block_actions,
                         action,
                     )
                     .await?
                 }
-                ACTION_IDLE_RELEASE | ACTION_IDLE_KEEP | ACTION_IDLE_CANCEL => {
-                    crate::interface::slack::block_actions::idle_reservation_buttons::handle(
+                ACTION_IDLE_END_EARLY | ACTION_IDLE_KEEP | ACTION_IDLE_CANCEL => {
+                    crate::interface::slack::block_actions::idle_slot_buttons::handle(
                         self,
                         block_actions,
                         action,

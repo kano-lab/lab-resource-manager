@@ -10,10 +10,10 @@
 //! # モジュール
 //!
 //! - `policy` - 認可ポリシーの基本トレイトとエラー型
-//! - `resource_usage_policy` - リソース使用予定の認可ポリシー実装
+//! - `reservation_policy` - 予約枠の認可ポリシー実装
 
 pub mod policy;
-pub mod resource_usage_policy;
+pub mod reservation_policy;
 
 pub use policy::{AuthorizationError, AuthorizationPolicy};
-pub use resource_usage_policy::ResourceUsageAuthorizationPolicy;
+pub use reservation_policy::ReservationAuthorizationPolicy;

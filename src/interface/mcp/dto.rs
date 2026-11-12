@@ -2,42 +2,86 @@
 //!
 //! ドメインエンティティはserde非依存のため、JSON出力専用のDTOをここに定義する。
 
-use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
-use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod};
-use crate::domain::services::resource_usage::availability::ResourceAvailability;
+use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::{Reservation, ReservedSlot};
+use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::infrastructure::config::ResourceConfig;
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// 予約情報の出力用DTO
+/// 予約枠の出力用DTO
 #[derive(Debug, Serialize)]
-pub struct ReservationDto {
+pub struct SlotDto {
+    /// 予約枠ID（`get_slot`・`update_slot`・`end_slot_early`・`cancel_slot`に指定できる）
     pub id: String,
-    pub owner_email: String,
+    /// この予約枠が属する予約のID（`get_reservation`・`cancel_reservation`に指定できる）
+    ///
+    /// 単発予約では予約枠IDと同じ値になる。
+    pub reservation_id: String,
+    pub holder_email: String,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
     pub resources: Vec<String>,
     pub notes: Option<String>,
 }
 
-impl From<&ResourceUsage> for ReservationDto {
-    fn from(usage: &ResourceUsage) -> Self {
+impl From<&ReservedSlot> for SlotDto {
+    fn from(slot: &ReservedSlot) -> Self {
         Self {
-            id: usage.id().as_str().to_string(),
-            owner_email: usage.owner_email().as_str().to_string(),
-            start: usage.time_period().start(),
-            end: usage.time_period().end(),
-            resources: usage.resources().iter().map(|r| r.to_string()).collect(),
-            notes: usage.notes().cloned(),
+            id: slot.id().as_str().to_string(),
+            reservation_id: slot.reservation_id().as_str().to_string(),
+            holder_email: slot.holder_email().as_str().to_string(),
+            start: slot.time_period().start(),
+            end: slot.time_period().end(),
+            resources: slot.resources().iter().map(|r| r.to_string()).collect(),
+            notes: slot.notes().cloned(),
         }
     }
 }
 
-/// `get_reservation`の引数
+/// 予約の出力用DTO
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ReservationDto {
+    /// 単発予約
+    OneTime {
+        id: String,
+        holder_email: String,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        resources: Vec<String>,
+        notes: Option<String>,
+    },
+}
+
+impl From<&Reservation> for ReservationDto {
+    fn from(reservation: &Reservation) -> Self {
+        let resources = |resources: &[Resource]| resources.iter().map(|r| r.to_string()).collect();
+        match reservation {
+            Reservation::OneTime(one_time) => Self::OneTime {
+                id: one_time.id().as_str().to_string(),
+                holder_email: one_time.holder_email().as_str().to_string(),
+                start: one_time.time_period().start(),
+                end: one_time.time_period().end(),
+                resources: resources(one_time.resources()),
+                notes: one_time.notes().cloned(),
+            },
+        }
+    }
+}
+
+/// 予約枠IDだけを受け取るツールの引数
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct GetReservationParams {
-    /// 予約ID
+pub struct SlotIdParams {
+    /// 予約枠ID
+    pub id: String,
+}
+
+/// 予約IDだけを受け取るツールの引数
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReservationIdParams {
+    /// 予約ID（予約枠の`reservation_id`）
     pub id: String,
 }
 
@@ -64,10 +108,10 @@ pub struct CreateReservationParams {
     pub notes: Option<String>,
 }
 
-/// `update_reservation`の引数
+/// `update_slot`の引数
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct UpdateReservationParams {
-    /// 予約ID
+pub struct UpdateSlotParams {
+    /// 予約枠ID
     pub id: String,
     /// 新しい開始時刻（endと同時に指定、省略時は時間変更なし）
     #[serde(default)]
@@ -78,20 +122,6 @@ pub struct UpdateReservationParams {
     /// 新しい備考
     #[serde(default)]
     pub notes: Option<String>,
-}
-
-/// `cancel_reservation`の引数
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct CancelReservationParams {
-    /// 予約ID
-    pub id: String,
-}
-
-/// `release_reservation_early`の引数
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct ReleaseReservationEarlyParams {
-    /// 予約ID
-    pub id: String,
 }
 
 /// `list_resources`の出力：予約できるリソースの一覧
@@ -207,15 +237,15 @@ impl From<&TimePeriod> for PeriodDto {
     }
 }
 
-/// 予約で埋まっている区間の出力用DTO
+/// 予約枠で埋まっている区間の出力用DTO
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct BusyPeriodDto {
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
-    /// 押さえている予約のID
-    pub reservation_id: String,
-    /// 押さえている予約の所有者
-    pub owner_email: String,
+    /// 押さえている予約枠のID
+    pub slot_id: String,
+    /// 押さえている予約枠の予約者
+    pub holder_email: String,
 }
 
 /// あるリソースの、調べた期間における空きの出力用DTO
@@ -233,7 +263,7 @@ pub struct ResourceAvailabilityDto {
     pub entirely_free: bool,
     /// 空いている区間（開始順）
     pub free_periods: Vec<PeriodDto>,
-    /// 予約で埋まっている区間（開始順）。期間の外にはみ出す予約は期間内の部分だけを示す
+    /// 予約枠で埋まっている区間（開始順）。期間の外にはみ出す予約枠は期間内の部分だけを示す
     pub busy_periods: Vec<BusyPeriodDto>,
 }
 
@@ -265,8 +295,8 @@ impl From<&ResourceAvailability> for ResourceAvailabilityDto {
                 .map(|busy| BusyPeriodDto {
                     start: busy.period().start(),
                     end: busy.period().end(),
-                    reservation_id: busy.usage_id().as_str().to_string(),
-                    owner_email: busy.owner_email().as_str().to_string(),
+                    slot_id: busy.slot_id().as_str().to_string(),
+                    holder_email: busy.holder_email().as_str().to_string(),
                 })
                 .collect(),
         }
@@ -276,9 +306,9 @@ impl From<&ResourceAvailability> for ResourceAvailabilityDto {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::resource_usage::value_objects::Gpu;
+    use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::common::EmailAddress;
-    use crate::domain::services::resource_usage::availability;
+    use crate::domain::services::reservation::availability;
     use crate::infrastructure::config::{DeviceConfig, RoomConfig, ServerConfig};
     use chrono::{Duration, TimeZone};
 
@@ -374,15 +404,15 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2026, 11, 12, 0, 0, 0).unwrap();
         let window = TimePeriod::new(start, start + Duration::hours(6)).unwrap();
         let gpu = Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
-        let usage = ResourceUsage::new(
-            EmailAddress::new("owner@example.com".to_string()).unwrap(),
+        let slot = ReservedSlot::new(
+            EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start + Duration::hours(1), start + Duration::hours(2)).unwrap(),
             vec![gpu.clone()],
             None,
         )
         .unwrap();
 
-        let calculated = availability::calculate(&[gpu], &window, std::slice::from_ref(&usage));
+        let calculated = availability::calculate(&[gpu], &window, std::slice::from_ref(&slot));
         let dto = ResourceAvailabilityDto::from(&calculated[0]);
 
         assert_eq!(dto.server.as_deref(), Some("Thalys"));
@@ -394,8 +424,8 @@ mod tests {
             vec![BusyPeriodDto {
                 start: start + Duration::hours(1),
                 end: start + Duration::hours(2),
-                reservation_id: usage.id().as_str().to_string(),
-                owner_email: "owner@example.com".to_string(),
+                slot_id: slot.id().as_str().to_string(),
+                holder_email: "holder@example.com".to_string(),
             }]
         );
         assert_eq!(

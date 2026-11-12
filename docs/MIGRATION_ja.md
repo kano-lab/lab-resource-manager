@@ -1,5 +1,45 @@
 # マイグレーションガイド
 
+## 予約の言葉の見直し (v3.0.0)
+
+v3.0.0 では、予約を「予約」と「予約枠」の言葉で扱うように作り直しました。
+カレンダーに保存されている予約、`resources.toml`、環境変数はそのまま使えます。
+利用者・管理者に影響があるのは次の3点です。
+
+### MCPツール名の変更
+
+エージェントは接続のたびにツール一覧を読み直すため、通常は何もしなくて構いません。
+ツール名を固定で書いた設定やプロンプトがある場合は書き換えてください。
+
+| 以前 | v3.0.0 |
+|---|---|
+| `list_all_reservations` | `list_slots` |
+| `list_my_reservations` | `list_my_slots` |
+| `get_reservation` | `get_slot`（予約枠の取得） |
+| `update_reservation` | `update_slot` |
+| `release_reservation_early` | `end_slot_early` |
+| `cancel_reservation` | `cancel_slot`（予約枠1つの取り消し） |
+
+`get_reservation`と`cancel_reservation`は、予約を扱うツールとして新しく用意しました。以前の`cancel_reservation`と同じ「1つだけ取り消す」動作が必要なら`cancel_slot`を使ってください。
+予約枠の出力には、属する予約のID（`reservation_id`）が加わりました。
+
+### 通知テンプレートの設定キー
+
+予約の取り消しのテンプレートは`deleted`から`cancelled`に名前が変わりました。
+以前の`deleted`も引き続き読み込まれますが、`cancelled`への書き換えをおすすめします。
+
+### ログのフィールド名
+
+ログのフィールド`usage_id`は`slot_id`（予約枠）または`reservation_id`（予約）に、
+`owner`は`holder`になりました。変更検知の要約行は次の形になります。
+
+```text
+change detection pass finished
+  slots=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
+```
+
+journalctlでこれらのフィールドを絞り込みに使っている場合は書き換えてください。
+
 ## ストレージ設定スキーマの変更 (v2.0.0)
 
 v2.0.0 では `resources.toml` 設定ファイルの形式に破壊的変更が入ります。カレンダーID

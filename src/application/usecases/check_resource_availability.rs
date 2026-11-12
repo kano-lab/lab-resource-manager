@@ -1,19 +1,19 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::resource_usage::value_objects::{Resource, TimePeriod};
-use crate::domain::ports::repositories::ResourceUsageRepository;
-use crate::domain::services::resource_usage::availability::{self, ResourceAvailability};
+use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::services::reservation::availability::{self, ResourceAvailability};
 use std::sync::Arc;
 
 /// 指定期間における各リソースの空きを調べるユースケース
-pub struct CheckResourceAvailabilityUseCase<R: ResourceUsageRepository> {
+pub struct CheckResourceAvailabilityUseCase<R: ReservationRepository> {
     repository: Arc<R>,
 }
 
-impl<R: ResourceUsageRepository> CheckResourceAvailabilityUseCase<R> {
+impl<R: ReservationRepository> CheckResourceAvailabilityUseCase<R> {
     /// 新しいCheckResourceAvailabilityUseCaseインスタンスを作成
     ///
     /// # Arguments
-    /// * `repository` - ResourceUsageリポジトリ
+    /// * `repository` - 予約リポジトリ
     pub fn new(repository: Arc<R>) -> Self {
         Self { repository }
     }
@@ -35,8 +35,8 @@ impl<R: ResourceUsageRepository> CheckResourceAvailabilityUseCase<R> {
         resources: &[Resource],
         window: &TimePeriod,
     ) -> Result<Vec<ResourceAvailability>, ApplicationError> {
-        let usages = self.repository.find_overlapping(window).await?;
+        let slots = self.repository.find_slots_overlapping(window).await?;
 
-        Ok(availability::calculate(resources, window, &usages))
+        Ok(availability::calculate(resources, window, &slots))
     }
 }

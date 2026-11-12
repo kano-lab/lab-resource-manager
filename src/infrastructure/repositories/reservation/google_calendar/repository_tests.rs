@@ -1,0 +1,922 @@
+//! `GoogleCalendarReservationRepository`の検索系メソッドのテスト
+//!
+//! カレンダーAPIへのアクセスは`CalendarEventGateway`のテストダブルに差し替え、
+//! 「どの期間を問い合わせるか」「取得したイベントをどう解釈するか」を検証する。
+
+use super::event_gateway::CalendarEventGateway;
+use super::repository::GoogleCalendarReservationRepository;
+use crate::domain::aggregates::identity_link::entity::IdentityLink;
+use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
+use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::{Reservation, ReservationId, ReservedSlot};
+use crate::domain::ports::repositories::{
+    IdentityLinkRepository, RepositoryError, ReservationRepository,
+};
+use crate::infrastructure::config::{
+    DeviceConfig, ResourceConfig, ServerConfig, StorageBackend, StorageConfig,
+};
+use async_trait::async_trait;
+use chrono::{DateTime, Duration, Utc};
+use google_calendar3::api::{Event, EventCreator, EventDateTime};
+use std::sync::{Arc, Mutex};
+
+const SERVICE_ACCOUNT_EMAIL: &str = "service-account@example.com";
+const CALENDAR_ID: &str = "thalys-calendar-id";
+
+/// ゲートウェイが受け取った問い合わせ内容
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ListQuery {
+    calendar_id: String,
+    time_min: DateTime<Utc>,
+    time_max: Option<DateTime<Utc>>,
+}
+
+/// 固定のイベント集合を返し、受け取った問い合わせを記録するテストダブル
+///
+/// `list_events`はGoogle Calendar APIの絞り込み意味論を模倣する。
+/// すなわち終了時刻が`time_min`より後、かつ（`time_max`指定時は）開始時刻が
+/// `time_max`より前のイベントだけを返す。
+struct FakeCalendarEventGateway {
+    events: Vec<Event>,
+    queries: Mutex<Vec<ListQuery>>,
+    /// insert_eventで受け取ったイベント（calendar_id, event）
+    inserted: Mutex<Vec<(String, Event)>>,
+    /// update_eventで受け取った対象（calendar_id, event_id）
+    updated: Mutex<Vec<(String, String)>>,
+    /// delete_eventで受け取った対象（calendar_id, event_id）
+    deleted: Mutex<Vec<(String, String)>>,
+}
+
+impl FakeCalendarEventGateway {
+    fn new(events: Vec<Event>) -> Self {
+        Self {
+            events,
+            queries: Mutex::new(Vec::new()),
+            inserted: Mutex::new(Vec::new()),
+            updated: Mutex::new(Vec::new()),
+            deleted: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn queries(&self) -> Vec<ListQuery> {
+        self.queries.lock().unwrap().clone()
+    }
+
+    fn inserted(&self) -> Vec<(String, Event)> {
+        self.inserted.lock().unwrap().clone()
+    }
+
+    fn updated(&self) -> Vec<(String, String)> {
+        self.updated.lock().unwrap().clone()
+    }
+
+    fn deleted(&self) -> Vec<(String, String)> {
+        self.deleted.lock().unwrap().clone()
+    }
+}
+
+fn event_start(event: &Event) -> DateTime<Utc> {
+    event
+        .start
+        .as_ref()
+        .and_then(|s| s.date_time)
+        .expect("テストイベントには開始時刻が必要")
+}
+
+fn event_end(event: &Event) -> DateTime<Utc> {
+    event
+        .end
+        .as_ref()
+        .and_then(|e| e.date_time)
+        .expect("テストイベントには終了時刻が必要")
+}
+
+#[async_trait]
+impl CalendarEventGateway for FakeCalendarEventGateway {
+    async fn list_events(
+        &self,
+        calendar_id: &str,
+        time_min: DateTime<Utc>,
+        time_max: Option<DateTime<Utc>>,
+    ) -> Result<Vec<Event>, RepositoryError> {
+        self.queries.lock().unwrap().push(ListQuery {
+            calendar_id: calendar_id.to_string(),
+            time_min,
+            time_max,
+        });
+
+        Ok(self
+            .events
+            .iter()
+            .filter(|event| event_end(event) > time_min)
+            .filter(|event| time_max.is_none_or(|max| event_start(event) < max))
+            .cloned()
+            .collect())
+    }
+
+    async fn get_event(
+        &self,
+        _calendar_id: &str,
+        event_id: &str,
+    ) -> Result<Option<Event>, RepositoryError> {
+        let inserted = self
+            .inserted
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(_, event)| event.id.as_deref() == Some(event_id))
+            .map(|(_, event)| event.clone());
+
+        Ok(inserted.or_else(|| {
+            self.events
+                .iter()
+                .find(|event| event.id.as_deref() == Some(event_id))
+                .cloned()
+        }))
+    }
+
+    async fn insert_event(
+        &self,
+        calendar_id: &str,
+        event: Event,
+    ) -> Result<Event, RepositoryError> {
+        let mut created = event;
+        // 実APIはIDを指定しなければ自前で採番し、作成者を書き込んだアカウントで埋める
+        if created.id.is_none() {
+            created.id = Some("generated-by-google".to_string());
+        }
+        if created.creator.is_none() {
+            created.creator = Some(EventCreator {
+                email: Some(SERVICE_ACCOUNT_EMAIL.to_string()),
+                ..Default::default()
+            });
+        }
+        self.inserted
+            .lock()
+            .unwrap()
+            .push((calendar_id.to_string(), created.clone()));
+        Ok(created)
+    }
+
+    async fn update_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+        _event: Event,
+    ) -> Result<(), RepositoryError> {
+        self.updated
+            .lock()
+            .unwrap()
+            .push((calendar_id.to_string(), event_id.to_string()));
+        Ok(())
+    }
+
+    async fn delete_event(&self, calendar_id: &str, event_id: &str) -> Result<(), RepositoryError> {
+        self.deleted
+            .lock()
+            .unwrap()
+            .push((calendar_id.to_string(), event_id.to_string()));
+        Ok(())
+    }
+}
+
+fn test_config() -> ResourceConfig {
+    ResourceConfig {
+        servers: vec![ServerConfig {
+            name: "Thalys".to_string(),
+            devices: vec![
+                DeviceConfig {
+                    id: 0,
+                    model: "A100 80GB PCIe".to_string(),
+                },
+                DeviceConfig {
+                    id: 1,
+                    model: "A100 80GB PCIe".to_string(),
+                },
+            ],
+            notifications: vec![],
+        }],
+        rooms: vec![],
+    }
+}
+
+fn test_storage_config() -> StorageConfig {
+    let mut calendars = std::collections::HashMap::new();
+    calendars.insert("Thalys".to_string(), CALENDAR_ID.to_string());
+    StorageConfig {
+        backend: StorageBackend::GoogleCalendar { calendars },
+    }
+}
+
+/// アプリが作成した予約イベント（予約者はdescriptionのアプリ管理セクションに入る）
+fn reservation_event(
+    event_id: &str,
+    gpu_spec: &str,
+    holder_email: &str,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Event {
+    Event {
+        id: Some(event_id.to_string()),
+        summary: Some(gpu_spec.to_string()),
+        description: Some(format!(
+            "[lab-resource-manager:managed-section:begin]\n予約者: {}\n[lab-resource-manager:managed-section:end]",
+            holder_email
+        )),
+        creator: Some(EventCreator {
+            email: Some(SERVICE_ACCOUNT_EMAIL.to_string()),
+            ..Default::default()
+        }),
+        start: Some(EventDateTime {
+            date_time: Some(start),
+            ..Default::default()
+        }),
+        end: Some(EventDateTime {
+            date_time: Some(end),
+            ..Default::default()
+        }),
+        status: Some("confirmed".to_string()),
+        ..Default::default()
+    }
+}
+
+fn repository_with(
+    events: Vec<Event>,
+) -> (
+    GoogleCalendarReservationRepository,
+    Arc<FakeCalendarEventGateway>,
+) {
+    let gateway = Arc::new(FakeCalendarEventGateway::new(events));
+    let repository = GoogleCalendarReservationRepository::with_gateway(
+        gateway.clone(),
+        test_config(),
+        SERVICE_ACCOUNT_EMAIL.to_string(),
+        Arc::new(StubIdentityLinkRepository::default()),
+        test_storage_config(),
+    )
+    .expect("テスト用リポジトリの構築に失敗");
+
+    (repository, gateway)
+}
+
+#[tokio::test]
+async fn find_overlapping_includes_reservation_that_already_ended() {
+    let now = Utc::now();
+    // 5時間前に始まり3時間前に終わった予約（事後予約の承諾が遅れた場合に相手となるもの）
+    let existing = reservation_event(
+        "already-ended",
+        "0",
+        "holder@example.com",
+        now - Duration::hours(5),
+        now - Duration::hours(3),
+    );
+    let (repository, _gateway) = repository_with(vec![existing]);
+
+    // 4時間前〜2時間前を予約しようとすると、上の予約と重なる
+    let period = TimePeriod::new(now - Duration::hours(4), now - Duration::hours(2)).unwrap();
+
+    let overlapping = repository.find_slots_overlapping(&period).await.unwrap();
+
+    assert_eq!(
+        overlapping.len(),
+        1,
+        "終了時刻が過去の予約も競合チェックの対象に含めるべき"
+    );
+}
+
+#[tokio::test]
+async fn find_overlapping_queries_exactly_the_requested_period() {
+    let now = Utc::now();
+    let (repository, gateway) = repository_with(vec![]);
+    let period = TimePeriod::new(now - Duration::hours(4), now - Duration::hours(2)).unwrap();
+
+    repository.find_slots_overlapping(&period).await.unwrap();
+
+    let queries = gateway.queries();
+    assert_eq!(
+        queries.len(),
+        1,
+        "サーバーカレンダー1件分の問い合わせが行われる"
+    );
+    assert_eq!(
+        queries[0].time_min,
+        period.start(),
+        "問い合わせの下限は対象期間の開始時刻であるべき"
+    );
+    assert_eq!(
+        queries[0].time_max,
+        Some(period.end()),
+        "問い合わせの上限は対象期間の終了時刻であるべき"
+    );
+}
+
+#[tokio::test]
+async fn find_overlapping_ignores_cancelled_events() {
+    let now = Utc::now();
+    let mut cancelled = reservation_event(
+        "cancelled-event",
+        "0",
+        "holder@example.com",
+        now - Duration::hours(1),
+        now + Duration::hours(1),
+    );
+    cancelled.status = Some("cancelled".to_string());
+    let (repository, _gateway) = repository_with(vec![cancelled]);
+
+    let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
+
+    let overlapping = repository.find_slots_overlapping(&period).await.unwrap();
+
+    assert!(
+        overlapping.is_empty(),
+        "キャンセル済みイベントは予約として扱わない"
+    );
+}
+
+#[tokio::test]
+async fn find_overlapping_skips_unparsable_events_but_keeps_the_rest() {
+    let now = Utc::now();
+    // GPUデバイス仕様として解釈できないタイトル（カレンダー上で直接作られた場合など）
+    let unparsable = reservation_event(
+        "unparsable",
+        "実験中",
+        "holder@example.com",
+        now - Duration::hours(1),
+        now + Duration::hours(1),
+    );
+    let valid = reservation_event(
+        "valid",
+        "1",
+        "holder@example.com",
+        now - Duration::hours(1),
+        now + Duration::hours(1),
+    );
+    let (repository, _gateway) = repository_with(vec![unparsable, valid]);
+
+    let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
+
+    let overlapping = repository.find_slots_overlapping(&period).await.unwrap();
+
+    assert_eq!(
+        overlapping.len(),
+        1,
+        "解釈できないイベントは飛ばし、残りは返すべき"
+    );
+}
+
+#[tokio::test]
+async fn a_window_starting_now_excludes_reservations_that_already_ended() {
+    let now = Utc::now();
+    let ended = reservation_event(
+        "already-ended",
+        "0",
+        "holder@example.com",
+        now - Duration::hours(5),
+        now - Duration::hours(3),
+    );
+    let (repository, _gateway) = repository_with(vec![ended]);
+
+    let window = TimePeriod::new(now, now + Duration::days(30)).unwrap();
+    let future = repository.find_slots_overlapping(&window).await.unwrap();
+
+    assert!(future.is_empty(), "終了済みの予約は今後の期間に含まれない");
+}
+
+#[tokio::test]
+async fn a_window_starting_now_keeps_an_ongoing_reservation() {
+    let now = Utc::now();
+    let ongoing = reservation_event(
+        "ongoing",
+        "0",
+        "holder@example.com",
+        now - Duration::hours(5),
+        now + Duration::hours(1),
+    );
+    let (repository, _gateway) = repository_with(vec![ongoing]);
+
+    let window = TimePeriod::new(now, now + Duration::days(30)).unwrap();
+    let future = repository.find_slots_overlapping(&window).await.unwrap();
+
+    assert_eq!(
+        future.len(),
+        1,
+        "開始時刻が過去でも進行中の予約は含めるべき"
+    );
+}
+
+#[tokio::test]
+async fn parse_failures_are_reported_once_per_event() {
+    let (repository, _gateway) = repository_with(vec![]);
+
+    // 同じイベントの解釈失敗を毎回警告すると、ポーリングのたびにログが積み上がる
+    assert!(
+        repository.should_report_parse_failure("event-a"),
+        "初回は報告する"
+    );
+    assert!(
+        !repository.should_report_parse_failure("event-a"),
+        "2回目以降は報告しない"
+    );
+    assert!(
+        repository.should_report_parse_failure("event-b"),
+        "別のイベントは報告する"
+    );
+}
+
+/// メールアドレスからOSユーザー名を引けるテスト用のIdentityLinkリポジトリ
+#[derive(Default)]
+struct StubIdentityLinkRepository {
+    /// (email, server) -> OSユーザー名
+    os_users: Vec<(String, String, String)>,
+}
+
+impl StubIdentityLinkRepository {
+    fn with_os_user(mut self, email: &str, server: &str, os_user: &str) -> Self {
+        self.os_users
+            .push((email.to_string(), server.to_string(), os_user.to_string()));
+        self
+    }
+}
+
+#[async_trait]
+impl IdentityLinkRepository for StubIdentityLinkRepository {
+    async fn find_by_email(
+        &self,
+        email: &crate::domain::common::EmailAddress,
+    ) -> Result<Option<IdentityLink>, RepositoryError> {
+        let mut link: Option<IdentityLink> = None;
+        for (linked_email, server, os_user) in &self.os_users {
+            if linked_email != email.as_str() {
+                continue;
+            }
+            let identity = ExternalIdentity::new(
+                ExternalSystem::Os {
+                    server: server.clone(),
+                },
+                os_user.clone(),
+            );
+            link = Some(match link {
+                None => IdentityLink::with_external_identity(email.clone(), identity),
+                Some(mut existing) => {
+                    existing.link_external_identity(identity).unwrap();
+                    existing
+                }
+            });
+        }
+        Ok(link)
+    }
+
+    async fn find_by_external_user_id(
+        &self,
+        _system: &ExternalSystem,
+        _user_id: &str,
+    ) -> Result<Option<IdentityLink>, RepositoryError> {
+        unimplemented!("このテストでは使用しない")
+    }
+
+    async fn save(&self, _identity_link: IdentityLink) -> Result<(), RepositoryError> {
+        unimplemented!("このテストでは使用しない")
+    }
+}
+
+fn repository_with_identities(
+    identity_repo: StubIdentityLinkRepository,
+) -> (
+    GoogleCalendarReservationRepository,
+    Arc<FakeCalendarEventGateway>,
+) {
+    let gateway = Arc::new(FakeCalendarEventGateway::new(vec![]));
+    let repository = GoogleCalendarReservationRepository::with_gateway(
+        gateway.clone(),
+        test_config(),
+        SERVICE_ACCOUNT_EMAIL.to_string(),
+        Arc::new(identity_repo),
+        test_storage_config(),
+    )
+    .expect("テスト用リポジトリの構築に失敗");
+
+    (repository, gateway)
+}
+
+fn gpu_usage(holder: &str, device_number: u32) -> ReservedSlot {
+    use crate::domain::aggregates::reservation::value_objects::Gpu;
+    let now = Utc::now();
+    ReservedSlot::new(
+        crate::domain::common::EmailAddress::new(holder.to_string()).unwrap(),
+        TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
+        vec![Resource::Gpu(Gpu::new(
+            "Thalys".to_string(),
+            device_number,
+            "A100 80GB PCIe".to_string(),
+        ))],
+        None,
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn description_includes_the_os_user_name_for_the_reserved_server() {
+    let (repository, _gateway) =
+        repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
+            "holder@example.com",
+            "Thalys",
+            "kkawaguchi",
+        ));
+    let slot = gpu_usage("holder@example.com", 0);
+
+    let description = repository.build_description(&slot).await;
+
+    assert!(
+        description.contains("OS: kkawaguchi"),
+        "予約したサーバーのOSユーザー名が読める形で入るべき: {description}"
+    );
+}
+
+#[tokio::test]
+async fn description_includes_the_reservation_id() {
+    let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
+    let slot = gpu_usage("holder@example.com", 0);
+
+    let description = repository.build_description(&slot).await;
+
+    assert!(
+        description.contains(slot.id().as_str()),
+        "予約IDが入るべき: {description}"
+    );
+}
+
+#[tokio::test]
+async fn description_omits_the_os_line_when_no_link_exists() {
+    let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
+    let slot = gpu_usage("unlinked@example.com", 0);
+
+    let description = repository.build_description(&slot).await;
+
+    assert!(
+        !description.contains("OS:"),
+        "紐付けがなければOS行を出さない: {description}"
+    );
+    assert!(
+        description.contains("予約者: unlinked@example.com"),
+        "予約者行は常に入る: {description}"
+    );
+}
+
+#[tokio::test]
+async fn description_uses_the_os_name_of_the_server_being_reserved() {
+    // 同じ利用者がサーバーごとに別のOSユーザー名を持つ場合、予約したサーバーの名前を使う
+    let (repository, _gateway) = repository_with_identities(
+        StubIdentityLinkRepository::default()
+            .with_os_user("holder@example.com", "Thalys", "kkawaguchi")
+            .with_os_user("holder@example.com", "Freccia", "kinji"),
+    );
+    let slot = gpu_usage("holder@example.com", 0);
+
+    let description = repository.build_description(&slot).await;
+
+    assert!(description.contains("OS: kkawaguchi"), "{description}");
+    assert!(!description.contains("kinji"), "{description}");
+}
+
+#[tokio::test]
+async fn added_metadata_lines_do_not_leak_into_notes() {
+    let (repository, _gateway) =
+        repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
+            "holder@example.com",
+            "Thalys",
+            "kkawaguchi",
+        ));
+    let now = Utc::now();
+    let slot = ReservedSlot::new(
+        crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
+        TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
+        vec![Resource::Gpu(
+            crate::domain::aggregates::reservation::value_objects::Gpu::new(
+                "Thalys".to_string(),
+                0,
+                "A100 80GB PCIe".to_string(),
+            ),
+        )],
+        Some("killしても大丈夫です".to_string()),
+    )
+    .unwrap();
+
+    // 生成したdescriptionを読み戻したとき、管理セクションの行が備考に混ざらないこと
+    let description = repository.build_description(&slot).await;
+    let notes = GoogleCalendarReservationRepository::extract_notes(&description);
+
+    assert_eq!(notes.as_deref(), Some("killしても大丈夫です"));
+}
+
+/// 旧バージョンが書いたdescription（管理セクション内は予約者行のみ）
+fn legacy_description_with_markers(holder: &str, notes: &str) -> String {
+    format!(
+        "[lab-resource-manager:managed-section:begin]\n予約者: {holder}\n[lab-resource-manager:managed-section:end]\n\n{notes}"
+    )
+}
+
+/// マーカーが導入される前のdescription（1行目が予約者行）
+fn legacy_description_without_markers(holder: &str, notes: &str) -> String {
+    format!("予約者: {holder}\n{notes}")
+}
+
+#[tokio::test]
+async fn reads_reservations_written_by_older_versions_with_markers() {
+    let now = Utc::now();
+    let mut event = reservation_event(
+        "legacy-with-markers",
+        "0",
+        "placeholder@example.com",
+        now - Duration::hours(1),
+        now + Duration::hours(1),
+    );
+    event.description = Some(legacy_description_with_markers(
+        "legacy@example.com",
+        "旧形式の備考",
+    ));
+    let (repository, _gateway) = repository_with(vec![event]);
+
+    let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
+    let found = repository.find_slots_overlapping(&period).await.unwrap();
+
+    assert_eq!(found.len(), 1, "旧形式のイベントも予約として読めるべき");
+    assert_eq!(found[0].holder_email().as_str(), "legacy@example.com");
+    assert_eq!(found[0].notes().map(String::as_str), Some("旧形式の備考"));
+}
+
+#[tokio::test]
+async fn reads_reservations_written_before_markers_existed() {
+    let now = Utc::now();
+    let mut event = reservation_event(
+        "legacy-no-markers",
+        "1",
+        "placeholder@example.com",
+        now - Duration::hours(1),
+        now + Duration::hours(1),
+    );
+    event.description = Some(legacy_description_without_markers(
+        "ancient@example.com",
+        "マーカー導入前の備考",
+    ));
+    let (repository, _gateway) = repository_with(vec![event]);
+
+    let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
+    let found = repository.find_slots_overlapping(&period).await.unwrap();
+
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].holder_email().as_str(), "ancient@example.com");
+    assert_eq!(
+        found[0].notes().map(String::as_str),
+        Some("マーカー導入前の備考")
+    );
+}
+
+#[tokio::test]
+async fn newly_written_description_round_trips() {
+    let (repository, _gateway) =
+        repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
+            "holder@example.com",
+            "Thalys",
+            "kkawaguchi",
+        ));
+    let now = Utc::now();
+    let slot = ReservedSlot::new(
+        crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
+        TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
+        vec![Resource::Gpu(
+            crate::domain::aggregates::reservation::value_objects::Gpu::new(
+                "Thalys".to_string(),
+                0,
+                "A100 80GB PCIe".to_string(),
+            ),
+        )],
+        Some("実験中".to_string()),
+    )
+    .unwrap();
+
+    // 新形式で書いたdescriptionから、予約者と備考が元の値として読み戻せること
+    let description = repository.build_description(&slot).await;
+
+    let holder = description
+        .lines()
+        .find_map(|line| line.strip_prefix("予約者: "))
+        .expect("予約者行が読めるべき");
+    assert_eq!(holder, "holder@example.com");
+    assert_eq!(
+        GoogleCalendarReservationRepository::extract_notes(&description).as_deref(),
+        Some("実験中")
+    );
+}
+
+#[tokio::test]
+async fn metadata_lines_are_not_mistaken_for_the_holder() {
+    // OS行や予約ID行が予約者として誤読されないこと（行の走査順に依存しない）
+    let (repository, _gateway) =
+        repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
+            "holder@example.com",
+            "Thalys",
+            "kkawaguchi",
+        ));
+    let slot = gpu_usage("holder@example.com", 0);
+
+    let description = repository.build_description(&slot).await;
+    let holder_lines: Vec<&str> = description
+        .lines()
+        .filter_map(|line| line.strip_prefix("予約者: "))
+        .collect();
+
+    assert_eq!(
+        holder_lines,
+        vec!["holder@example.com"],
+        "予約者行はちょうど1行であるべき: {description}"
+    );
+}
+
+#[tokio::test]
+async fn saving_a_new_reservation_uses_an_event_id_derived_from_the_slot_id() {
+    let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
+    let slot = gpu_usage("holder@example.com", 0);
+
+    repository.save_slot(&slot).await.unwrap();
+
+    let inserted = gateway.inserted();
+    assert_eq!(inserted.len(), 1);
+    let event_id = inserted[0].1.id.clone().expect("イベントIDを指定するべき");
+    assert_eq!(
+        event_id,
+        slot.id().as_str().replace('-', ""),
+        "イベントIDは予約IDから導出されるべき"
+    );
+    assert!(
+        event_id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
+        "イベントIDに使える文字はbase32hexに限られる: {event_id}"
+    );
+}
+
+#[tokio::test]
+async fn a_saved_reservation_can_be_found_by_id_without_a_mapping_file() {
+    let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
+    let slot = gpu_usage("holder@example.com", 0);
+
+    repository.save_slot(&slot).await.unwrap();
+    let found = repository.find_slot(slot.id()).await.unwrap();
+
+    assert!(found.is_some(), "保存した予約はIDで引けるべき");
+    assert_eq!(found.unwrap().id(), slot.id());
+}
+
+#[tokio::test]
+async fn reading_an_event_without_a_mapping_uses_the_event_id_as_the_reservation_id() {
+    let now = Utc::now();
+    let event = reservation_event(
+        "someeventid1234",
+        "0",
+        "holder@example.com",
+        now - Duration::hours(1),
+        now + Duration::hours(1),
+    );
+    let (repository, _gateway) = repository_with(vec![event]);
+
+    let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
+    let found = repository.find_slots_overlapping(&period).await.unwrap();
+
+    assert_eq!(found.len(), 1);
+    assert_eq!(
+        found[0].id().as_str(),
+        "someeventid1234",
+        "イベントIDをそのまま予約IDとして扱うべき"
+    );
+}
+
+#[tokio::test]
+async fn reading_the_same_event_twice_yields_a_stable_reservation_id() {
+    let now = Utc::now();
+    let event = reservation_event(
+        "stableeventid99",
+        "0",
+        "holder@example.com",
+        now - Duration::hours(1),
+        now + Duration::hours(1),
+    );
+    let (repository, _gateway) = repository_with(vec![event]);
+    let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
+
+    let first = repository.find_slots_overlapping(&period).await.unwrap();
+    let second = repository.find_slots_overlapping(&period).await.unwrap();
+
+    assert_eq!(
+        first[0].id(),
+        second[0].id(),
+        "同じイベントを読むたびにIDが変わってはいけない"
+    );
+}
+
+#[tokio::test]
+async fn updating_a_saved_reservation_updates_the_event_instead_of_inserting_again() {
+    let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
+    let slot = gpu_usage("holder@example.com", 0);
+    repository.save_slot(&slot).await.unwrap();
+
+    // 期間を変えて同じ予約を保存し直す
+    let extended = ReservedSlot::reconstruct(
+        slot.id().clone(),
+        slot.holder_email().clone(),
+        TimePeriod::new(
+            slot.time_period().start(),
+            slot.time_period().start() + Duration::hours(6),
+        )
+        .unwrap(),
+        slot.resources().to_vec(),
+        slot.notes().cloned(),
+    )
+    .unwrap();
+    repository.save_slot(&extended).await.unwrap();
+
+    assert_eq!(
+        gateway.inserted().len(),
+        1,
+        "既存の予約を作り直してはいけない（同じIDのイベント作成はAPIが拒否する）"
+    );
+    let updated = gateway.updated();
+    assert_eq!(updated.len(), 1, "更新として扱うべき");
+    assert_eq!(
+        updated[0].1,
+        slot.id().as_str().replace('-', ""),
+        "同じイベントIDを更新するべき"
+    );
+}
+
+/// 利用者がカレンダー上で直接作った毎週の繰り返しイベント（展開前の本体）
+fn weekly_series_event(series_id: &str, first_start: DateTime<Utc>) -> Event {
+    let mut event = reservation_event(
+        series_id,
+        "0",
+        "holder@example.com",
+        first_start,
+        first_start + Duration::hours(2),
+    );
+    event.recurrence = Some(vec!["RRULE:FREQ=WEEKLY;BYDAY=MO".to_string()]);
+    event
+}
+
+#[tokio::test]
+async fn a_single_event_is_a_one_time_reservation() {
+    let now = Utc::now();
+    let (repository, _gateway) = repository_with(vec![reservation_event(
+        "single",
+        "0",
+        "holder@example.com",
+        now,
+        now + Duration::hours(1),
+    )]);
+
+    let reservation = repository
+        .find_reservation(&ReservationId::from_string("single".to_string()))
+        .await
+        .unwrap()
+        .expect("単発のイベントは単発予約として読める");
+
+    let Reservation::OneTime(one_time) = reservation;
+    assert_eq!(one_time.id().as_str(), "single");
+    assert_eq!(one_time.time_period().start(), now);
+}
+
+#[tokio::test]
+async fn a_recurring_event_itself_is_not_a_reservation() {
+    let (repository, gateway) = repository_with(vec![weekly_series_event("weekly", Utc::now())]);
+    let id = ReservationId::from_string("weekly".to_string());
+
+    assert!(repository.find_reservation(&id).await.unwrap().is_none());
+    assert!(
+        matches!(
+            repository.delete_reservation(&id).await,
+            Err(RepositoryError::NotFound)
+        ),
+        "繰り返しイベント本体を予約として消してはいけない"
+    );
+    assert!(gateway.deleted().is_empty());
+}
+
+#[tokio::test]
+async fn cancelling_a_one_time_reservation_deletes_its_event() {
+    let now = Utc::now();
+    let (repository, gateway) = repository_with(vec![reservation_event(
+        "single",
+        "0",
+        "holder@example.com",
+        now,
+        now + Duration::hours(1),
+    )]);
+
+    repository
+        .delete_reservation(&ReservationId::from_string("single".to_string()))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        gateway.deleted(),
+        vec![(CALENDAR_ID.to_string(), "single".to_string())]
+    );
+}

@@ -6,13 +6,13 @@ use slack_morphism::prelude::*;
 use tracing::error;
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
-use crate::domain::aggregates::resource_usage::entity::ResourceUsage;
+use crate::domain::aggregates::reservation::Reservation;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
 use crate::infrastructure::notifier::senders::sender::{NotificationContext, Sender};
-use crate::infrastructure::notifier::template_renderer::TemplateRenderer;
+use crate::infrastructure::notifier::template_renderer::{TemplateRenderer, render_event};
 use crate::interface::slack::constants::{
-    ACTION_CANCEL_RESERVATION, ACTION_EDIT_RESERVATION, ACTION_RELEASE_RESERVATION_EARLY,
+    ACTION_CANCEL_SLOT, ACTION_END_SLOT_EARLY, ACTION_UPDATE_SLOT,
 };
 
 /// Slack通知設定
@@ -50,7 +50,7 @@ impl SlackSender {
         channel_id: &str,
         message: String,
         blocks: Vec<SlackBlock>,
-        usage_id: &str,
+        subject_id: &str,
     ) -> Result<(), NotificationError> {
         let token = SlackApiToken::new(bot_token.into());
         let session = self.slack_client.open_session(&token);
@@ -72,7 +72,7 @@ impl SlackSender {
         tracing::info!(
             channel = %sent.channel,
             ts = %sent.ts,
-            usage_id,
+            subject_id,
             "sent a reservation notification"
         );
 
@@ -100,44 +100,25 @@ impl SlackSender {
             context.timezone,
         );
 
-        match context.event {
-            NotificationEvent::ResourceUsageCreated(usage) => {
-                let user_display = Self::format_user(usage.owner_email(), context.identity_link);
-                renderer.render_created(usage, &user_display)
-            }
-            NotificationEvent::ResourceUsageUpdated(usage) => {
-                let user_display = Self::format_user(usage.owner_email(), context.identity_link);
-                renderer.render_updated(usage, &user_display)
-            }
-            NotificationEvent::ResourceUsageDeleted(usage) => {
-                let user_display = Self::format_user(usage.owner_email(), context.identity_link);
-                renderer.render_deleted(usage, &user_display)
-            }
-        }
-    }
-
-    /// イベントからResourceUsageを抽出
-    fn extract_usage_from_event(event: &NotificationEvent) -> &ResourceUsage {
-        match event {
-            NotificationEvent::ResourceUsageCreated(u)
-            | NotificationEvent::ResourceUsageUpdated(u)
-            | NotificationEvent::ResourceUsageDeleted(u) => u,
-        }
+        let user_display = Self::format_user(context.event.holder_email(), context.identity_link);
+        render_event(&renderer, context.event, &user_display)
     }
 
     /// メッセージブロックを構築（イベントに応じてボタンを追加）
     fn build_message_blocks(message: &str, context: &NotificationContext) -> Vec<SlackBlock> {
-        let usage = Self::extract_usage_from_event(context.event);
-        let usage_id = usage.id().as_str();
-        tracing::debug!(usage_id = %usage_id, "attached action buttons to the notification");
+        // ボタンは予約枠に対する操作（更新・今で終了・取り消し）なので、対象の予約枠が
+        // まだ残っている場合にだけ付ける。単発予約は予約枠を1つだけ持つので、
+        // 予約のIDがそのまま予約枠のIDになる
+        let actionable_slot_id = match context.event {
+            NotificationEvent::ReservationCreated(Reservation::OneTime(reservation))
+            | NotificationEvent::ReservationUpdated(Reservation::OneTime(reservation)) => {
+                Some(reservation.id().as_str())
+            }
+            NotificationEvent::ReservationCancelled(_) => None,
+        };
 
-        // Deleted イベントの場合はボタンなし
-        let should_add_buttons = matches!(
-            context.event,
-            NotificationEvent::ResourceUsageCreated(_) | NotificationEvent::ResourceUsageUpdated(_)
-        );
-
-        let blocks_json = if should_add_buttons {
+        let blocks_json = if let Some(slot_id) = actionable_slot_id {
+            tracing::debug!(slot_id = %slot_id, "attached action buttons to the notification");
             // ボタン付きブロック
             json!([
                 {
@@ -157,8 +138,8 @@ impl SlackSender {
                                 "text": "🔄 更新"
                             },
                             "style": "primary",
-                            "action_id": ACTION_EDIT_RESERVATION,
-                            "value": usage_id
+                            "action_id": ACTION_UPDATE_SLOT,
+                            "value": slot_id
                         },
                         {
                             "type": "button",
@@ -166,24 +147,24 @@ impl SlackSender {
                                 "type": "plain_text",
                                 "text": "⏹️ 今で終了"
                             },
-                            "action_id": ACTION_RELEASE_RESERVATION_EARLY,
-                            "value": usage_id
+                            "action_id": ACTION_END_SLOT_EARLY,
+                            "value": slot_id
                         },
                         {
                             "type": "button",
                             "text": {
                                 "type": "plain_text",
-                                "text": "❌ キャンセル"
+                                "text": "❌ 取り消す"
                             },
                             "style": "danger",
-                            "action_id": ACTION_CANCEL_RESERVATION,
-                            "value": usage_id
+                            "action_id": ACTION_CANCEL_SLOT,
+                            "value": slot_id
                         }
                     ]
                 }
             ])
         } else {
-            // シンプルなブロック（Deletedイベント用）
+            // シンプルなブロック（操作する対象が無いイベント用）
             json!([
                 {
                     "type": "section",
@@ -215,11 +196,7 @@ impl Sender for SlackSender {
         let message = Self::format_message(&context);
         let blocks = Self::build_message_blocks(&message, &context);
 
-        let usage_id = match context.event {
-            NotificationEvent::ResourceUsageCreated(usage)
-            | NotificationEvent::ResourceUsageUpdated(usage)
-            | NotificationEvent::ResourceUsageDeleted(usage) => usage.id().as_str().to_string(),
-        };
+        let subject_id = context.event.subject_id().to_string();
 
         // Bot Token方式
         self.send_via_bot_token(
@@ -227,7 +204,7 @@ impl Sender for SlackSender {
             &config.channel_id,
             message,
             blocks,
-            &usage_id,
+            &subject_id,
         )
         .await
     }

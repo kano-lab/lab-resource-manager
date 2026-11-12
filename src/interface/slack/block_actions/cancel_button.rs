@@ -1,9 +1,9 @@
 //! 予約キャンセルボタンハンドラ
 
-use crate::domain::aggregates::resource_usage::value_objects::UsageId;
+use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ResourceUsageRepository;
+use crate::domain::ports::repositories::ReservationRepository;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::utility::{interaction_reply, reservation_failure, user_resolver};
 use slack_morphism::prelude::*;
@@ -16,11 +16,11 @@ pub async fn handle<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ResourceUsageRepository + Send + Sync + 'static,
+    R: ReservationRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
-    let Some(usage_id_str) = &action.value else {
-        error!("cancel button carried no usage id");
+    let Some(slot_id_str) = &action.value else {
+        error!("cancel button carried no slot id");
         return Ok(());
     };
 
@@ -29,7 +29,7 @@ where
         return Ok(());
     };
 
-    debug!(usage_id = %usage_id_str, "cancel requested");
+    debug!(slot_id = %slot_id_str, "cancel requested");
 
     // エフェメラルメッセージの宛先として、このユーザーが最後にいたチャンネルを控える
     let channel_id = interaction_reply::channel_id(block_actions);
@@ -41,34 +41,34 @@ where
     }
 
     // 依存性を取得
-    let delete_usage_usecase = &app.usecases().delete_resource_usage;
+    let cancel_slot_usecase = &app.usecases().cancel_slot;
     let identity_repo = &app.repositories().identity_link;
 
     // ユーザーのメールアドレスを取得
-    let owner_email = user_resolver::resolve_user_email(&user.id, identity_repo).await?;
+    let holder_email = user_resolver::resolve_user_email(&user.id, identity_repo).await?;
 
     // 予約を削除
-    let usage_id = UsageId::from_string(usage_id_str.to_string());
+    let slot_id = ReservedSlotId::from_string(slot_id_str.to_string());
     info!(
-        usage_id = %usage_id.as_str(),
-        owner = %owner_email.as_str(),
+        slot_id = %slot_id.as_str(),
+        holder = %holder_email.as_str(),
         origin = "slack",
         "cancelling a reservation"
     );
 
-    let result = delete_usage_usecase
-        .execute(&usage_id, &EmailAddress::new(owner_email.clone())?)
+    let result = cancel_slot_usecase
+        .execute(&slot_id, &EmailAddress::new(holder_email.clone())?)
         .await;
 
     // ユーザーにフィードバックメッセージを送信
     if let Some(ch_id) = channel_id {
         let message_text = match &result {
-            Ok(_) => {
-                info!(usage_id = %usage_id.as_str(), origin = "slack", "reservation cancelled");
-                "✅ 予約をキャンセルしました".to_string()
+            Ok(()) => {
+                info!(slot_id = %slot_id.as_str(), origin = "slack", "reserved slot cancelled");
+                "✅ 予約を取り消しました。".to_string()
             }
             Err(e) => {
-                error!(usage_id = %usage_id.as_str(), origin = "slack", error = %e, "cancelling the reservation failed");
+                error!(slot_id = %slot_id.as_str(), origin = "slack", error = %e, "cancelling the reservation failed");
                 reservation_failure::cancel_message(e)
             }
         };

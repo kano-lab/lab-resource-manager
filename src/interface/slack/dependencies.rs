@@ -10,39 +10,38 @@
 //! 編集し続けることになります。束にすれば、触るのは束の定義と組み立て側の2箇所です。
 
 use crate::application::usecases::{
-    AcceptReservationProposalUseCase, CheckResourceAvailabilityUseCase, CreateResourceUsageUseCase,
-    DeleteResourceUsageUseCase, DescribeMonitoringUseCase, GrantUserResourceAccessUseCase,
-    NotifyFutureResourceUsageChangesUseCase, ReleaseResourceUsageEarlyUseCase,
-    UpdateResourceUsageUseCase,
+    AcceptReservationProposalUseCase, CancelSlotUseCase, CheckResourceAvailabilityUseCase,
+    CreateReservationUseCase, DescribeMonitoringUseCase, EndSlotEarlyUseCase,
+    GrantUserResourceAccessUseCase, NotifyReservationChangesUseCase, UpdateSlotUseCase,
 };
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{
-    IdentityLinkRepository, McpTokenRepository, ResourceUsageRepository,
+    IdentityLinkRepository, McpTokenRepository, ReservationRepository,
 };
 use std::sync::Arc;
 
 /// Slackボットが呼び出すユースケース
 pub struct SlackUseCases<R, N>
 where
-    R: ResourceUsageRepository,
+    R: ReservationRepository,
     N: Notifier,
 {
     /// リソースへのアクセス権を付与する
     pub grant_access: Arc<GrantUserResourceAccessUseCase>,
     /// 予約を作成する
-    pub create_resource_usage: Arc<CreateResourceUsageUseCase<R>>,
+    pub create_reservation: Arc<CreateReservationUseCase<R>>,
     /// 事後予約の提案を受諾する
     pub accept_reservation_proposal: Arc<AcceptReservationProposalUseCase<R>>,
     /// 予約を更新する
-    pub update_resource_usage: Arc<UpdateResourceUsageUseCase<R>>,
+    pub update_slot: Arc<UpdateSlotUseCase<R>>,
     /// 予約を取り消す
-    pub delete_resource_usage: Arc<DeleteResourceUsageUseCase<R>>,
+    pub cancel_slot: Arc<CancelSlotUseCase<R>>,
     /// 進行中の予約を今の時点で締める
-    pub release_resource_usage_early: Arc<ReleaseResourceUsageEarlyUseCase<R>>,
+    pub end_slot_early: Arc<EndSlotEarlyUseCase<R>>,
     /// リソースの空きを調べる
     pub check_resource_availability: Arc<CheckResourceAvailabilityUseCase<R>>,
     /// 予約の変更を監視して通知する
-    pub notify_resource_usage_changes: Arc<NotifyFutureResourceUsageChangesUseCase<R, N>>,
+    pub notify_reservation_changes: Arc<NotifyReservationChangesUseCase<R, N>>,
     /// 実利用の監視の稼働状況を答える
     pub describe_monitoring: Arc<DescribeMonitoringUseCase>,
 }

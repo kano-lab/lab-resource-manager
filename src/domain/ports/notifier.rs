@@ -1,19 +1,53 @@
 // NOTE: これ以上肥大化するようであればnotifierディレクトリを作成してその中に適宜分割する
 use crate::domain::{
-    aggregates::resource_usage::entity::ResourceUsage, errors::DomainError, ports::PortError,
+    aggregates::reservation::{Reservation, value_objects::Resource},
+    common::EmailAddress,
+    errors::DomainError,
+    ports::PortError,
 };
 use async_trait::async_trait;
 use std::fmt;
 
 /// 通知イベントの種類
+///
+/// 予約は作る・取り消すの単位であり、通知も予約を単位とする。
 #[derive(Debug, Clone)]
 pub enum NotificationEvent {
-    /// リソース使用予定が作成された
-    ResourceUsageCreated(ResourceUsage),
-    /// リソース使用予定が更新された
-    ResourceUsageUpdated(ResourceUsage),
-    /// リソース使用予定が削除された
-    ResourceUsageDeleted(ResourceUsage),
+    /// 予約が作られた
+    ReservationCreated(Reservation),
+    /// 予約が変更された（予約枠の変更や今で終了を含む）
+    ReservationUpdated(Reservation),
+    /// 予約が取り消された
+    ReservationCancelled(Reservation),
+}
+
+impl NotificationEvent {
+    /// イベントの対象の予約者
+    pub fn holder_email(&self) -> &EmailAddress {
+        match self {
+            Self::ReservationCreated(reservation)
+            | Self::ReservationUpdated(reservation)
+            | Self::ReservationCancelled(reservation) => reservation.holder_email(),
+        }
+    }
+
+    /// イベントの対象が押さえるリソース
+    pub fn resources(&self) -> &[Resource] {
+        match self {
+            Self::ReservationCreated(reservation)
+            | Self::ReservationUpdated(reservation)
+            | Self::ReservationCancelled(reservation) => reservation.resources(),
+        }
+    }
+
+    /// イベントの対象の予約のID
+    pub fn subject_id(&self) -> &str {
+        match self {
+            Self::ReservationCreated(reservation)
+            | Self::ReservationUpdated(reservation)
+            | Self::ReservationCancelled(reservation) => reservation.id().as_str(),
+        }
+    }
 }
 
 /// 通知サービスのポート

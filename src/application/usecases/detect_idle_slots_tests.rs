@@ -1,0 +1,576 @@
+//! `DetectIdleSlotsUseCase`のテスト
+//!
+//! 使われていない予約の見分け方と、知らせる/知らせない条件を検証する。
+
+use crate::application::idle_notice_log::IdleNoticeLog;
+use crate::application::usecases::detect_idle_slots::{
+    DetectIdleSlotsUseCase, IdleCriteria, NoticePolicy,
+};
+use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
+use crate::domain::aggregates::reservation::ReservedSlot;
+use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, TimePeriod};
+use crate::domain::common::EmailAddress;
+use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::ports::{
+    GpuActivity, IdleEvidence, ObservationSnapshot, ObservedUsage, ServerObservation,
+    UnattributedUsage,
+};
+use crate::infrastructure::idle_slot_notifier::MockIdleSlotNotifier;
+use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+use crate::infrastructure::resource_usage_observer::MockResourceUsageObserver;
+use chrono::{DateTime, Duration, Utc};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+const SERVER: &str = "Thalys";
+/// これ以上の稼働率が出ていれば計算が走っているとみなす
+const COMPUTING: u32 = 5;
+
+type TestUseCase = DetectIdleSlotsUseCase<
+    MockReservationRepository,
+    MockResourceUsageObserver,
+    MockIdleSlotNotifier,
+>;
+
+struct Fixture {
+    usecase: TestUseCase,
+    repository: Arc<MockReservationRepository>,
+    observer: Arc<MockResourceUsageObserver>,
+    notifier: MockIdleSlotNotifier,
+    notices: Arc<IdleNoticeLog>,
+}
+
+/// 使われていない予約を`threshold_minutes`で知らせる状況
+fn fixture(threshold_minutes: i64) -> Fixture {
+    fixture_with(criteria(threshold_minutes))
+}
+
+/// 使われていない予約を`threshold_minutes`で知らせる基準
+fn criteria(threshold_minutes: i64) -> IdleCriteria {
+    IdleCriteria {
+        absent_threshold: Duration::minutes(threshold_minutes),
+        held_threshold: Duration::minutes(threshold_minutes),
+        computing_utilization_percent: COMPUTING,
+        held_notices: NoticePolicy::Notify,
+        observation_gap_tolerance: Duration::minutes(5),
+    }
+}
+
+fn fixture_with(criteria: IdleCriteria) -> Fixture {
+    let repository = Arc::new(MockReservationRepository::new());
+    let observer = Arc::new(MockResourceUsageObserver::new());
+    let notifier = MockIdleSlotNotifier::new();
+    let notices = Arc::new(IdleNoticeLog::new(Duration::hours(4)));
+
+    let usecase = DetectIdleSlotsUseCase::new(
+        repository.clone(),
+        observer.clone(),
+        notifier.clone(),
+        criteria,
+        notices.clone(),
+    );
+
+    Fixture {
+        usecase,
+        repository,
+        observer,
+        notifier,
+        notices,
+    }
+}
+
+fn os_system() -> ExternalSystem {
+    ExternalSystem::Os {
+        server: SERVER.to_string(),
+    }
+}
+
+fn gpu(device_number: u32) -> Resource {
+    Resource::Gpu(Gpu::new(
+        SERVER.to_string(),
+        device_number,
+        "A100".to_string(),
+    ))
+}
+
+fn reservation_of(holder: &str, resources: Vec<Resource>, ends_in: Duration) -> ReservedSlot {
+    let now = Utc::now();
+    ReservedSlot::new(
+        EmailAddress::new(holder.to_string()).unwrap(),
+        TimePeriod::new(now - Duration::hours(1), now + ends_in).unwrap(),
+        resources,
+        None,
+    )
+    .unwrap()
+}
+
+fn observed_by(user_id: &str, resource: Resource, active_since: DateTime<Utc>) -> ObservedUsage {
+    ObservedUsage::new(
+        resource,
+        ExternalIdentity::new(os_system(), user_id.to_string()),
+        active_since,
+    )
+}
+
+/// 誰の利用も観測されなかったが、サーバーの状態は把握できている観測結果
+fn nobody_is_working() -> ObservationSnapshot {
+    ObservationSnapshot::new(
+        Vec::new(),
+        HashMap::from([(
+            SERVER.to_string(),
+            ServerObservation::Observed {
+                generated_at: Utc::now(),
+            },
+        )]),
+    )
+}
+
+/// あるユーザーのプロセスがGPU 0番に乗っており、その稼働率まで分かっている観測結果
+fn working_at(user_id: &str, peak_utilization_percent: u32) -> ObservationSnapshot {
+    working_on(user_id, vec![(0, peak_utilization_percent)])
+}
+
+/// あるユーザーのプロセスが複数のGPUに乗っており、それぞれの稼働率まで分かっている観測結果
+fn working_on(user_id: &str, devices: Vec<(u32, u32)>) -> ObservationSnapshot {
+    let usages = devices
+        .iter()
+        .map(|(device_number, _)| {
+            observed_by(
+                user_id,
+                gpu(*device_number),
+                Utc::now() - Duration::hours(1),
+            )
+            .with_used_memory(38_000)
+        })
+        .collect();
+
+    ObservationSnapshot::new(
+        usages,
+        HashMap::from([(
+            SERVER.to_string(),
+            ServerObservation::Observed {
+                generated_at: Utc::now(),
+            },
+        )]),
+    )
+    .with_gpu_activities(
+        devices
+            .into_iter()
+            .map(|(device_number, peak)| {
+                ((SERVER.to_string(), device_number), GpuActivity::new(peak))
+            })
+            .collect(),
+    )
+}
+
+/// 誰のものか分からないプロセスがGPU 0番に乗っている観測結果（コンテナ実行等）
+fn unattributed_working_at(peak_utilization_percent: u32) -> ObservationSnapshot {
+    nobody_is_working()
+        .with_unattributed_usages(vec![
+            UnattributedUsage::new(gpu(0), 100_000, Utc::now() - Duration::hours(1))
+                .with_used_memory(38_000),
+        ])
+        .with_gpu_activities(HashMap::from([(
+            (SERVER.to_string(), 0),
+            GpuActivity::new(peak_utilization_percent),
+        )]))
+}
+
+#[tokio::test]
+async fn a_reservation_its_holder_is_using_is_left_alone() {
+    let f = fixture(30);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+
+    f.observer.set_active_usages(vec![observed_by(
+        "holder-os",
+        gpu(0),
+        Utc::now() - Duration::hours(1),
+    )]);
+
+    f.usecase.poll_once().await.unwrap();
+
+    assert!(f.notifier.sent_notices().is_empty());
+}
+
+#[tokio::test]
+async fn an_unused_reservation_is_reported_once_the_threshold_passes() {
+    let f = fixture(0);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+    f.observer.set_snapshot(nobody_is_working());
+
+    f.usecase.poll_once().await.unwrap();
+
+    let notices = f.notifier.sent_notices();
+    assert_eq!(notices.len(), 1);
+    assert_eq!(notices[0].slot().id(), reservation.id());
+}
+
+#[tokio::test]
+async fn the_holder_is_not_told_twice_about_the_same_reservation() {
+    let f = fixture(0);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+    f.observer.set_snapshot(nobody_is_working());
+
+    f.usecase.poll_once().await.unwrap();
+    f.usecase.poll_once().await.unwrap();
+    f.usecase.poll_once().await.unwrap();
+
+    assert_eq!(f.notifier.sent_notices().len(), 1);
+}
+
+#[tokio::test]
+async fn nothing_is_said_before_the_reservation_has_been_idle_long_enough() {
+    let f = fixture(30);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+    f.observer.set_snapshot(nobody_is_working());
+
+    f.usecase.poll_once().await.unwrap();
+
+    assert!(
+        f.notifier.sent_notices().is_empty(),
+        "使われていないと分かった直後に急かさない"
+    );
+}
+
+#[tokio::test]
+async fn a_server_that_cannot_be_observed_says_nothing_about_its_reservations() {
+    let f = fixture(0);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+
+    // レポートが届かない（cron停止）サーバー
+    f.observer.set_snapshot(ObservationSnapshot::new(
+        Vec::new(),
+        HashMap::from([(SERVER.to_string(), ServerObservation::Missing)]),
+    ));
+
+    f.usecase.poll_once().await.unwrap();
+
+    assert!(
+        f.notifier.sent_notices().is_empty(),
+        "監視が止まっている間の沈黙を、使っていないことの証拠にしてはいけない"
+    );
+}
+
+#[tokio::test]
+async fn an_holder_without_a_linked_os_username_is_still_told() {
+    // OSユーザー名の紐付けは帰属の証拠であって、空き予約を見過ごす理由ではない
+    let f = fixture(0);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+    f.observer.set_snapshot(nobody_is_working());
+
+    f.usecase.poll_once().await.unwrap();
+
+    assert_eq!(
+        f.notifier.sent_notices().len(),
+        1,
+        "誰も使っていないことは、名義の紐付けがなくても分かる"
+    );
+}
+
+#[tokio::test]
+async fn someone_computing_on_the_reserved_gpu_keeps_it_quiet_whoever_they_are() {
+    let f = fixture(0);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+
+    // 予約者に辿れない名義（コンテナ実行の予約者本人かもしれないし、他人かもしれない）
+    f.observer.set_snapshot(working_at("guest-os", 90));
+
+    f.usecase.poll_once().await.unwrap();
+
+    assert!(
+        f.notifier.sent_notices().is_empty(),
+        "計算が走っているGPUは解放できる状態にない。名義の照合は無断使用の検出の仕事"
+    );
+}
+
+#[tokio::test]
+async fn an_unattributed_workload_computing_on_the_gpu_keeps_the_reservation_quiet() {
+    // Docker等のコンテナ実行では、プロセスの実UIDから人を辿れない
+    let f = fixture(0);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+
+    f.observer.set_snapshot(unattributed_working_at(92));
+
+    f.usecase.poll_once().await.unwrap();
+
+    assert!(
+        f.notifier.sent_notices().is_empty(),
+        "帰属できないことを、使われていないことの証拠にしてはいけない"
+    );
+}
+
+#[tokio::test]
+async fn an_unattributed_allocation_without_computation_is_reported_as_held() {
+    let f = fixture(0);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+
+    f.observer.set_snapshot(unattributed_working_at(1));
+
+    f.usecase.poll_once().await.unwrap();
+
+    let notices = f.notifier.sent_notices();
+    assert_eq!(notices.len(), 1);
+    assert_eq!(
+        notices[0].evidence(),
+        &IdleEvidence::HeldWithoutComputing {
+            at_rest: vec![Gpu::new(SERVER.to_string(), 0, "A100".to_string())],
+            observed_count: 1,
+            peak_utilization_percent: 1,
+            used_memory_mib: Some(38_000),
+        },
+        "帰属不明の確保も、押さえられたまま計算していない状態として伝わる"
+    );
+}
+
+#[tokio::test]
+async fn a_room_reservation_is_out_of_scope() {
+    let f = fixture(0);
+    let reservation = reservation_of(
+        "holder@example.com",
+        vec![Resource::Room {
+            name: "会議室A".to_string(),
+        }],
+        Duration::hours(4),
+    );
+    f.repository.save_slot(&reservation).await.unwrap();
+    f.observer.set_snapshot(nobody_is_working());
+
+    f.usecase.poll_once().await.unwrap();
+
+    assert!(
+        f.notifier.sent_notices().is_empty(),
+        "部屋の利用は観測できないので、使われているかを問えない"
+    );
+}
+
+#[tokio::test]
+async fn a_reservation_that_is_used_again_can_be_reported_again() {
+    let f = fixture(0);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+
+    f.observer.set_snapshot(nobody_is_working());
+    f.usecase.poll_once().await.unwrap();
+    assert_eq!(f.notifier.sent_notices().len(), 1);
+
+    // 予約者が使い始めた
+    f.observer.set_active_usages(vec![observed_by(
+        "holder-os",
+        gpu(0),
+        Utc::now() - Duration::minutes(5),
+    )]);
+    f.usecase.poll_once().await.unwrap();
+
+    // そしてまた手が止まった
+    f.observer.set_snapshot(nobody_is_working());
+    f.usecase.poll_once().await.unwrap();
+
+    assert_eq!(
+        f.notifier.sent_notices().len(),
+        2,
+        "一度使われたなら、次に手が止まったときは改めて知らせる"
+    );
+}
+
+#[tokio::test]
+async fn a_failed_notice_is_retried_on_the_next_pass() {
+    let f = fixture(0);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+    f.observer.set_snapshot(nobody_is_working());
+
+    f.notifier.set_failing(true);
+    f.usecase.poll_once().await.unwrap();
+    assert!(f.notifier.sent_notices().is_empty());
+
+    f.notifier.set_failing(false);
+    f.usecase.poll_once().await.unwrap();
+
+    assert_eq!(
+        f.notifier.sent_notices().len(),
+        1,
+        "送信に失敗しただけで二度と知らせなくなってはいけない"
+    );
+}
+
+#[tokio::test]
+async fn an_holder_who_cannot_be_reached_is_not_counted_as_a_delivery_failure() {
+    let f = fixture(0);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+    f.observer.set_snapshot(nobody_is_working());
+
+    // Slackアカウントが紐付いておらず、DMの宛先を解決できない予約者
+    f.notifier.set_recipient_unknown(true);
+    f.usecase
+        .poll_once()
+        .await
+        .expect("宛先を知らないことは、ポーリングを失敗させる不調ではない");
+    assert!(f.notifier.sent_notices().is_empty());
+
+    // 次のポーリングで確かめ直しても届くようにはならないため、しばらく黙る
+    f.notifier.set_recipient_unknown(false);
+    f.usecase.poll_once().await.unwrap();
+    assert!(
+        f.notifier.sent_notices().is_empty(),
+        "宛先の分からない予約を毎回問い直さない"
+    );
+}
+
+#[tokio::test]
+async fn a_silenced_reservation_stays_quiet() {
+    let f = fixture(0);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+    f.observer.set_snapshot(nobody_is_working());
+
+    // 予約者が「まだ使う」と答えた状況
+    f.notices.silence(reservation.id(), Utc::now());
+
+    f.usecase.poll_once().await.unwrap();
+
+    assert!(f.notifier.sent_notices().is_empty());
+}
+
+#[tokio::test]
+async fn a_gpu_held_with_memory_but_no_computation_is_reported() {
+    let f = fixture(0);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+
+    // vLLMのように、メモリは確保したまま計算が走っていない状態
+    f.observer.set_snapshot(working_at("holder-os", 1));
+
+    f.usecase.poll_once().await.unwrap();
+
+    let notices = f.notifier.sent_notices();
+    assert_eq!(
+        notices.len(),
+        1,
+        "プロセスが乗っているだけでは、予約が使われていることにならない"
+    );
+    assert_eq!(
+        notices[0].evidence(),
+        &IdleEvidence::HeldWithoutComputing {
+            at_rest: vec![Gpu::new(SERVER.to_string(), 0, "A100".to_string())],
+            observed_count: 1,
+            peak_utilization_percent: 1,
+            used_memory_mib: Some(38_000),
+        },
+        "何を見てそう言っているのかが予約者まで届く"
+    );
+}
+
+#[tokio::test]
+async fn a_gpu_left_at_rest_is_reported_even_while_another_one_is_computing() {
+    let f = fixture(0);
+    let reservation = reservation_of(
+        "holder@example.com",
+        vec![gpu(0), gpu(1)],
+        Duration::hours(4),
+    );
+    f.repository.save_slot(&reservation).await.unwrap();
+
+    // 2枚押さえて1枚しか回していない
+    f.observer
+        .set_snapshot(working_on("holder-os", vec![(0, 90), (1, 0)]));
+
+    f.usecase.poll_once().await.unwrap();
+
+    let notices = f.notifier.sent_notices();
+    assert_eq!(
+        notices.len(),
+        1,
+        "回っている1枚が、空いたままの1枚を覆い隠してはいけない"
+    );
+    assert!(
+        notices[0].evidence().is_partial(),
+        "一部だけが休んでいることは、全部が休んでいることとは違う"
+    );
+}
+
+#[tokio::test]
+async fn a_watched_criteria_counts_without_telling_the_holder() {
+    let f = fixture_with(IdleCriteria {
+        held_notices: NoticePolicy::Observe,
+        ..criteria(0)
+    });
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+    f.observer.set_snapshot(working_at("holder-os", 1));
+
+    f.usecase.poll_once().await.unwrap();
+
+    assert!(
+        f.notifier.sent_notices().is_empty(),
+        "見分け方を確かめている間は、人を急かさない"
+    );
+}
+
+#[tokio::test]
+async fn a_watched_criteria_still_tells_the_holder_when_no_process_is_there() {
+    let f = fixture_with(IdleCriteria {
+        held_notices: NoticePolicy::Observe,
+        ..criteria(0)
+    });
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+    f.observer.set_snapshot(nobody_is_working());
+
+    f.usecase.poll_once().await.unwrap();
+
+    assert_eq!(
+        f.notifier.sent_notices().len(),
+        1,
+        "新しい見分け方を確かめることと、もとからある見分け方を止めることは別"
+    );
+}
+
+#[tokio::test]
+async fn a_gpu_that_is_actually_computing_is_left_alone() {
+    let f = fixture(0);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+
+    f.observer.set_snapshot(working_at("holder-os", 90));
+
+    f.usecase.poll_once().await.unwrap();
+
+    assert!(f.notifier.sent_notices().is_empty());
+}
+
+#[tokio::test]
+async fn a_gpu_taken_up_after_a_silent_stretch_is_given_its_own_grace_period() {
+    let f = fixture_with(IdleCriteria {
+        absent_threshold: Duration::zero(),
+        held_threshold: Duration::minutes(30),
+        ..criteria(0)
+    });
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.save_slot(&reservation).await.unwrap();
+
+    // プロセスが立っていないので、すぐに知らせる
+    f.observer.set_snapshot(nobody_is_working());
+    f.usecase.poll_once().await.unwrap();
+    assert_eq!(f.notifier.sent_notices().len(), 1);
+
+    // 予約者が推論サーバーを立ち上げた（メモリは確保したが、まだ計算は走っていない）
+    f.notices.resume(reservation.id());
+    f.observer.set_snapshot(working_at("holder-os", 0));
+    f.usecase.poll_once().await.unwrap();
+
+    assert_eq!(
+        f.notifier.sent_notices().len(),
+        1,
+        "様子が変わった直後に、それまでの沈黙を持ち出して急かさない"
+    );
+}

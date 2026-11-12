@@ -6,23 +6,25 @@ use serde::Deserialize;
 
 /// メッセージテンプレート設定
 ///
-/// 各イベントタイプ（作成・更新・削除・競合）のメッセージテンプレートを定義。
+/// 通知の種類（予約の作成・変更・取り消し、競合）ごとのメッセージテンプレートを定義。
 /// プレースホルダー: `{user}`, `{resource}`, `{time}`, `{notes}`, `{resource_label}`
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq, Hash, Default)]
 pub struct TemplateConfig {
-    /// 予約作成時のテンプレート
+    /// 単発予約の作成時のテンプレート
     #[serde(default)]
     pub created: Option<String>,
 
-    /// 予約更新時のテンプレート
+    /// 単発予約の変更時のテンプレート（今で終了を含む）
     #[serde(default)]
     pub updated: Option<String>,
 
-    /// 予約削除時のテンプレート
-    #[serde(default)]
-    pub deleted: Option<String>,
+    /// 単発予約の取り消し時のテンプレート
+    ///
+    /// 以前の設定キー`deleted`も受け付ける。
+    #[serde(default, alias = "deleted")]
+    pub cancelled: Option<String>,
 
-    /// 予約競合時のテンプレート（`{user}`/`{time}`/`{resource}`等は競合した既存予約の情報）
+    /// 予約競合時のテンプレート（`{user}`/`{time}`/`{resource}`等は競合した既存の予約枠の情報）
     #[serde(default)]
     pub conflict: Option<String>,
 
@@ -125,7 +127,7 @@ mod tests {
         let config: TemplateConfig = Default::default();
         assert!(config.created.is_none());
         assert!(config.updated.is_none());
-        assert!(config.deleted.is_none());
+        assert!(config.cancelled.is_none());
         assert!(config.conflict.is_none());
         assert!(config.conflict_item.is_none());
     }
