@@ -883,10 +883,13 @@ impl GoogleCalendarReservationRepository {
     /// 定期予約の、読んだあとに変えた回を書く
     ///
     /// 繰り返しイベントそのものはアプリから変えないので、書くのは回のイベントだけ。
-    /// 回ごとに、読んだときの版のままかを確かめてから書く（`If-Match`）。まだ規則どおり
-    /// だった回は、繰り返しイベントの版が読んだときのままで、その回がまだ規則どおりの
-    /// ときだけ書く。どれか1つでも確かめられなければ、何も書かずに
-    /// `RepositoryError::Conflict`を返す。
+    /// 繰り返しイベントの版が読んだときのままで、変えた回もそれぞれ読んだときの版のまま
+    /// かを確かめてから、回ごとに版を条件に書く（`If-Match`）。どれか1つでも確かめられ
+    /// なければ、何も書かずに`RepositoryError::Conflict`を返す。
+    ///
+    /// カレンダーは、回を書き換えたり削除したりすると、繰り返しイベントそのものの版も
+    /// 変える。そのため、読んだあとに誰かが同じ定期予約のどの回を変えても衝突になる。
+    /// 書いたあとは、繰り返しイベントの新しい版を予約に記録する。
     async fn save_occurrences(
         &self,
         reservation: &mut Reservation,
@@ -992,6 +995,17 @@ impl GoogleCalendarReservationRepository {
                 calendar_id = %series.calendar_id,
                 "occurrence of a recurring reservation saved to the calendar"
             );
+        }
+
+        // 回を書くと繰り返しイベントの版も変わる。読めなければ古い版のまま残し、
+        // 次の保存を衝突として断る（読み直せばやり直せる）
+        if let Ok(Some(event)) = self
+            .gateway
+            .get_event(&series.calendar_id, &series.event_id)
+            .await
+            && let Some(etag) = event.etag
+        {
+            reservation.record_version(Some(Version::new(etag)));
         }
         Ok(())
     }

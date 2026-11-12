@@ -146,10 +146,27 @@ impl FakeCalendarEventGateway {
     fn edit_in_calendar(&self, event_id: &str) {
         let mut event = self.stored(event_id).expect("書き換えるイベントが無い");
         event.etag = Some(self.new_etag());
+        self.touch_series_of(&event);
         self.current
             .lock()
             .unwrap()
             .insert(event_id.to_string(), Some(event));
+    }
+
+    /// 回を変えたときの、繰り返しイベントそのものの版の変化
+    ///
+    /// 実APIは、回を書き換えたり削除したりすると、繰り返しイベントそのもののetagも変える。
+    fn touch_series_of(&self, instance: &Event) {
+        let Some(series_id) = instance.recurring_event_id.as_deref() else {
+            return;
+        };
+        if let Some(mut series) = self.stored(series_id) {
+            series.etag = Some(self.new_etag());
+            self.current
+                .lock()
+                .unwrap()
+                .insert(series_id.to_string(), Some(series));
+        }
     }
 
     /// カレンダー上で直接消されたことにする
@@ -314,6 +331,7 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         updated.recurring_event_id = before.recurring_event_id;
         updated.original_start_time = before.original_start_time;
         updated.etag = Some(self.new_etag());
+        self.touch_series_of(&updated);
         self.current
             .lock()
             .unwrap()
@@ -332,6 +350,7 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         version: &str,
     ) -> Result<(), RepositoryError> {
         let before = self.check_version(event_id, version)?;
+        self.touch_series_of(&before);
         if before.recurring_event_id.is_some() {
             // 実APIは、削除した回を`status: cancelled`の回のイベントとして残す
             let cancelled = Event {
@@ -1356,21 +1375,48 @@ mod recurring {
     }
 
     #[tokio::test]
-    async fn an_occurrence_someone_else_changed_does_not_block_another_one() {
+    async fn a_change_someone_else_made_to_another_occurrence_is_a_conflict() {
         let (repository, gateway) = repository_with(vec![weekly_event()]);
         let mut reservation = repository.find(&series_id()).await.unwrap().unwrap();
-        // 読んだあとに、別の回を誰かがカレンダーで取り消した
+        // 読んだあとに、別の回を誰かが取り消した。カレンダーは繰り返しイベントの版も変える
         let mut someone_else = repository.find(&series_id()).await.unwrap().unwrap();
         someone_else.cancel_slot(&at(12, 7), &holder()).unwrap();
         repository.save(&mut someone_else).await.unwrap();
 
         reservation.cancel_slot(&at(11, 30), &holder()).unwrap();
+        let result = repository.save(&mut reservation).await;
+
+        assert!(
+            matches!(result, Err(RepositoryError::Conflict)),
+            "読み直してからやり直す: {result:?}"
+        );
+        let stored = repository.find(&series_id()).await.unwrap().unwrap();
+        assert!(
+            stored.slot(&at(11, 30)).is_some(),
+            "断った取り消しは書かない"
+        );
+        assert!(stored.slot(&at(12, 7)).is_none(), "別の人の取り消しは残る");
+        assert_eq!(gateway.deleted().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_same_reservation_can_be_saved_again_after_saving_an_occurrence() {
+        let (repository, _gateway) = repository_with(vec![weekly_event()]);
+        let mut reservation = repository.find(&series_id()).await.unwrap().unwrap();
+
+        reservation.cancel_slot(&at(11, 30), &holder()).unwrap();
+        repository.save(&mut reservation).await.unwrap();
+        reservation.cancel_slot(&at(12, 7), &holder()).unwrap();
         repository.save(&mut reservation).await.unwrap();
 
         let stored = repository.find(&series_id()).await.unwrap().unwrap();
         assert!(stored.slot(&at(11, 30)).is_none());
-        assert!(stored.slot(&at(12, 7)).is_none(), "別の人の取り消しも残る");
-        assert_eq!(gateway.deleted().len(), 2);
+        assert!(stored.slot(&at(12, 7)).is_none());
+        assert_eq!(
+            stored.version(),
+            reservation.version(),
+            "保存したあとの版を持つ"
+        );
     }
 
     #[tokio::test]

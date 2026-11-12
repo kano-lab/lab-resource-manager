@@ -459,17 +459,17 @@ async fn one_occurrence_is_written_by_its_instance_id(calendar: &Calendar) {
         .await
         .unwrap();
 
-    // 繰り返しイベントそのものの版。アダプタはどちらでも正しく動くが、偽物と本物が
-    // 同じかを確かめる（違えば偽物を本物に合わせる）
+    // 回を変えると、繰り返しイベントそのものの版も変わる。アダプタはこれを頼りに、
+    // 読んだあとに同じ定期予約のどの回が変わっても衝突として断る
     let series_now = gateway
         .get_event(calendar_id, &id)
         .await
         .unwrap()
         .expect("繰り返しイベントは残っている");
-    assert_eq!(
+    assert_ne!(
         series_now.etag.as_deref(),
         Some(series_version.as_str()),
-        "1つの回を変えても、繰り返しイベントそのものの版は変わらない"
+        "1つの回を変えると、繰り返しイベントそのものの版も変わる"
     );
 
     // 変えた回と取り消した回が、繰り返しイベントの回のイベントとして読める
