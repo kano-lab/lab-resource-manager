@@ -105,11 +105,9 @@ pub fn build(
 ///
 /// 空きがないときは押しても選ぶものがないため、呼び出し側が出し分ける。
 fn reserve_action() -> SlackBlock {
-    let button = SlackBlockButtonElement::new(
-        SlackActionId::new(ACTION_FREE_RESERVE.to_string()),
-        pt!("空いているものを予約"),
-    )
-    .with_style(SlackBlockButtonStyle::Primary);
+    let button = SlackBlockButtonElement::new(pt!("空いているものを予約"))
+        .with_action_id(SlackActionId::new(ACTION_FREE_RESERVE.to_string()))
+        .with_style(SlackBlockButtonStyle::Primary);
 
     SlackBlock::Actions(SlackActionsBlock::new(vec![
         SlackActionBlockElement::Button(button),
@@ -122,20 +120,19 @@ fn reserve_action() -> SlackBlock {
 /// 「いま」へ戻るボタンは常に置く。日を見た後に現在の状況へ帰る道が要る。
 fn day_actions(options: &[DayOption]) -> SlackBlock {
     let mut elements = vec![SlackActionBlockElement::Button(
-        SlackBlockButtonElement::new(
-            SlackActionId::new(ACTION_FREE_SHOW_DAY.to_string()),
-            pt!("いま"),
-        )
-        .with_value(NOW.to_string()),
+        SlackBlockButtonElement::new(pt!("いま"))
+            .with_action_id(SlackActionId::new(ACTION_FREE_SHOW_DAY.to_string()))
+            .with_value(NOW.to_string()),
     )];
 
     for option in days::buttons(options) {
         elements.push(SlackActionBlockElement::Button(
-            SlackBlockButtonElement::new(
-                SlackActionId::new(format!("{}_{}", ACTION_FREE_SHOW_DAY, option.date)),
-                pt!(option.label.clone()),
-            )
-            .with_value(option.date.to_string()),
+            SlackBlockButtonElement::new(pt!(option.label.clone()))
+                .with_action_id(SlackActionId::new(format!(
+                    "{}_{}",
+                    ACTION_FREE_SHOW_DAY, option.date
+                )))
+                .with_value(option.date.to_string()),
         ));
     }
 
@@ -149,11 +146,10 @@ fn day_actions(options: &[DayOption]) -> SlackBlock {
             .collect();
 
         elements.push(SlackActionBlockElement::StaticSelect(
-            SlackBlockStaticSelectElement::new(SlackActionId::new(
-                ACTION_FREE_SELECT_DAY.to_string(),
-            ))
-            .with_placeholder(pt!("他の日"))
-            .with_options(choices),
+            SlackBlockStaticSelectElement::new()
+                .with_action_id(SlackActionId::new(ACTION_FREE_SELECT_DAY.to_string()))
+                .with_placeholder(pt!("他の日"))
+                .with_options(choices),
         ));
     }
 

@@ -40,11 +40,9 @@ pub fn create(config: &ResourceConfig, target_type: Option<&str>) -> SlackView {
         SlackInputBlock::new(
             pt!("リンク対象"),
             SlackInputBlockElement::RadioButtons(
-                SlackBlockRadioButtonsElement::new(
-                    SlackActionId::new(ACTION_LINK_TARGET_TYPE.to_string()),
-                    target_type_options,
-                )
-                .with_initial_option(initial_target_type),
+                SlackBlockRadioButtonsElement::new(target_type_options)
+                    .with_action_id(SlackActionId::new(ACTION_LINK_TARGET_TYPE.to_string()))
+                    .with_initial_option(initial_target_type),
             ),
         )
         .with_dispatch_action(true),
@@ -60,10 +58,9 @@ pub fn create(config: &ResourceConfig, target_type: Option<&str>) -> SlackView {
         SlackInputBlock::new(
             pt!("メールアドレス"),
             SlackInputBlockElement::PlainTextInput(
-                SlackBlockPlainTextInputElement::new(SlackActionId::new(
-                    ACTION_LINK_EMAIL_INPUT.to_string(),
-                ))
-                .with_placeholder(pt!("user@gmail.com")),
+                SlackBlockPlainTextInputElement::new()
+                    .with_action_id(SlackActionId::new(ACTION_LINK_EMAIL_INPUT.to_string()))
+                    .with_placeholder(pt!("user@gmail.com")),
             ),
         )
         .with_block_id(SlackBlockId::new(ACTION_LINK_EMAIL_INPUT.to_string())),
@@ -83,10 +80,9 @@ fn add_slack_user_blocks(blocks: &mut Vec<SlackBlock>) {
         SlackInputBlock::new(
             pt!("紐付けるユーザー"),
             SlackInputBlockElement::UsersSelect(
-                SlackBlockUsersSelectElement::new(SlackActionId::new(
-                    ACTION_USER_SELECT.to_string(),
-                ))
-                .with_placeholder(pt!("ユーザーを選択")),
+                SlackBlockUsersSelectElement::new()
+                    .with_action_id(SlackActionId::new(ACTION_USER_SELECT.to_string()))
+                    .with_placeholder(pt!("ユーザーを選択")),
             ),
         )
         .with_block_id(SlackBlockId::new(ACTION_USER_SELECT.to_string())),
@@ -108,11 +104,10 @@ fn add_os_username_blocks(blocks: &mut Vec<SlackBlock>, config: &ResourceConfig)
         .map(|server| SlackBlockChoiceItem::new(pt!(server.name.clone()), server.name.clone()))
         .collect();
 
-    let mut server_select_element = SlackBlockStaticSelectElement::new(SlackActionId::new(
-        ACTION_LINK_SERVER_SELECT.to_string(),
-    ))
-    .with_placeholder(pt!("サーバーを選択"))
-    .with_options(server_options);
+    let mut server_select_element = SlackBlockStaticSelectElement::new()
+        .with_action_id(SlackActionId::new(ACTION_LINK_SERVER_SELECT.to_string()))
+        .with_placeholder(pt!("サーバーを選択"))
+        .with_options(server_options);
 
     if let Some(first_server) = config.servers.first() {
         let initial_server =
@@ -129,10 +124,11 @@ fn add_os_username_blocks(blocks: &mut Vec<SlackBlock>, config: &ResourceConfig)
         SlackInputBlock::new(
             pt!("OSユーザー名"),
             SlackInputBlockElement::PlainTextInput(
-                SlackBlockPlainTextInputElement::new(SlackActionId::new(
-                    ACTION_LINK_OS_USERNAME_INPUT.to_string(),
-                ))
-                .with_placeholder(pt!("kkawaguchi")),
+                SlackBlockPlainTextInputElement::new()
+                    .with_action_id(SlackActionId::new(
+                        ACTION_LINK_OS_USERNAME_INPUT.to_string(),
+                    ))
+                    .with_placeholder(pt!("kkawaguchi")),
             ),
         )
         .with_block_id(SlackBlockId::new(ACTION_LINK_OS_USERNAME_INPUT.to_string())),
