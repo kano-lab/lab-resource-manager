@@ -233,20 +233,6 @@ impl Reservation {
         }
     }
 
-    /// 予約の期間（最初の予約枠の始まりから最後の予約枠の終わりまで）が、期間に重なるか
-    ///
-    /// 定期予約は、回の合間にあたる期間とも重なる。予約に起きた変化を見るときは、
-    /// 回が窓に入っているかどうかではなく、予約がその期間に続いているかで見る。
-    pub fn spans_into(&self, window: &TimePeriod) -> bool {
-        match &self.schedule {
-            Schedule::OneTime(time_period) => time_period.overlaps_with(window),
-            Schedule::Recurring(recurring) => {
-                recurring.first().start() < window.end()
-                    && self.last_end().is_none_or(|end| end > window.start())
-            }
-        }
-    }
-
     /// 予約枠の時間を変える
     ///
     /// 他の予約の予約枠と重ならないかは、ここでは確かめない。それには他の予約を
