@@ -4,9 +4,19 @@ use crate::domain::ports::repositories::RepositoryError;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use google_calendar3::{
-    CalendarHub, api::Event, hyper_rustls::HttpsConnector,
+    CalendarHub,
+    api::{Event, Scope},
+    hyper_rustls::HttpsConnector,
     hyper_util::client::legacy::connect::HttpConnector,
 };
+
+/// すべての呼び出しで求める権限
+///
+/// 生成されたクライアントは呼び出しごとに既定の権限を選ぶ。google-calendar3 7 から、
+/// イベントの取得・一覧の既定が`calendar.events.owned.readonly`（サービスアカウント自身が
+/// 持つカレンダーだけ）になった。予約のカレンダーは人が作ってサービスアカウントに共有するので、
+/// その権限では見つからない（404）。共有されたカレンダーも読み書きできる権限を明示する。
+const SCOPE: Scope = Scope::Full;
 
 /// 1ページあたりの最大取得件数（Google Calendar APIの上限値）
 const MAX_RESULTS_PER_PAGE: i32 = 2500;
@@ -79,6 +89,7 @@ impl CalendarEventGateway for GoogleCalendarEventGateway {
                 .hub
                 .events()
                 .list(calendar_id)
+                .add_scope(SCOPE)
                 .time_min(time_min)
                 // 繰り返しイベントを個々の予定へ展開する。展開しないと繰り返しの
                 // 2回目以降が取得できず、予約として扱えない
@@ -113,7 +124,14 @@ impl CalendarEventGateway for GoogleCalendarEventGateway {
         calendar_id: &str,
         event_id: &str,
     ) -> Result<Option<Event>, RepositoryError> {
-        match self.hub.events().get(calendar_id, event_id).doit().await {
+        match self
+            .hub
+            .events()
+            .get(calendar_id, event_id)
+            .add_scope(SCOPE)
+            .doit()
+            .await
+        {
             Ok((_response, event)) => Ok(Some(event)),
             Err(e) => {
                 // HTTPステータスコード404の場合はNoneを返す
@@ -142,6 +160,7 @@ impl CalendarEventGateway for GoogleCalendarEventGateway {
             .hub
             .events()
             .insert(event, calendar_id)
+            .add_scope(SCOPE)
             .doit()
             .await
             .map_err(|e| RepositoryError::ConnectionError(format!("イベント作成に失敗: {}", e)))?;
@@ -158,6 +177,7 @@ impl CalendarEventGateway for GoogleCalendarEventGateway {
         self.hub
             .events()
             .update(event, calendar_id, event_id)
+            .add_scope(SCOPE)
             .doit()
             .await
             .map_err(|e| RepositoryError::ConnectionError(format!("イベント更新に失敗: {}", e)))?;
@@ -169,6 +189,7 @@ impl CalendarEventGateway for GoogleCalendarEventGateway {
         self.hub
             .events()
             .delete(calendar_id, event_id)
+            .add_scope(SCOPE)
             .doit()
             .await
             .map_err(|e| RepositoryError::ConnectionError(format!("イベント削除に失敗: {}", e)))?;
