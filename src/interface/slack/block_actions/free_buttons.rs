@@ -9,7 +9,7 @@
 use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::slack_client::{messages, modals};
@@ -27,7 +27,7 @@ pub async fn handle_day_change<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let Some(response_url) = &block_actions.response_url else {
@@ -88,7 +88,7 @@ pub async fn handle_reserve<R, N>(
     block_actions: &SlackInteractionBlockActionsEvent,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
@@ -177,9 +177,9 @@ fn server_with_most_free_devices(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::ReservedSlot;
     use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::common::EmailAddress;
+    use crate::domain::read_models::SlotView;
     use crate::domain::services::reservation::availability::calculate;
     use chrono::{DateTime, TimeZone};
 
@@ -199,8 +199,8 @@ mod tests {
         ))
     }
 
-    fn reservation(resources: Vec<Resource>) -> ReservedSlot {
-        ReservedSlot::of_new_one_time_reservation(
+    fn reservation(resources: Vec<Resource>) -> SlotView {
+        SlotView::of_new_one_time_reservation(
             EmailAddress::new("sato@example.com".to_string()).unwrap(),
             TimePeriod::new(at(9), at(18)).unwrap(),
             resources,
@@ -209,7 +209,7 @@ mod tests {
         .unwrap()
     }
 
-    fn availabilities(resources: &[Resource], slots: &[ReservedSlot]) -> Vec<ResourceAvailability> {
+    fn availabilities(resources: &[Resource], slots: &[SlotView]) -> Vec<ResourceAvailability> {
         calculate(resources, &window(), slots)
     }
 

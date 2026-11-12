@@ -3,10 +3,9 @@
 //! 通知メッセージのテンプレートとプレースホルダー置換を処理します。
 
 use crate::domain::aggregates::reservation::value_objects::Resource;
-use crate::domain::aggregates::reservation::{
-    Reservation, ReservationEvent, ReservedSlot, Schedule,
-};
+use crate::domain::aggregates::reservation::{Reservation, ReservationEvent, Schedule};
 use crate::domain::common::TimePeriod;
+use crate::domain::read_models::SlotView;
 use crate::infrastructure::config::{FormatConfig, TemplateConfig};
 use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
 
@@ -136,7 +135,7 @@ impl<'a> TemplateRenderer<'a> {
     pub fn render_conflict(
         &self,
         conflicting_resources: &[Resource],
-        existing_slot: &ReservedSlot,
+        existing_slot: &SlotView,
         user_display: &str,
     ) -> String {
         let template = self
@@ -160,7 +159,7 @@ impl<'a> TemplateRenderer<'a> {
     pub fn render_conflict_item(
         &self,
         conflicting_resources: &[Resource],
-        existing_slot: &ReservedSlot,
+        existing_slot: &SlotView,
         user_display: &str,
     ) -> String {
         let template = self
@@ -274,7 +273,7 @@ mod tests {
     use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
     use chrono::{TimeZone, Utc};
 
-    fn create_test_slot() -> ReservedSlot {
+    fn create_test_slot() -> SlotView {
         let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
         let period = TimePeriod::new(start, end).unwrap();
@@ -284,11 +283,24 @@ mod tests {
             Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string())),
         ];
 
-        ReservedSlot::of_new_one_time_reservation(
+        SlotView::of_new_one_time_reservation(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,
             Some("テスト用予約".to_string()),
+        )
+        .unwrap()
+    }
+
+    /// 予約枠の写しと同じ内容の単発予約
+    fn reservation_of(slot: &SlotView) -> Reservation {
+        Reservation::reconstruct(
+            slot.reservation_id().clone(),
+            slot.holder_email().clone(),
+            slot.resources().to_vec(),
+            slot.notes().cloned(),
+            Schedule::OneTime(slot.time_period().clone()),
+            None,
         )
         .unwrap()
     }
@@ -301,7 +313,7 @@ mod tests {
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
         let slot = create_test_slot();
 
-        let result = renderer.render_created(&Reservation::from_one_time_slot(&slot), "<@U12345>");
+        let result = renderer.render_created(&reservation_of(&slot), "<@U12345>");
 
         assert!(result.contains("🔔 新規予約"));
         assert!(result.contains("<@U12345>"));
@@ -328,7 +340,7 @@ mod tests {
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
         let slot = create_test_slot();
 
-        let result = renderer.render_created(&Reservation::from_one_time_slot(&slot), "田中太郎");
+        let result = renderer.render_created(&reservation_of(&slot), "田中太郎");
 
         assert!(result.contains("田中太郎が"));
         assert!(result.contains("Thalys 0,1")); // compact format
@@ -350,8 +362,7 @@ mod tests {
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
         let slot = create_test_slot();
 
-        let result =
-            renderer.render_updated(&Reservation::from_one_time_slot(&slot), "user@example.com");
+        let result = renderer.render_updated(&reservation_of(&slot), "user@example.com");
 
         assert!(result.contains("🔄 予約更新"));
         assert!(result.contains("Thalys")); // server only
@@ -462,7 +473,7 @@ mod tests {
             "A100".to_string(),
         ))];
 
-        let slot = ReservedSlot::of_new_one_time_reservation(
+        let slot = SlotView::of_new_one_time_reservation(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,
@@ -470,7 +481,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = renderer.render_created(&Reservation::from_one_time_slot(&slot), "user");
+        let result = renderer.render_created(&reservation_of(&slot), "user");
 
         assert!(!result.contains("📝 備考"));
     }

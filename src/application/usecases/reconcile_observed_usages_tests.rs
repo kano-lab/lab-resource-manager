@@ -5,15 +5,14 @@
 use crate::application::usecases::reconcile_observed_usages::ReconcileObservedUsagesUseCase;
 use crate::application::usecases::test_support::InMemoryIdentityLinkRepository;
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
-use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::ReservedSlotRepository;
 use crate::domain::ports::{
     NotificationError, ObservedUsage, ReservationProposal, ReservationProposalNotifier,
     UnauthorizedUsageNotifier,
 };
+use crate::domain::read_models::SlotView;
 use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
 use crate::infrastructure::reservation_proposal::MockReservationProposalNotifier;
 use crate::infrastructure::resource_usage_observer::MockResourceUsageObserver;
@@ -25,11 +24,11 @@ use std::sync::Mutex as StdMutex;
 
 #[derive(Clone, Default)]
 struct RecordingUnauthorizedUsageNotifier {
-    notified: Arc<StdMutex<Vec<(ReservedSlot, EmailAddress)>>>,
+    notified: Arc<StdMutex<Vec<(SlotView, EmailAddress)>>>,
 }
 
 impl RecordingUnauthorizedUsageNotifier {
-    fn notified(&self) -> Vec<(ReservedSlot, EmailAddress)> {
+    fn notified(&self) -> Vec<(SlotView, EmailAddress)> {
         self.notified.lock().unwrap().clone()
     }
 }
@@ -38,7 +37,7 @@ impl RecordingUnauthorizedUsageNotifier {
 impl UnauthorizedUsageNotifier for RecordingUnauthorizedUsageNotifier {
     async fn notify(
         &self,
-        reserved_usage: &ReservedSlot,
+        reserved_usage: &SlotView,
         actual_user_email: &EmailAddress,
     ) -> Result<(), NotificationError> {
         self.notified
@@ -116,10 +115,10 @@ fn os_system() -> ExternalSystem {
     }
 }
 
-fn make_reservation(holder_email: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> ReservedSlot {
+fn make_reservation(holder_email: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> SlotView {
     let email = EmailAddress::new(holder_email.to_string()).unwrap();
     let period = TimePeriod::new(start, end).unwrap();
-    ReservedSlot::of_new_one_time_reservation(email, period, vec![gpu_resource()], None).unwrap()
+    SlotView::of_new_one_time_reservation(email, period, vec![gpu_resource()], None).unwrap()
 }
 
 #[allow(clippy::type_complexity)]
@@ -612,7 +611,7 @@ async fn using_several_gpus_of_one_reservation_notifies_once() {
 
     // 1件の予約が2枚のGPUを押さえていて、別の利用者がその2枚を使っている
     let now = Utc::now();
-    let reservation = ReservedSlot::of_new_one_time_reservation(
+    let reservation = SlotView::of_new_one_time_reservation(
         EmailAddress::new("owner@example.com".to_string()).unwrap(),
         TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap(),
         vec![gpu_resource(), gpu_resource_device1()],
@@ -659,7 +658,7 @@ async fn using_gpus_of_two_different_reservations_notifies_for_each() {
         ("owner-a@example.com", gpu_resource()),
         ("owner-b@example.com", gpu_resource_device1()),
     ] {
-        let reservation = ReservedSlot::of_new_one_time_reservation(
+        let reservation = SlotView::of_new_one_time_reservation(
             EmailAddress::new(owner.to_string()).unwrap(),
             TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap(),
             vec![resource],
@@ -746,7 +745,7 @@ async fn the_unauthorized_notice_is_forgotten_once_the_reservation_ends() {
     assert_eq!(notifier.notified().len(), 1);
 
     // 予約が取り消され、進行中の予約がなくなる
-    repo.remove_slot(reservation.id()).await.unwrap();
+    repo.delete_reservation(reservation.reservation_id());
     usecase.poll_once().await.unwrap();
 
     // 同じ予約が戻れば、それは改めて知らせるべき無断使用である

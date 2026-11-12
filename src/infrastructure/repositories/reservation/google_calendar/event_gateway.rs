@@ -4,12 +4,33 @@ use crate::domain::ports::repositories::RepositoryError;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use google_calendar3::{
-    CalendarHub, api::Event, hyper_rustls::HttpsConnector,
+    CalendarHub,
+    api::{Event, Scope},
+    common, hyper,
+    hyper_rustls::HttpsConnector,
     hyper_util::client::legacy::connect::HttpConnector,
 };
 
 /// 1ページあたりの最大取得件数（Google Calendar APIの上限値）
 const MAX_RESULTS_PER_PAGE: i32 = 2500;
+
+/// Google Calendar API の起点
+const CALENDAR_API_BASE: &str = "https://www.googleapis.com/calendar/v3";
+
+/// URLのパスの1区切りとして使えるよう、IDをパーセントエンコードする
+///
+/// RFC 3986の非予約文字と、カレンダーIDに含まれる`@`（パスにそのまま書ける）は残す。
+fn encode_path_segment(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'@' => {
+                (byte as char).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
+}
 
 /// Google Calendarのイベント操作
 ///
@@ -39,16 +60,28 @@ pub(super) trait CalendarEventGateway: Send + Sync {
     async fn insert_event(&self, calendar_id: &str, event: Event)
     -> Result<Event, RepositoryError>;
 
-    /// 既存イベントを更新する
+    /// 既存イベントを、版が`version`のままなら書き換え、書き換えたイベントを返す
+    ///
+    /// # Errors
+    /// 版が違う、またはイベントが無い場合、`RepositoryError::Conflict`
     async fn update_event(
         &self,
         calendar_id: &str,
         event_id: &str,
         event: Event,
-    ) -> Result<(), RepositoryError>;
+        version: &str,
+    ) -> Result<Event, RepositoryError>;
 
-    /// イベントを削除する
-    async fn delete_event(&self, calendar_id: &str, event_id: &str) -> Result<(), RepositoryError>;
+    /// イベントを、版が`version`のままなら削除する
+    ///
+    /// # Errors
+    /// 版が違う、またはイベントが無い場合、`RepositoryError::Conflict`
+    async fn delete_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+        version: &str,
+    ) -> Result<(), RepositoryError>;
 }
 
 /// Google Calendar APIを直接呼び出す実装
@@ -59,6 +92,83 @@ pub(super) struct GoogleCalendarEventGateway {
 impl GoogleCalendarEventGateway {
     pub(super) fn new(hub: CalendarHub<HttpsConnector<HttpConnector>>) -> Self {
         Self { hub }
+    }
+
+    /// 版を条件にした書き換え・削除を送る
+    ///
+    /// 生成されたクライアントの呼び出しにはヘッダーを足せないため、同じ認証と HTTP
+    /// クライアントで`If-Match`付きのリクエストを組み立てる。保存先の版が違えば、
+    /// カレンダーは 412 を返して何も変えない。
+    async fn send_if_match(
+        &self,
+        method: hyper::Method,
+        calendar_id: &str,
+        event_id: &str,
+        event: Option<&Event>,
+        version: &str,
+    ) -> Result<Option<Event>, RepositoryError> {
+        use hyper::header::{AUTHORIZATION, CONTENT_TYPE, IF_MATCH};
+
+        let token = self
+            .hub
+            .auth
+            .get_token(&[Scope::Full.as_ref()])
+            .await
+            .map_err(|e| RepositoryError::ConnectionError(format!("認証に失敗: {}", e)))?;
+
+        let url = format!(
+            "{CALENDAR_API_BASE}/calendars/{}/events/{}",
+            encode_path_segment(calendar_id),
+            encode_path_segment(event_id)
+        );
+
+        let mut builder = hyper::Request::builder()
+            .method(method)
+            .uri(url)
+            .header(IF_MATCH, version);
+        if let Some(token) = token {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
+        }
+        let request = match event {
+            Some(event) => {
+                let mut value = serde_json::to_value(event).map_err(|e| {
+                    RepositoryError::Unknown(format!("イベントを JSON にできません: {}", e))
+                })?;
+                common::remove_json_null_values(&mut value);
+                let body = serde_json::to_vec(&value).map_err(|e| {
+                    RepositoryError::Unknown(format!("イベントを JSON にできません: {}", e))
+                })?;
+                builder
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(common::to_body(Some(body)))
+            }
+            None => builder.body(common::to_body::<Vec<u8>>(None)),
+        }
+        .map_err(|e| RepositoryError::Unknown(format!("リクエストを組み立てられません: {}", e)))?;
+
+        let response =
+            self.hub.client.request(request).await.map_err(|e| {
+                RepositoryError::ConnectionError(format!("Calendar API error: {}", e))
+            })?;
+        let status = response.status();
+        let bytes = common::to_bytes(response.into_body())
+            .await
+            .unwrap_or_default();
+
+        match status.as_u16() {
+            200..=299 if bytes.is_empty() => Ok(None),
+            200..=299 => serde_json::from_slice(&bytes).map(Some).map_err(|e| {
+                RepositoryError::Unknown(format!("Calendar API の応答を読めません: {}", e))
+            }),
+            // 版が違う（412）、または消えている（404・410）。読んでから書くまでの間に
+            // 誰かが変えたか取り消した
+            404 | 410 | 412 => Err(RepositoryError::Conflict),
+            _ => Err(RepositoryError::ConnectionError(format!(
+                "Calendar API error {}: {}",
+                status,
+                String::from_utf8_lossy(&bytes)
+            ))),
+        }
     }
 }
 
@@ -154,25 +264,42 @@ impl CalendarEventGateway for GoogleCalendarEventGateway {
         calendar_id: &str,
         event_id: &str,
         event: Event,
-    ) -> Result<(), RepositoryError> {
-        self.hub
-            .events()
-            .update(event, calendar_id, event_id)
-            .doit()
-            .await
-            .map_err(|e| RepositoryError::ConnectionError(format!("イベント更新に失敗: {}", e)))?;
-
-        Ok(())
+        version: &str,
+    ) -> Result<Event, RepositoryError> {
+        self.send_if_match(
+            hyper::Method::PUT,
+            calendar_id,
+            event_id,
+            Some(&event),
+            version,
+        )
+        .await?
+        .ok_or_else(|| RepositoryError::Unknown("書き換えたイベントが返りませんでした".to_string()))
     }
 
-    async fn delete_event(&self, calendar_id: &str, event_id: &str) -> Result<(), RepositoryError> {
-        self.hub
-            .events()
-            .delete(calendar_id, event_id)
-            .doit()
-            .await
-            .map_err(|e| RepositoryError::ConnectionError(format!("イベント削除に失敗: {}", e)))?;
-
+    async fn delete_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+        version: &str,
+    ) -> Result<(), RepositoryError> {
+        self.send_if_match(hyper::Method::DELETE, calendar_id, event_id, None, version)
+            .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_path_segment;
+
+    #[test]
+    fn a_calendar_id_keeps_its_at_sign_and_other_characters_are_escaped() {
+        assert_eq!(
+            encode_path_segment("abc123@group.calendar.google.com"),
+            "abc123@group.calendar.google.com"
+        );
+        assert_eq!(encode_path_segment("a/b c#d"), "a%2Fb%20c%23d");
+        assert_eq!(encode_path_segment("予"), "%E4%BA%88");
     }
 }

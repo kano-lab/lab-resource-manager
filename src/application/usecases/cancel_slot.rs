@@ -1,22 +1,22 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::{ReservationEvent, ReservedSlotId};
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::{RepositoryError, ReservedSlotRepository};
+use crate::domain::ports::repositories::{RepositoryError, ReservationRepository};
 use std::sync::Arc;
 use tracing::info;
 
 /// 予約枠を取り消すユースケース
 ///
 /// 単発予約の予約枠を取り消すと、その単発予約も無くなる。
-pub struct CancelSlotUseCase<R: ReservedSlotRepository> {
+pub struct CancelSlotUseCase<R: ReservationRepository> {
     repository: Arc<R>,
 }
 
-impl<R: ReservedSlotRepository> CancelSlotUseCase<R> {
+impl<R: ReservationRepository> CancelSlotUseCase<R> {
     /// 新しいインスタンスを作成
     ///
     /// # Arguments
-    /// * `repository` - 予約枠リポジトリ
+    /// * `repository` - 予約リポジトリ
     pub fn new(repository: Arc<R>) -> Self {
         Self { repository }
     }
@@ -33,22 +33,26 @@ impl<R: ReservedSlotRepository> CancelSlotUseCase<R> {
     /// # Errors
     /// - 指定されたIDの予約枠が見つからない場合
     /// - 操作者が予約者でない場合
+    /// - 読んだあとに予約が変更または取り消されていた場合（`RepositoryError::Conflict`）
     /// - リポジトリエラー
     pub async fn execute(
         &self,
         id: &ReservedSlotId,
         requested_by: &EmailAddress,
     ) -> Result<ReservationEvent, ApplicationError> {
-        let slot = self
+        let mut reservation = self
             .repository
-            .find_slot(id)
+            .find(id.reservation_id())
             .await?
             .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?;
+        let slot = reservation
+            .slot(id.key())
+            .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?;
 
-        let holder = slot.holder_email().clone();
+        let holder = reservation.holder_email().clone();
         let time_period = slot.time_period().clone();
-        let event = slot.cancel(requested_by)?;
-        self.repository.remove_slot(id).await?;
+        let event = reservation.cancel_slot(id.key(), requested_by)?;
+        self.repository.save(&mut reservation).await?;
 
         info!(
             slot_id = %id.as_str(),
@@ -67,9 +71,9 @@ impl<R: ReservedSlotRepository> CancelSlotUseCase<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::ReservedSlot;
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::TimePeriod;
+    use crate::domain::read_models::SlotView;
     use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
     use chrono::{Duration, Utc};
 
@@ -77,9 +81,9 @@ mod tests {
         EmailAddress::new(address.to_string()).unwrap()
     }
 
-    fn upcoming_slot() -> ReservedSlot {
+    fn upcoming_slot() -> SlotView {
         let start = Utc::now() + Duration::hours(1);
-        ReservedSlot::of_new_one_time_reservation(
+        SlotView::of_new_one_time_reservation(
             email("holder@example.com"),
             TimePeriod::new(start, start + Duration::hours(1)).unwrap(),
             vec![Resource::Gpu(Gpu::new(
@@ -104,7 +108,7 @@ mod tests {
             .unwrap();
 
         assert!(
-            matches!(&event, ReservationEvent::Cancelled(reservation) if reservation.id() == &slot.reservation_id()),
+            matches!(&event, ReservationEvent::Cancelled(reservation) if reservation.id() == slot.reservation_id()),
             "{event:?}"
         );
         assert!(repository.find_slot(slot.id()).await.unwrap().is_none());

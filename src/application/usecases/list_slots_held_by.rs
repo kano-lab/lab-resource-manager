@@ -1,16 +1,16 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::ReservedSlotRepository;
+use crate::domain::ports::repositories::ReservedSlotQuery;
+use crate::domain::read_models::SlotView;
 use std::sync::Arc;
 
 /// ユーザーの予約枠一覧を取得するユースケース
-pub struct ListSlotsHeldByUseCase<R: ReservedSlotRepository> {
+pub struct ListSlotsHeldByUseCase<R: ReservedSlotQuery> {
     repository: Arc<R>,
 }
 
-impl<R: ReservedSlotRepository> ListSlotsHeldByUseCase<R> {
+impl<R: ReservedSlotQuery> ListSlotsHeldByUseCase<R> {
     /// 新しいListSlotsHeldByUseCaseインスタンスを作成
     ///
     /// # Arguments
@@ -26,7 +26,7 @@ impl<R: ReservedSlotRepository> ListSlotsHeldByUseCase<R> {
     /// * `time_period` - 一覧する期間。どこまで先を見るかは呼び出し側が決める
     ///
     /// # Returns
-    /// ReservedSlotのリスト（時系列順）
+    /// SlotViewのリスト（時系列順）
     ///
     /// # Errors
     /// - リポジトリエラー
@@ -34,7 +34,7 @@ impl<R: ReservedSlotRepository> ListSlotsHeldByUseCase<R> {
         &self,
         holder_email: &EmailAddress,
         time_period: &TimePeriod,
-    ) -> Result<Vec<ReservedSlot>, ApplicationError> {
+    ) -> Result<Vec<SlotView>, ApplicationError> {
         let mut slots = self
             .repository
             .find_slots_held_by(holder_email, time_period)

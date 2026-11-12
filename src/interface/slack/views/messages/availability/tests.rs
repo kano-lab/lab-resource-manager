@@ -1,7 +1,7 @@
 use super::*;
-use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::Gpu;
 use crate::domain::common::TimePeriod;
+use crate::domain::read_models::SlotView;
 use crate::domain::services::reservation::availability::calculate;
 use chrono::TimeZone;
 
@@ -44,8 +44,8 @@ fn reservation(
     resources: Vec<Resource>,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
-) -> ReservedSlot {
-    ReservedSlot::of_new_one_time_reservation(
+) -> SlotView {
+    SlotView::of_new_one_time_reservation(
         email(holder),
         TimePeriod::new(from, to).unwrap(),
         resources,
@@ -54,7 +54,7 @@ fn reservation(
     .unwrap()
 }
 
-fn availabilities(resources: &[Resource], slots: &[ReservedSlot]) -> Vec<ResourceAvailability> {
+fn availabilities(resources: &[Resource], slots: &[SlotView]) -> Vec<ResourceAvailability> {
     calculate(resources, &window(), slots)
 }
 

@@ -5,9 +5,10 @@
 
 use super::*;
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
-use crate::domain::aggregates::reservation::{ReservationEvent, Schedule};
+use crate::domain::aggregates::reservation::{OccurrenceKey, ReservationEvent, ReservedSlotId};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::NotificationError;
+use crate::domain::read_models::SlotView;
 use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
 use async_trait::async_trait;
 use chrono::DateTime;
@@ -37,8 +38,8 @@ impl Notifier for RecordingNotifier {
 }
 
 /// 単発予約の予約枠
-fn slot(id: &str, start: DateTime<Utc>) -> ReservedSlot {
-    ReservedSlot::reconstruct(
+fn slot(id: &str, start: DateTime<Utc>) -> SlotView {
+    SlotView::reconstruct(
         ReservedSlotId::from_string(id.to_string()),
         EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(start, start + Duration::hours(2)).unwrap(),
@@ -88,7 +89,7 @@ async fn one_time_reservations_are_announced_one_by_one() {
             .all(|event| matches!(event, ReservationEvent::Reserved(_)))
     );
 
-    repository.remove_slot(first.id()).await.unwrap();
+    repository.delete_reservation(first.reservation_id());
     usecase.poll_once().await.unwrap();
 
     let cancelled = notifier.take();
@@ -109,9 +110,15 @@ async fn ending_a_one_time_reservation_early_is_not_announced_as_a_cancellation(
     repository.put_slot(&running);
     let (usecase, notifier) = watching(&repository).await;
 
-    let mut ended = running.clone();
-    ended.end_early(Utc::now(), running.holder_email()).unwrap();
-    repository.save_slot(&ended).await.unwrap();
+    let mut ended = repository
+        .find(running.reservation_id())
+        .await
+        .unwrap()
+        .unwrap();
+    ended
+        .end_slot_early(&OccurrenceKey::Only, Utc::now(), running.holder_email())
+        .unwrap();
+    repository.save(&mut ended).await.unwrap();
     usecase.poll_once().await.unwrap();
 
     let events = notifier.take();
@@ -119,7 +126,7 @@ async fn ending_a_one_time_reservation_early_is_not_announced_as_a_cancellation(
         matches!(
             events.as_slice(),
             [ReservationEvent::EndedEarly(reservation)]
-                if reservation.schedule() == &Schedule::OneTime(ended.time_period().clone())
+                if reservation.schedule() == ended.schedule()
         ),
         "使った分は予約枠として残っている: {events:?}"
     );
@@ -135,7 +142,7 @@ async fn ending_a_one_time_reservation_early_is_not_announced_as_a_cancellation(
 async fn a_slot_that_ran_its_course_is_not_announced() {
     let repository = Arc::new(MockReservationRepository::new());
     // 既に終わりかけの予約枠。次のポーリングまでに予定どおり終わる
-    let ending = ReservedSlot::reconstruct(
+    let ending = SlotView::reconstruct(
         ReservedSlotId::from_string("ending".to_string()),
         EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(

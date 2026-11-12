@@ -1,6 +1,6 @@
 use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource};
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::ReservedSlotRepository;
+use crate::domain::ports::repositories::ReservedSlotQuery;
 use crate::domain::services::reservation::errors::{ConflictCheckError, ResourceConflictError};
 use std::collections::HashMap;
 
@@ -10,7 +10,7 @@ use std::collections::HashMap;
 ///
 /// # 判定の範囲
 /// 判定の対象は予約である。永続化層にあって予約として解釈されないレコードは
-/// 予約ではないため、競合の対象にならない（`ReservedSlotRepository`を参照）。
+/// 予約ではないため、競合の対象にならない（`ReservedSlotQuery`を参照）。
 ///
 /// したがって競合なしとは「予約と重ならない」ことであり、そのリソースが実際に
 /// 使われていないことは意味しない。予約されないまま使われるリソースは
@@ -43,7 +43,7 @@ impl ResourceConflictChecker {
     /// # Errors
     /// - 競合するリソースがある場合
     /// - リポジトリエラー
-    pub async fn check_conflicts<R: ReservedSlotRepository + ?Sized>(
+    pub async fn check_conflicts<R: ReservedSlotQuery + ?Sized>(
         &self,
         repository: &R,
         time_period: &TimePeriod,
@@ -101,31 +101,24 @@ impl ResourceConflictChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::ReservedSlot;
     use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::common::EmailAddress;
     use crate::domain::ports::repositories::RepositoryError;
+    use crate::domain::read_models::SlotView;
     use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
 
     /// `find_slots_overlapping`の戻り値だけを固定できるテスト用リポジトリ
     struct StubRepository {
-        overlapping: Vec<ReservedSlot>,
+        overlapping: Vec<SlotView>,
     }
 
     #[async_trait]
-    impl ReservedSlotRepository for StubRepository {
-        async fn find_slot(
-            &self,
-            _id: &ReservedSlotId,
-        ) -> Result<Option<ReservedSlot>, RepositoryError> {
-            unimplemented!("このテストでは使用しない")
-        }
-
+    impl ReservedSlotQuery for StubRepository {
         async fn find_slots_overlapping(
             &self,
             _time_period: &TimePeriod,
-        ) -> Result<Vec<ReservedSlot>, RepositoryError> {
+        ) -> Result<Vec<SlotView>, RepositoryError> {
             Ok(self.overlapping.clone())
         }
 
@@ -133,15 +126,7 @@ mod tests {
             &self,
             _holder_email: &EmailAddress,
             _time_period: &TimePeriod,
-        ) -> Result<Vec<ReservedSlot>, RepositoryError> {
-            unimplemented!("このテストでは使用しない")
-        }
-
-        async fn save_slot(&self, _slot: &ReservedSlot) -> Result<(), RepositoryError> {
-            unimplemented!("このテストでは使用しない")
-        }
-
-        async fn remove_slot(&self, _id: &ReservedSlotId) -> Result<(), RepositoryError> {
+        ) -> Result<Vec<SlotView>, RepositoryError> {
             unimplemented!("このテストでは使用しない")
         }
     }
@@ -152,8 +137,8 @@ mod tests {
         TimePeriod::new(start, end).unwrap()
     }
 
-    fn slot_with(holder: &str, resources: Vec<Resource>) -> ReservedSlot {
-        ReservedSlot::of_new_one_time_reservation(
+    fn slot_with(holder: &str, resources: Vec<Resource>) -> SlotView {
+        SlotView::of_new_one_time_reservation(
             EmailAddress::new(holder.to_string()).unwrap(),
             test_period(),
             resources,

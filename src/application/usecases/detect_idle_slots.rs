@@ -1,13 +1,13 @@
 use crate::application::error::ApplicationError;
 use crate::application::idle_notice_log::IdleNoticeLog;
-use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource};
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::NotificationError;
-use crate::domain::ports::repositories::ReservedSlotRepository;
+use crate::domain::ports::repositories::ReservedSlotQuery;
 use crate::domain::ports::{
     IdleEvidence, IdleSlot, IdleSlotNotifier, ObservationSnapshot, ResourceUsageObserver,
 };
+use crate::domain::read_models::SlotView;
 use crate::domain::services::reservation::{SlotActivity, judge_slot_activity};
 use chrono::{DateTime, Duration, Utc};
 use std::collections::{HashMap, HashSet};
@@ -120,7 +120,7 @@ struct IdleSpell {
 ///   まもなく終わる予約枠を急かしても、予約者に取れる手はほとんどない
 pub struct DetectIdleSlotsUseCase<R, O, N>
 where
-    R: ReservedSlotRepository,
+    R: ReservedSlotQuery,
     O: ResourceUsageObserver,
     N: IdleSlotNotifier,
 {
@@ -135,7 +135,7 @@ where
 
 impl<R, O, N> DetectIdleSlotsUseCase<R, O, N>
 where
-    R: ReservedSlotRepository,
+    R: ReservedSlotQuery,
     O: ResourceUsageObserver,
     N: IdleSlotNotifier,
 {
@@ -239,7 +239,7 @@ where
     /// 予約枠が使われているかを見立てる
     ///
     /// 観測できていないサーバーを含む予約枠については、見立てそのものを差し控える。
-    fn judge(&self, slot: &ReservedSlot, snapshot: &ObservationSnapshot) -> SlotActivity {
+    fn judge(&self, slot: &SlotView, snapshot: &ObservationSnapshot) -> SlotActivity {
         let Some(servers) = servers_of(slot) else {
             return SlotActivity::Undecidable;
         };
@@ -258,7 +258,7 @@ where
     /// 使われていない時間が閾値に達していれば予約者へ知らせる
     async fn notify_if_due(
         &self,
-        slot: &ReservedSlot,
+        slot: &SlotView,
         evidence: IdleEvidence,
         threshold: Duration,
         now: DateTime<Utc>,
@@ -373,7 +373,7 @@ where
     ///
     /// 終わった予約枠に対して知らせることはもう何もない。記録を持ち続けても
     /// 増えていくだけで、次に同じ予約枠が現れることもない。
-    fn forget_slots_that_ended(&self, in_progress: &[ReservedSlot]) {
+    fn forget_slots_that_ended(&self, in_progress: &[SlotView]) {
         let still_running: HashSet<&str> =
             in_progress.iter().map(|slot| slot.id().as_str()).collect();
 
@@ -387,7 +387,7 @@ where
 }
 
 /// 予約枠が押さえているGPUのサーバー名（部屋を含む予約枠は観測の対象外）
-fn servers_of(slot: &ReservedSlot) -> Option<HashSet<String>> {
+fn servers_of(slot: &SlotView) -> Option<HashSet<String>> {
     let mut servers = HashSet::new();
 
     for resource in slot.resources() {
@@ -421,7 +421,7 @@ fn carries_on(
 /// 使われていない時間が閾値に達していても、残り時間が閾値に満たなければ知らせない。
 /// まもなく終わる予約枠を急かしても、予約者が開けられる時間はほとんど残っていない。
 fn is_worth_telling(
-    slot: &ReservedSlot,
+    slot: &SlotView,
     idle_since: DateTime<Utc>,
     now: DateTime<Utc>,
     threshold: Duration,
@@ -437,8 +437,8 @@ mod tests {
     use crate::domain::common::TimePeriod;
     use crate::domain::services::reservation::GpusAtRest;
 
-    fn slot_ending_in(remaining: Duration, now: DateTime<Utc>) -> ReservedSlot {
-        ReservedSlot::of_new_one_time_reservation(
+    fn slot_ending_in(remaining: Duration, now: DateTime<Utc>) -> SlotView {
+        SlotView::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(now - Duration::hours(1), now + remaining).unwrap(),
             vec![Resource::Gpu(Gpu::new(

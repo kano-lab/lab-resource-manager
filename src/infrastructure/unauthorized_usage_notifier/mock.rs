@@ -1,7 +1,7 @@
-use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::unauthorized_usage_notifier::UnauthorizedUsageNotifier;
+use crate::domain::read_models::SlotView;
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 
@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 /// 送信内容を標準出力に表示しつつ、テストからの検証用に内部へ保持する。
 #[derive(Clone, Default)]
 pub struct MockUnauthorizedUsageNotifier {
-    notified: Arc<Mutex<Vec<(ReservedSlot, EmailAddress)>>>,
+    notified: Arc<Mutex<Vec<(SlotView, EmailAddress)>>>,
 }
 
 impl MockUnauthorizedUsageNotifier {
@@ -20,7 +20,7 @@ impl MockUnauthorizedUsageNotifier {
     }
 
     /// これまでに送信された通知の一覧を取得
-    pub fn notified(&self) -> Vec<(ReservedSlot, EmailAddress)> {
+    pub fn notified(&self) -> Vec<(SlotView, EmailAddress)> {
         self.notified.lock().unwrap().clone()
     }
 }
@@ -29,7 +29,7 @@ impl MockUnauthorizedUsageNotifier {
 impl UnauthorizedUsageNotifier for MockUnauthorizedUsageNotifier {
     async fn notify(
         &self,
-        reserved_slot: &ReservedSlot,
+        reserved_slot: &SlotView,
         actual_user_email: &EmailAddress,
     ) -> Result<(), NotificationError> {
         println!(

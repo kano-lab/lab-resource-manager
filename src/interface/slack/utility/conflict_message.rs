@@ -142,11 +142,11 @@ mod tests {
     use super::*;
     use crate::domain::aggregates::identity_link::entity::IdentityLink;
     use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
-    use crate::domain::aggregates::reservation::ReservedSlot;
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::EmailAddress;
     use crate::domain::common::TimePeriod;
     use crate::domain::ports::repositories::RepositoryError;
+    use crate::domain::read_models::SlotView;
     use crate::infrastructure::config::{DeviceConfig, ServerConfig};
     use async_trait::async_trait;
     use chrono::{Duration, Utc};
@@ -200,9 +200,9 @@ mod tests {
         }
     }
 
-    fn reservation(holder: &str, resources: Vec<Resource>) -> ReservedSlot {
+    fn reservation(holder: &str, resources: Vec<Resource>) -> SlotView {
         let now = Utc::now();
-        ReservedSlot::of_new_one_time_reservation(
+        SlotView::of_new_one_time_reservation(
             EmailAddress::new(holder.to_string()).unwrap(),
             TimePeriod::new(now, now + Duration::hours(2)).unwrap(),
             resources,

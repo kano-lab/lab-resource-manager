@@ -1,11 +1,11 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::{
-    Reservation, ReservedSlot,
+    OccurrenceKey, Reservation,
     value_objects::{ReservedSlotId, Resource},
 };
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::domain::services::ResourceConflictChecker;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::{HashMap, HashSet};
@@ -22,7 +22,7 @@ type SessionKey = (String, DateTime<Utc>, Vec<String>);
 /// 提案の受諾は「予約を新しく作る」ではなく「この観測セッションの予約を、この長さにする」
 /// という意味を持つ。利用者は提案メッセージの時間候補ボタンを押し直せるため、
 /// 同じ観測セッションに対する受諾が複数回起きても予約は1件に保たれる必要がある。
-pub struct AcceptReservationProposalUseCase<R: ReservationRepository + ReservedSlotRepository> {
+pub struct AcceptReservationProposalUseCase<R: ReservationRepository + ReservedSlotQuery> {
     repository: Arc<R>,
     conflict_checker: ResourceConflictChecker,
     /// この機会について確定した予約のID
@@ -32,7 +32,7 @@ pub struct AcceptReservationProposalUseCase<R: ReservationRepository + ReservedS
     settled_sessions: tokio::sync::Mutex<HashMap<SessionKey, ReservedSlotId>>,
 }
 
-impl<R: ReservationRepository + ReservedSlotRepository> AcceptReservationProposalUseCase<R> {
+impl<R: ReservationRepository + ReservedSlotQuery> AcceptReservationProposalUseCase<R> {
     /// 新しいユースケースインスタンスを作成
     pub fn new(repository: Arc<R>) -> Self {
         Self {
@@ -77,14 +77,22 @@ impl<R: ReservationRepository + ReservedSlotRepository> AcceptReservationProposa
         // 走ると、同じ機会の予約が二重に作られてしまう。
         let mut settled_sessions = self.settled_sessions.lock().await;
 
-        let existing = match settled_sessions.get(&session_key) {
+        let existing_slot = match settled_sessions.get(&session_key) {
             // このプロセスで既に確定させた予約は、検索の反映を待たずIDで引く
-            Some(settled_id) => self.repository.find_slot(settled_id).await?,
+            Some(settled_id) => Some(settled_id.clone()),
             // プロセスが入れ替わった場合に備え、進行中の事後予約から同じ機会のものを探す
             None => {
                 self.find_settled_reservation_in_progress(&holder_email, &resources, accepted_at)
                     .await?
             }
+        };
+        let existing = match existing_slot {
+            Some(slot_id) => self
+                .repository
+                .find(slot_id.reservation_id())
+                .await?
+                .map(|reservation| (reservation, slot_id)),
+            None => None,
         };
 
         // 既存予約の期間を更新する場合、自分自身は競合対象から外す
@@ -93,26 +101,26 @@ impl<R: ReservationRepository + ReservedSlotRepository> AcceptReservationProposa
                 self.repository.as_ref(),
                 &time_period,
                 &resources,
-                existing.as_ref().map(|slot| slot.id()),
+                existing.as_ref().map(|(_, slot_id)| slot_id),
             )
             .await?;
 
         let slot_id = match existing {
             // 同じ機会への受諾の押し直しは、確定済みの予約枠の時間を変える
-            Some(mut slot) => {
-                slot.reschedule(time_period, &holder_email)?;
-                self.repository.save_slot(&slot).await?;
-                slot.id().clone()
+            Some((mut reservation, slot_id)) => {
+                reservation.reschedule_slot(slot_id.key(), time_period, &holder_email)?;
+                self.repository.save(&mut reservation).await?;
+                slot_id
             }
             None => {
-                let reservation = Reservation::one_time(
+                let mut reservation = Reservation::one_time(
                     holder_email,
                     time_period,
                     resources,
                     Some(POST_HOC_RESERVATION_NOTES.to_string()),
                 )?;
-                self.repository.add_reservation(&reservation).await?;
-                ReservedSlotId::from_string(reservation.id().as_str().to_string())
+                self.repository.save(&mut reservation).await?;
+                reservation.slot_id(OccurrenceKey::Only)
             }
         };
         settled_sessions.insert(session_key, slot_id.clone());
@@ -148,7 +156,7 @@ impl<R: ReservationRepository + ReservedSlotRepository> AcceptReservationProposa
         holder_email: &EmailAddress,
         resources: &[Resource],
         now: DateTime<Utc>,
-    ) -> Result<Option<ReservedSlot>, ApplicationError> {
+    ) -> Result<Option<ReservedSlotId>, ApplicationError> {
         let requested: HashSet<&Resource> = resources.iter().collect();
 
         // 進行中かどうかを見るため、現在時刻を含む最小の期間を問う
@@ -158,18 +166,23 @@ impl<R: ReservationRepository + ReservedSlotRepository> AcceptReservationProposa
             .find_slots_held_by(holder_email, &in_progress)
             .await?;
 
-        Ok(candidates.into_iter().find(|slot| {
-            slot.notes().map(String::as_str) == Some(POST_HOC_RESERVATION_NOTES)
-                && slot.resources().iter().collect::<HashSet<_>>() == requested
-        }))
+        Ok(candidates
+            .into_iter()
+            .find(|slot| {
+                slot.notes().map(String::as_str) == Some(POST_HOC_RESERVATION_NOTES)
+                    && slot.resources().iter().collect::<HashSet<_>>() == requested
+            })
+            .map(|slot| slot.id().clone()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::aggregates::reservation::ReservationId;
     use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::ports::repositories::RepositoryError;
+    use crate::domain::read_models::SlotView;
     use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
     use async_trait::async_trait;
     use std::sync::Mutex as StdMutex;
@@ -194,7 +207,7 @@ mod tests {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> ReservedSlotId {
-        let slot = ReservedSlot::of_new_one_time_reservation(
+        let slot = SlotView::of_new_one_time_reservation(
             email(holder),
             TimePeriod::new(start, end).unwrap(),
             resources,
@@ -206,7 +219,7 @@ mod tests {
     }
 
     /// 保存されている全予約（終了済みを含む）
-    async fn all_reservations(repository: &MockReservationRepository) -> Vec<ReservedSlot> {
+    async fn all_reservations(repository: &MockReservationRepository) -> Vec<SlotView> {
         let far_past = Utc::now() - Duration::days(365);
         let far_future = Utc::now() + Duration::days(365);
         repository
@@ -412,9 +425,9 @@ mod tests {
     /// ボタン連打で実際に重複予約が生まれたのはこの性質が原因なので、テストでも再現する。
     struct EventuallyConsistentRepository {
         /// 検索から見える予約
-        visible: StdMutex<Vec<ReservedSlot>>,
+        visible: StdMutex<Vec<Reservation>>,
         /// 保存されたがまだ検索から見えない予約
-        pending: StdMutex<Vec<ReservedSlot>>,
+        pending: StdMutex<Vec<Reservation>>,
     }
 
     impl EventuallyConsistentRepository {
@@ -425,75 +438,74 @@ mod tests {
             }
         }
 
-        fn all(&self) -> Vec<ReservedSlot> {
+        fn all(&self) -> Vec<Reservation> {
             let mut all = self.visible.lock().unwrap().clone();
             all.extend(self.pending.lock().unwrap().iter().cloned());
             all
         }
-    }
 
-    #[async_trait]
-    impl ReservedSlotRepository for EventuallyConsistentRepository {
-        async fn find_slot(
-            &self,
-            id: &ReservedSlotId,
-        ) -> Result<Option<ReservedSlot>, RepositoryError> {
-            // IDを指定した取得は書き込み直後でも一貫して読める
-            Ok(self.all().into_iter().find(|slot| slot.id() == id))
-        }
-
-        async fn find_slots_overlapping(
-            &self,
-            time_period: &TimePeriod,
-        ) -> Result<Vec<ReservedSlot>, RepositoryError> {
-            Ok(self
-                .visible
+        /// 検索から見える予約枠の写し
+        fn visible_slots(&self, time_period: &TimePeriod) -> Vec<SlotView> {
+            self.visible
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|slot| slot.time_period().overlaps_with(time_period))
-                .cloned()
-                .collect())
+                .flat_map(|reservation| {
+                    reservation
+                        .slots_in(time_period)
+                        .iter()
+                        .map(|slot| SlotView::of(reservation, slot))
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        }
+    }
+
+    #[async_trait]
+    impl ReservedSlotQuery for EventuallyConsistentRepository {
+        async fn find_slots_overlapping(
+            &self,
+            time_period: &TimePeriod,
+        ) -> Result<Vec<SlotView>, RepositoryError> {
+            Ok(self.visible_slots(time_period))
         }
 
         async fn find_slots_held_by(
             &self,
             holder_email: &EmailAddress,
             time_period: &TimePeriod,
-        ) -> Result<Vec<ReservedSlot>, RepositoryError> {
+        ) -> Result<Vec<SlotView>, RepositoryError> {
             Ok(self
-                .visible
-                .lock()
-                .unwrap()
-                .iter()
+                .visible_slots(time_period)
+                .into_iter()
                 .filter(|slot| slot.holder_email() == holder_email)
-                .filter(|slot| slot.time_period().overlaps_with(time_period))
-                .cloned()
                 .collect())
-        }
-
-        async fn save_slot(&self, slot: &ReservedSlot) -> Result<(), RepositoryError> {
-            let mut pending = self.pending.lock().unwrap();
-            let existing = pending
-                .iter_mut()
-                .find(|p| p.id() == slot.id())
-                .ok_or(RepositoryError::NotFound)?;
-            *existing = slot.clone();
-            Ok(())
-        }
-
-        async fn remove_slot(&self, _id: &ReservedSlotId) -> Result<(), RepositoryError> {
-            unimplemented!("このテストでは使用しない")
         }
     }
 
     #[async_trait]
     impl ReservationRepository for EventuallyConsistentRepository {
-        async fn add_reservation(&self, reservation: &Reservation) -> Result<(), RepositoryError> {
-            self.pending
-                .lock()
-                .unwrap()
-                .push(reservation.one_time_slot().unwrap());
+        async fn find(&self, id: &ReservationId) -> Result<Option<Reservation>, RepositoryError> {
+            // IDを指定した取得は書き込み直後でも一貫して読める
+            Ok(self
+                .all()
+                .into_iter()
+                .find(|reservation| reservation.id() == id))
+        }
+
+        async fn find_overlapping(
+            &self,
+            _time_period: &TimePeriod,
+        ) -> Result<Vec<Reservation>, RepositoryError> {
+            unimplemented!("このテストでは使用しない")
+        }
+
+        async fn save(&self, reservation: &mut Reservation) -> Result<(), RepositoryError> {
+            let mut pending = self.pending.lock().unwrap();
+            match pending.iter_mut().find(|p| p.id() == reservation.id()) {
+                Some(existing) => *existing = reservation.clone(),
+                None => pending.push(reservation.clone()),
+            }
             Ok(())
         }
     }
@@ -573,7 +585,11 @@ mod tests {
         assert_eq!(first, second, "同じ予約を指すべき");
         let all = repository.all();
         assert_eq!(all.len(), 1, "予約は増えない");
-        let period = all[0].time_period();
+        let period = all[0]
+            .slot(&OccurrenceKey::Only)
+            .unwrap()
+            .time_period()
+            .clone();
         assert_eq!(
             period.end() - period.start(),
             Duration::hours(12),

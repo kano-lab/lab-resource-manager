@@ -8,10 +8,10 @@ use super::repository::GoogleCalendarReservationRepository;
 use crate::domain::aggregates::identity_link::entity::IdentityLink;
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
 use crate::domain::aggregates::reservation::value_objects::Resource;
-use crate::domain::aggregates::reservation::{Reservation, ReservedSlot};
+use crate::domain::aggregates::reservation::{OccurrenceKey, Reservation, ReservationId};
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::{
-    IdentityLinkRepository, RepositoryError, ReservationRepository, ReservedSlotRepository,
+    IdentityLinkRepository, RepositoryError, ReservationRepository, ReservedSlotQuery,
 };
 use crate::infrastructure::config::{
     DeviceConfig, ResourceConfig, ServerConfig, StorageBackend, StorageConfig,
@@ -19,6 +19,7 @@ use crate::infrastructure::config::{
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use google_calendar3::api::{Event, EventCreator, EventDateTime};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 const SERVICE_ACCOUNT_EMAIL: &str = "service-account@example.com";
@@ -37,6 +38,9 @@ struct ListQuery {
 /// `list_events`はGoogle Calendar APIの絞り込み意味論を模倣する。
 /// すなわち終了時刻が`time_min`より後、かつ（`time_max`指定時は）開始時刻が
 /// `time_max`より前のイベントだけを返す。
+///
+/// 書き換え・削除は実APIの`If-Match`と同じく、イベントのetagが渡された版と
+/// 一致するときだけ通す。イベントは書き込むたびに新しいetagになる。
 struct FakeCalendarEventGateway {
     events: Vec<Event>,
     queries: Mutex<Vec<ListQuery>>,
@@ -46,6 +50,10 @@ struct FakeCalendarEventGateway {
     updated: Mutex<Vec<(String, String)>>,
     /// delete_eventで受け取った対象（calendar_id, event_id）
     deleted: Mutex<Vec<(String, String)>>,
+    /// 書き込んだあとのイベントの今の姿（イベントID → イベント。消えたものは`None`）
+    current: Mutex<HashMap<String, Option<Event>>>,
+    /// 最後に採番したetag
+    last_etag: Mutex<u64>,
 }
 
 impl FakeCalendarEventGateway {
@@ -56,7 +64,52 @@ impl FakeCalendarEventGateway {
             inserted: Mutex::new(Vec::new()),
             updated: Mutex::new(Vec::new()),
             deleted: Mutex::new(Vec::new()),
+            current: Mutex::new(HashMap::new()),
+            last_etag: Mutex::new(0),
         }
+    }
+
+    fn new_etag(&self) -> String {
+        let mut last = self.last_etag.lock().unwrap();
+        *last += 1;
+        format!("\"{}\"", last)
+    }
+
+    /// イベントの今の姿
+    fn stored(&self, event_id: &str) -> Option<Event> {
+        if let Some(state) = self.current.lock().unwrap().get(event_id) {
+            return state.clone();
+        }
+        self.events
+            .iter()
+            .find(|event| event.id.as_deref() == Some(event_id))
+            .cloned()
+    }
+
+    /// 版が今のetagと一致すれば、今のイベントを返す
+    fn check_version(&self, event_id: &str, version: &str) -> Result<Event, RepositoryError> {
+        match self.stored(event_id) {
+            Some(event) if event.etag.as_deref() == Some(version) => Ok(event),
+            _ => Err(RepositoryError::Conflict),
+        }
+    }
+
+    /// カレンダー上で直接書き換えられたことにする（etagが変わる）
+    fn edit_in_calendar(&self, event_id: &str) {
+        let mut event = self.stored(event_id).expect("書き換えるイベントが無い");
+        event.etag = Some(self.new_etag());
+        self.current
+            .lock()
+            .unwrap()
+            .insert(event_id.to_string(), Some(event));
+    }
+
+    /// カレンダー上で直接消されたことにする
+    fn delete_in_calendar(&self, event_id: &str) {
+        self.current
+            .lock()
+            .unwrap()
+            .insert(event_id.to_string(), None);
     }
 
     fn queries(&self) -> Vec<ListQuery> {
@@ -120,20 +173,7 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         _calendar_id: &str,
         event_id: &str,
     ) -> Result<Option<Event>, RepositoryError> {
-        let inserted = self
-            .inserted
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|(_, event)| event.id.as_deref() == Some(event_id))
-            .map(|(_, event)| event.clone());
-
-        Ok(inserted.or_else(|| {
-            self.events
-                .iter()
-                .find(|event| event.id.as_deref() == Some(event_id))
-                .cloned()
-        }))
+        Ok(self.stored(event_id))
     }
 
     async fn insert_event(
@@ -152,6 +192,11 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
                 ..Default::default()
             });
         }
+        created.etag = Some(self.new_etag());
+        self.current
+            .lock()
+            .unwrap()
+            .insert(created.id.clone().unwrap(), Some(created.clone()));
         self.inserted
             .lock()
             .unwrap()
@@ -163,16 +208,33 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         &self,
         calendar_id: &str,
         event_id: &str,
-        _event: Event,
-    ) -> Result<(), RepositoryError> {
+        event: Event,
+        version: &str,
+    ) -> Result<Event, RepositoryError> {
+        let before = self.check_version(event_id, version)?;
+        let mut updated = event;
+        // 実APIは作成者を書き換えない
+        updated.creator = before.creator;
+        updated.etag = Some(self.new_etag());
+        self.current
+            .lock()
+            .unwrap()
+            .insert(event_id.to_string(), Some(updated.clone()));
         self.updated
             .lock()
             .unwrap()
             .push((calendar_id.to_string(), event_id.to_string()));
-        Ok(())
+        Ok(updated)
     }
 
-    async fn delete_event(&self, calendar_id: &str, event_id: &str) -> Result<(), RepositoryError> {
+    async fn delete_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+        version: &str,
+    ) -> Result<(), RepositoryError> {
+        self.check_version(event_id, version)?;
+        self.delete_in_calendar(event_id);
         self.deleted
             .lock()
             .unwrap()
@@ -237,6 +299,7 @@ fn reservation_event(
             ..Default::default()
         }),
         status: Some("confirmed".to_string()),
+        etag: Some("\"0\"".to_string()),
         ..Default::default()
     }
 }
@@ -499,10 +562,10 @@ fn repository_with_identities(
     (repository, gateway)
 }
 
-fn gpu_usage(holder: &str, device_number: u32) -> ReservedSlot {
+fn gpu_usage(holder: &str, device_number: u32) -> Reservation {
     use crate::domain::aggregates::reservation::value_objects::Gpu;
     let now = Utc::now();
-    ReservedSlot::of_new_one_time_reservation(
+    Reservation::one_time(
         crate::domain::common::EmailAddress::new(holder.to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(Gpu::new(
@@ -523,9 +586,9 @@ async fn description_includes_the_os_user_name_for_the_reserved_server() {
             "Thalys",
             "kkawaguchi",
         ));
-    let slot = gpu_usage("holder@example.com", 0);
+    let reservation = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&slot).await;
+    let description = repository.build_description(&reservation).await;
 
     assert!(
         description.contains("OS: kkawaguchi"),
@@ -536,12 +599,12 @@ async fn description_includes_the_os_user_name_for_the_reserved_server() {
 #[tokio::test]
 async fn description_includes_the_reservation_id() {
     let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let slot = gpu_usage("holder@example.com", 0);
+    let reservation = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&slot).await;
+    let description = repository.build_description(&reservation).await;
 
     assert!(
-        description.contains(slot.id().as_str()),
+        description.contains(reservation.id().as_str()),
         "予約IDが入るべき: {description}"
     );
 }
@@ -549,9 +612,9 @@ async fn description_includes_the_reservation_id() {
 #[tokio::test]
 async fn description_omits_the_os_line_when_no_link_exists() {
     let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let slot = gpu_usage("unlinked@example.com", 0);
+    let reservation = gpu_usage("unlinked@example.com", 0);
 
-    let description = repository.build_description(&slot).await;
+    let description = repository.build_description(&reservation).await;
 
     assert!(
         !description.contains("OS:"),
@@ -571,9 +634,9 @@ async fn description_uses_the_os_name_of_the_server_being_reserved() {
             .with_os_user("holder@example.com", "Thalys", "kkawaguchi")
             .with_os_user("holder@example.com", "Freccia", "kinji"),
     );
-    let slot = gpu_usage("holder@example.com", 0);
+    let reservation = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&slot).await;
+    let description = repository.build_description(&reservation).await;
 
     assert!(description.contains("OS: kkawaguchi"), "{description}");
     assert!(!description.contains("kinji"), "{description}");
@@ -588,7 +651,7 @@ async fn added_metadata_lines_do_not_leak_into_notes() {
             "kkawaguchi",
         ));
     let now = Utc::now();
-    let slot = ReservedSlot::of_new_one_time_reservation(
+    let reservation = Reservation::one_time(
         crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(
@@ -603,7 +666,7 @@ async fn added_metadata_lines_do_not_leak_into_notes() {
     .unwrap();
 
     // 生成したdescriptionを読み戻したとき、管理セクションの行が備考に混ざらないこと
-    let description = repository.build_description(&slot).await;
+    let description = repository.build_description(&reservation).await;
     let notes = GoogleCalendarReservationRepository::extract_notes(&description);
 
     assert_eq!(notes.as_deref(), Some("killしても大丈夫です"));
@@ -681,7 +744,7 @@ async fn newly_written_description_round_trips() {
             "kkawaguchi",
         ));
     let now = Utc::now();
-    let slot = ReservedSlot::of_new_one_time_reservation(
+    let reservation = Reservation::one_time(
         crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(
@@ -696,7 +759,7 @@ async fn newly_written_description_round_trips() {
     .unwrap();
 
     // 新形式で書いたdescriptionから、予約者と備考が元の値として読み戻せること
-    let description = repository.build_description(&slot).await;
+    let description = repository.build_description(&reservation).await;
 
     let holder = description
         .lines()
@@ -718,9 +781,9 @@ async fn metadata_lines_are_not_mistaken_for_the_holder() {
             "Thalys",
             "kkawaguchi",
         ));
-    let slot = gpu_usage("holder@example.com", 0);
+    let reservation = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&slot).await;
+    let description = repository.build_description(&reservation).await;
     let holder_lines: Vec<&str> = description
         .lines()
         .filter_map(|line| line.strip_prefix("予約者: "))
@@ -736,19 +799,16 @@ async fn metadata_lines_are_not_mistaken_for_the_holder() {
 #[tokio::test]
 async fn adding_a_reservation_uses_an_event_id_derived_from_its_id() {
     let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let slot = gpu_usage("holder@example.com", 0);
+    let mut reservation = gpu_usage("holder@example.com", 0);
 
-    repository
-        .add_reservation(&Reservation::from_one_time_slot(&slot))
-        .await
-        .unwrap();
+    repository.save(&mut reservation).await.unwrap();
 
     let inserted = gateway.inserted();
     assert_eq!(inserted.len(), 1);
     let event_id = inserted[0].1.id.clone().expect("イベントIDを指定するべき");
     assert_eq!(
         event_id,
-        slot.id().as_str().replace('-', ""),
+        reservation.id().as_str().replace('-', ""),
         "イベントIDは予約IDから導出されるべき"
     );
     assert!(
@@ -757,21 +817,47 @@ async fn adding_a_reservation_uses_an_event_id_derived_from_its_id() {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
         "イベントIDに使える文字はbase32hexに限られる: {event_id}"
     );
+    assert_eq!(
+        reservation.version().map(|v| v.as_str()),
+        inserted[0].1.etag.as_deref(),
+        "作ったイベントのetagを版として持つべき"
+    );
 }
 
 #[tokio::test]
-async fn the_slot_of_an_added_reservation_can_be_found_by_id_without_a_mapping_file() {
+async fn a_saved_reservation_can_be_found_by_id_without_a_mapping_file() {
     let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let slot = gpu_usage("holder@example.com", 0);
+    let mut reservation = gpu_usage("holder@example.com", 0);
 
-    repository
-        .add_reservation(&Reservation::from_one_time_slot(&slot))
+    repository.save(&mut reservation).await.unwrap();
+    let found = repository.find(reservation.id()).await.unwrap();
+
+    let found = found.expect("保存した予約はIDで引けるべき");
+    assert_eq!(found.id(), reservation.id());
+    assert_eq!(found.version(), reservation.version());
+    assert!(found.has_same_content_as(&reservation));
+}
+
+#[tokio::test]
+async fn an_event_deleted_in_the_calendar_is_not_found() {
+    let now = Utc::now();
+    let mut event = reservation_event(
+        "deletedevent1",
+        "0",
+        "holder@example.com",
+        now,
+        now + Duration::hours(1),
+    );
+    // 削除されたイベントも、IDを指定すれば`status: cancelled`で返ることがある
+    event.status = Some("cancelled".to_string());
+    let (repository, _gateway) = repository_with(vec![event]);
+
+    let found = repository
+        .find(&ReservationId::from_string("deletedevent1".to_string()))
         .await
         .unwrap();
-    let found = repository.find_slot(slot.id()).await.unwrap();
 
-    assert!(found.is_some(), "加えた予約の予約枠はIDで引けるべき");
-    assert_eq!(found.unwrap().id(), slot.id());
+    assert!(found.is_none(), "{found:?}");
 }
 
 #[tokio::test]
@@ -821,28 +907,27 @@ async fn reading_the_same_event_twice_yields_a_stable_reservation_id() {
 }
 
 #[tokio::test]
-async fn saving_a_slot_updates_its_event_instead_of_inserting_again() {
+async fn saving_a_changed_reservation_updates_its_event_instead_of_inserting_again() {
     let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let slot = gpu_usage("holder@example.com", 0);
-    repository
-        .add_reservation(&Reservation::from_one_time_slot(&slot))
-        .await
-        .unwrap();
+    let mut reservation = gpu_usage("holder@example.com", 0);
+    repository.save(&mut reservation).await.unwrap();
+    let first_version = reservation.version().cloned();
 
-    // 期間を変えて同じ予約枠を保存し直す
-    let extended = ReservedSlot::reconstruct(
-        slot.id().clone(),
-        slot.holder_email().clone(),
-        TimePeriod::new(
-            slot.time_period().start(),
-            slot.time_period().start() + Duration::hours(6),
+    // 期間を変えて同じ予約を保存し直す
+    let start = reservation
+        .slot(&OccurrenceKey::Only)
+        .unwrap()
+        .time_period()
+        .start();
+    let holder = reservation.holder_email().clone();
+    reservation
+        .reschedule_slot(
+            &OccurrenceKey::Only,
+            TimePeriod::new(start, start + Duration::hours(6)).unwrap(),
+            &holder,
         )
-        .unwrap(),
-        slot.resources().to_vec(),
-        slot.notes().cloned(),
-    )
-    .unwrap();
-    repository.save_slot(&extended).await.unwrap();
+        .unwrap();
+    repository.save(&mut reservation).await.unwrap();
 
     assert_eq!(
         gateway.inserted().len(),
@@ -853,41 +938,80 @@ async fn saving_a_slot_updates_its_event_instead_of_inserting_again() {
     assert_eq!(updated.len(), 1, "更新として扱うべき");
     assert_eq!(
         updated[0].1,
-        slot.id().as_str().replace('-', ""),
+        reservation.id().as_str().replace('-', ""),
         "同じイベントIDを更新するべき"
+    );
+    assert_ne!(
+        reservation.version().cloned(),
+        first_version,
+        "版が進むべき"
     );
 }
 
 #[tokio::test]
-async fn saving_a_slot_that_is_not_in_the_calendar_does_not_create_it() {
+async fn saving_over_a_change_made_in_the_calendar_is_refused() {
     let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let slot = gpu_usage("holder@example.com", 0);
+    let mut reservation = gpu_usage("holder@example.com", 0);
+    repository.save(&mut reservation).await.unwrap();
+    // 読んだあとに、誰かがカレンダーでイベントを書き換えた
+    gateway.edit_in_calendar(&reservation.id().as_str().replace('-', ""));
 
-    let result = repository.save_slot(&slot).await;
+    let holder = reservation.holder_email().clone();
+    reservation
+        .change_slot_notes(&OccurrenceKey::Only, "上書き".to_string(), &holder)
+        .unwrap();
+    let result = repository.save(&mut reservation).await;
 
     assert!(
-        matches!(result, Err(RepositoryError::NotFound)),
+        matches!(result, Err(RepositoryError::Conflict)),
         "{result:?}"
     );
     assert!(
-        gateway.inserted().is_empty(),
-        "予約枠は予約を加えることで現れる。保存で作ってはいけない"
+        gateway.updated().is_empty(),
+        "他人の変更を上書きしてはいけない"
     );
 }
 
 #[tokio::test]
-async fn removing_a_slot_deletes_its_event() {
+async fn saving_a_reservation_deleted_in_the_calendar_does_not_create_it_again() {
     let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let slot = gpu_usage("holder@example.com", 0);
-    repository
-        .add_reservation(&Reservation::from_one_time_slot(&slot))
-        .await
-        .unwrap();
+    let mut reservation = gpu_usage("holder@example.com", 0);
+    repository.save(&mut reservation).await.unwrap();
+    gateway.delete_in_calendar(&reservation.id().as_str().replace('-', ""));
 
-    repository.remove_slot(slot.id()).await.unwrap();
+    let holder = reservation.holder_email().clone();
+    reservation
+        .change_slot_notes(&OccurrenceKey::Only, "編集".to_string(), &holder)
+        .unwrap();
+    let result = repository.save(&mut reservation).await;
+
+    assert!(
+        matches!(result, Err(RepositoryError::Conflict)),
+        "{result:?}"
+    );
+    assert_eq!(
+        gateway.inserted().len(),
+        1,
+        "消された予約を保存で作り直してはいけない"
+    );
+}
+
+#[tokio::test]
+async fn saving_a_cancelled_reservation_deletes_its_event() {
+    let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
+    let mut reservation = gpu_usage("holder@example.com", 0);
+    repository.save(&mut reservation).await.unwrap();
+
+    let holder = reservation.holder_email().clone();
+    reservation.cancel(&holder).unwrap();
+    repository.save(&mut reservation).await.unwrap();
 
     assert_eq!(
         gateway.deleted(),
-        vec![(CALENDAR_ID.to_string(), slot.id().as_str().replace('-', ""))]
+        vec![(
+            CALENDAR_ID.to_string(),
+            reservation.id().as_str().replace('-', "")
+        )]
     );
+    assert!(repository.find(reservation.id()).await.unwrap().is_none());
 }

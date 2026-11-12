@@ -7,7 +7,7 @@
 //! - `reservation` - 予約と予約枠に関するビジネスロジック
 //!
 //! 「予約者本人だけが変えられる」という決まりは、予約枠の操作そのもの
-//! （`ReservedSlot::reschedule`など）が確かめる。操作と別の認可サービスは置かない。
+//! （`SlotView::reschedule`など）が確かめる。操作と別の認可サービスは置かない。
 
 pub mod reservation;
 

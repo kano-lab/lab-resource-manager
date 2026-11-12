@@ -12,10 +12,12 @@
 //! | 予約者 | holder | 予約をした人。予約とその予約枠を変えられるのは予約者本人だけ |
 //! | 日程 | [`Schedule`] | 予約がいつ時間を押さえるか |
 //! | 単発予約 | [`Schedule::OneTime`] | 日程が期間1つの予約。予約枠を1つ持ち、その予約枠は予約と同じIDを持つ |
-//! | 予約枠 | [`ReservedSlot`] | 予約が実際に押さえている、ひとつながりの時間とリソース |
-//! | 時間の変更 | [`ReservedSlot::reschedule`] | 予約枠の期間を変えること |
-//! | 今で終了 | [`ReservedSlot::end_early`] | 進行中の予約枠を今の時点で締め、残りの時間を空きに戻すこと。使った分は予約枠として残る |
-//! | 取り消し | [`ReservedSlot::cancel`] | 予約枠を無かったことにすること。単発予約の予約枠を取り消すと、その予約も無くなる |
+//! | 予約枠 | [`ReservedSlot`] | 予約の中の回。予約が実際に押さえている、ひとつながりの時間。予約が日程から求める |
+//! | 予約枠ID | [`ReservedSlotId`] | 予約の外から予約枠を指すID。予約ID ＋ 回の鍵（[`OccurrenceKey`]） |
+//! | 時間の変更 | [`Reservation::reschedule_slot`] | 予約枠の期間を変えること |
+//! | 今で終了 | [`Reservation::end_slot_early`] | 進行中の予約枠を今の時点で締め、残りの時間を空きに戻すこと。使った分は予約枠として残る |
+//! | 取り消し | [`Reservation::cancel`]、[`Reservation::cancel_slot`] | 予約や予約枠を無かったことにすること。単発予約の予約枠を取り消すと、その予約も取り消される |
+//! | 版 | [`Version`] | 保存先での予約の版。読んだときと同じ版のときだけ書き戻せる |
 //! | 空き | `ResourceAvailability` | どの予約枠とも重ならない時間 |
 //! | 実利用 | `ObservedUsage` | 実際にリソースが使われている様子。予約とは別に観測し、予約枠と突き合わせる |
 //!
@@ -24,14 +26,15 @@
 //!
 //! ## 集約
 //!
-//! 予約と予約枠は、それぞれ別の集約である。予約枠は、属する予約をIDで参照する。
+//! 予約が集約の根であり、予約枠はその中の回である。予約は予約枠をフィールドとして持たず、
+//! 自分の日程から求める。予約枠への操作もすべて予約を通し、決まり（予約者本人だけ、
+//! 取り消し済みなら断る、日程に無い回は無い）は予約が一か所で守る。
 //!
-//! - 予約は、作る・取り消すの単位である。新しい予約は予約のリポジトリへ加え、
-//!   その予約枠は予約枠のリポジトリから読めるようになる
-//! - 予約枠は、時間の変更・今で終了・取り消しの単位である。競合の判定、空きの計算、
-//!   使われていない予約枠の検知も予約枠に対して行う
+//! 書き込みは予約を単位とし、リポジトリは予約を読んで（`find`）、書き戻す（`save`）。
+//! 予約枠を期間で引く読み取り（競合の判定、空きの計算、使われていない予約枠の検知、一覧）は、
+//! 予約をまたぐため、読み取り専用の写し（`SlotView`）を別の口から引く。
 //!
-//! 予約や予約枠に起きたことは、出来事（[`ReservationEvent`]）として表す。
+//! 予約に起きたことは、出来事（[`ReservationEvent`]）として表す。
 
 /// 予約
 pub mod entity;
@@ -46,7 +49,7 @@ pub mod reserved_slot;
 /// Reservation集約の値オブジェクト
 pub mod value_objects;
 
-pub use entity::{Reservation, Schedule};
+pub use entity::{Reservation, ReservationStatus, Schedule};
 pub use events::ReservationEvent;
 pub use reserved_slot::ReservedSlot;
-pub use value_objects::{ReservationId, ReservedSlotId};
+pub use value_objects::{OccurrenceKey, ReservationId, ReservedSlotId, Version};

@@ -1,14 +1,14 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::identity_link::value_objects::ExternalIdentity;
-use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::{IdentityLinkRepository, ReservedSlotRepository};
+use crate::domain::ports::repositories::{IdentityLinkRepository, ReservedSlotQuery};
 use crate::domain::ports::{
     ObservedUsage, ReservationProposal, ReservationProposalNotifier, ResourceUsageObserver,
     UnauthorizedUsageNotifier,
 };
+use crate::domain::read_models::SlotView;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -47,7 +47,7 @@ type NotifiedUnauthorizedKey = (ExternalIdentity, String, DateTime<Utc>);
 /// プロセス内メモリのみで保持し、永続化しない。
 pub struct ReconcileObservedUsagesUseCase<R, O, I, P, U>
 where
-    R: ReservedSlotRepository,
+    R: ReservedSlotQuery,
     O: ResourceUsageObserver,
     I: IdentityLinkRepository,
     P: ReservationProposalNotifier,
@@ -66,7 +66,7 @@ where
 
 impl<R, O, I, P, U> ReconcileObservedUsagesUseCase<R, O, I, P, U>
 where
-    R: ReservedSlotRepository,
+    R: ReservedSlotQuery,
     O: ResourceUsageObserver,
     I: IdentityLinkRepository,
     P: ReservationProposalNotifier,
@@ -214,7 +214,7 @@ where
     /// 終わった予約枠についての「通知済み」を忘れる
     ///
     /// 予約枠が終われば、その予約枠を巡って知らせることはもうない。
-    async fn forget_slots_that_ended(&self, in_progress: &[ReservedSlot]) {
+    async fn forget_slots_that_ended(&self, in_progress: &[SlotView]) {
         let still_running: HashSet<&str> =
             in_progress.iter().map(|slot| slot.id().as_str()).collect();
 
@@ -267,10 +267,10 @@ where
 
     /// `now`の時点で`resource`を押さえている予約枠を探す
     fn find_running_slot<'a>(
-        slots: &'a [ReservedSlot],
+        slots: &'a [SlotView],
         resource: &Resource,
         now: DateTime<Utc>,
-    ) -> Option<&'a ReservedSlot> {
+    ) -> Option<&'a SlotView> {
         slots.iter().find(|slot| {
             slot.time_period().start() <= now
                 && now < slot.time_period().end()
@@ -282,7 +282,7 @@ where
     async fn reconcile_reserved(
         &self,
         observed: &ObservedUsage,
-        slot: &ReservedSlot,
+        slot: &SlotView,
     ) -> Result<(), ApplicationError> {
         // 利用者の身元が不明な場合、無断使用かどうか原理的に判定できないためスキップする
         let Some(actual_email) = self.resolve_email(observed).await? else {

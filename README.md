@@ -38,6 +38,7 @@ src/
 │   ├── aggregates/          # Aggregates (Reservation, IdentityLink)
 │   ├── common/              # Shared Kernel (EmailAddress, etc.)
 │   ├── ports/               # Ports (Repository, Notifier traits)
+│   ├── read_models/         # Read models (SlotView: reserved slots looked up by period)
 │   └── errors.rs            # Domain errors
 ├── application/             # Application layer (use cases)
 │   └── usecases/            # Notify, GrantAccess use cases

@@ -1,10 +1,10 @@
 //! Slack DM経由の未使用予約の通知実装
 
-use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::Gpu;
 use crate::domain::ports::idle_slot_notifier::{IdleEvidence, IdleSlot, IdleSlotNotifier};
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::repositories::IdentityLinkRepository;
+use crate::domain::read_models::SlotView;
 use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
 use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
 use crate::infrastructure::slack_direct_message::SlackDirectMessenger;
@@ -64,7 +64,7 @@ impl IdleSlotNotifier for SlackIdleSlotNotifier {
 
 /// 未使用の予約を知らせるDMの本文を構築する（純粋関数、ユニットテスト対象）
 fn build_idle_message(
-    reservation: &ReservedSlot,
+    reservation: &SlotView,
     idle_since: DateTime<Utc>,
     evidence: &IdleEvidence,
 ) -> String {
@@ -147,7 +147,7 @@ fn format_memory(used_memory_mib: u64) -> String {
 }
 
 /// 未使用の予約を知らせるDMのBlock Kitメッセージを構築する（純粋関数、ユニットテスト対象）
-fn build_idle_blocks(slot: &ReservedSlot, text: &str) -> Vec<SlackBlock> {
+fn build_idle_blocks(slot: &SlotView, text: &str) -> Vec<SlackBlock> {
     let slot_id = slot.id().as_str();
 
     let blocks_json = serde_json::json!([
@@ -208,9 +208,9 @@ mod tests {
     use crate::domain::common::TimePeriod;
     use chrono::Duration;
 
-    fn sample_slot() -> ReservedSlot {
+    fn sample_slot() -> SlotView {
         let start = Utc::now() - Duration::hours(2);
-        ReservedSlot::of_new_one_time_reservation(
+        SlotView::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start, start + Duration::hours(6)).unwrap(),
             vec![Resource::Gpu(Gpu::new(

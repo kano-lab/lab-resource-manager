@@ -16,4 +16,6 @@ pub mod common;
 /// ドメイン層のエラー定義と基底トレイト
 pub mod errors;
 pub mod ports;
+/// 読み取りモデル（期間で引くための写し）
+pub mod read_models;
 pub mod services;

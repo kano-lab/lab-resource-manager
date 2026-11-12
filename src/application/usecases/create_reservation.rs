@@ -2,22 +2,22 @@ use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::{Reservation, ReservationId, value_objects::Resource};
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::domain::services::ResourceConflictChecker;
 use std::sync::Arc;
 use tracing::info;
 
 /// 単発予約を作るユースケース
-pub struct CreateReservationUseCase<R: ReservationRepository + ReservedSlotRepository> {
+pub struct CreateReservationUseCase<R: ReservationRepository + ReservedSlotQuery> {
     repository: Arc<R>,
     conflict_checker: ResourceConflictChecker,
 }
 
-impl<R: ReservationRepository + ReservedSlotRepository> CreateReservationUseCase<R> {
+impl<R: ReservationRepository + ReservedSlotQuery> CreateReservationUseCase<R> {
     /// 新しいインスタンスを作成
     ///
     /// # Arguments
-    /// * `repository` - 予約を加え、既存の予約枠との競合を確かめるリポジトリ
+    /// * `repository` - 予約を保存し、既存の予約枠との競合を確かめるリポジトリ
     pub fn new(repository: Arc<R>) -> Self {
         Self {
             repository,
@@ -50,8 +50,8 @@ impl<R: ReservationRepository + ReservedSlotRepository> CreateReservationUseCase
             .check_conflicts(self.repository.as_ref(), &time_period, &resources, None)
             .await?;
 
-        let reservation = Reservation::one_time(holder_email, time_period, resources, notes)?;
-        self.repository.add_reservation(&reservation).await?;
+        let mut reservation = Reservation::one_time(holder_email, time_period, resources, notes)?;
+        self.repository.save(&mut reservation).await?;
 
         info!(
             reservation_id = %reservation.id().as_str(),
