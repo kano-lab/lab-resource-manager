@@ -1,18 +1,18 @@
 //! リソースの空き算出
 //!
-//! 予約枠（`ReservedSlot`）は「誰がいつ使うか」を表すが、「いつ空いているか」は
+//! 予約枠（`SlotView`）は「誰がいつ使うか」を表すが、「いつ空いているか」は
 //! そのままでは読み取れない。ここでは対象期間から予約枠の占める区間を差し引き、
 //! リソースごとの空き区間を求める。
 //!
 //! # 空きの意味
 //! 空きとは「その期間に重なる予約枠がない」ことである。予約されないまま使われている
 //! リソースは予約枠として現れないため、ここでは空きとして扱われる
-//! （`ReservedSlotRepository`および`ResourceConflictChecker`と同じ立場）。
+//! （`ReservedSlotQuery`および`ResourceConflictChecker`と同じ立場）。
 
-use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource};
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
+use crate::domain::read_models::SlotView;
 use chrono::{DateTime, Utc};
 
 /// あるリソースを押さえている予約枠の一区間
@@ -147,7 +147,7 @@ impl ResourceAvailability {
 pub fn calculate(
     resources: &[Resource],
     window: &TimePeriod,
-    slots: &[ReservedSlot],
+    slots: &[SlotView],
 ) -> Vec<ResourceAvailability> {
     resources
         .iter()
@@ -159,7 +159,7 @@ pub fn calculate(
 fn calculate_one(
     resource: &Resource,
     window: &TimePeriod,
-    slots: &[ReservedSlot],
+    slots: &[SlotView],
 ) -> ResourceAvailability {
     let mut busy_periods: Vec<BusyPeriod> = slots
         .iter()
@@ -248,8 +248,8 @@ mod tests {
         ))
     }
 
-    fn slot(holder: &str, resources: Vec<Resource>, from: u32, to: u32) -> ReservedSlot {
-        ReservedSlot::of_new_one_time_reservation(
+    fn slot(holder: &str, resources: Vec<Resource>, from: u32, to: u32) -> SlotView {
+        SlotView::of_new_one_time_reservation(
             EmailAddress::new(holder.to_string()).unwrap(),
             TimePeriod::new(at(from), at(to)).unwrap(),
             resources,
@@ -258,7 +258,7 @@ mod tests {
         .unwrap()
     }
 
-    fn availability_of(resource: &Resource, slots: &[ReservedSlot]) -> ResourceAvailability {
+    fn availability_of(resource: &Resource, slots: &[SlotView]) -> ResourceAvailability {
         calculate(std::slice::from_ref(resource), &window(), slots)
             .into_iter()
             .next()
@@ -535,7 +535,7 @@ mod tests {
     #[test]
     fn a_slot_that_ends_before_the_window_does_not_appear() {
         let window = TimePeriod::new(at(9), at(21)).unwrap();
-        let past = ReservedSlot::of_new_one_time_reservation(
+        let past = SlotView::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(at(9) - Duration::hours(3), at(9)).unwrap(),
             vec![gpu(0)],

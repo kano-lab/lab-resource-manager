@@ -3,10 +3,9 @@
 //! 通知メッセージのテンプレートとプレースホルダー置換を処理します。
 
 use crate::domain::aggregates::reservation::value_objects::Resource;
-use crate::domain::aggregates::reservation::{
-    Reservation, ReservationEvent, ReservedSlot, Schedule,
-};
+use crate::domain::aggregates::reservation::{Reservation, ReservationEvent, Schedule};
 use crate::domain::common::TimePeriod;
+use crate::domain::read_models::SlotView;
 use crate::infrastructure::config::{FormatConfig, TemplateConfig};
 use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
 
@@ -136,7 +135,7 @@ impl<'a> TemplateRenderer<'a> {
     pub fn render_conflict(
         &self,
         conflicting_resources: &[Resource],
-        existing_slot: &ReservedSlot,
+        existing_slot: &SlotView,
         user_display: &str,
     ) -> String {
         let template = self
@@ -160,7 +159,7 @@ impl<'a> TemplateRenderer<'a> {
     pub fn render_conflict_item(
         &self,
         conflicting_resources: &[Resource],
-        existing_slot: &ReservedSlot,
+        existing_slot: &SlotView,
         user_display: &str,
     ) -> String {
         let template = self
@@ -274,7 +273,7 @@ mod tests {
     use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
     use chrono::{TimeZone, Utc};
 
-    fn create_test_slot() -> ReservedSlot {
+    fn create_test_slot() -> SlotView {
         let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
         let period = TimePeriod::new(start, end).unwrap();
@@ -284,7 +283,7 @@ mod tests {
             Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string())),
         ];
 
-        ReservedSlot::of_new_one_time_reservation(
+        SlotView::of_new_one_time_reservation(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,
@@ -462,7 +461,7 @@ mod tests {
             "A100".to_string(),
         ))];
 
-        let slot = ReservedSlot::of_new_one_time_reservation(
+        let slot = SlotView::of_new_one_time_reservation(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,

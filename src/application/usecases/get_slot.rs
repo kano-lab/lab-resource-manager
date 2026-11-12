@@ -1,14 +1,15 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::reservation::{ReservedSlot, ReservedSlotId};
-use crate::domain::ports::repositories::{RepositoryError, ReservedSlotRepository};
+use crate::domain::aggregates::reservation::ReservedSlotId;
+use crate::domain::ports::repositories::{RepositoryError, ReservedSlotQuery};
+use crate::domain::read_models::SlotView;
 use std::sync::Arc;
 
 /// IDで予約枠を取得するユースケース
-pub struct GetSlotUseCase<R: ReservedSlotRepository> {
+pub struct GetSlotUseCase<R: ReservedSlotQuery> {
     repository: Arc<R>,
 }
 
-impl<R: ReservedSlotRepository> GetSlotUseCase<R> {
+impl<R: ReservedSlotQuery> GetSlotUseCase<R> {
     /// 新しいインスタンスを作成
     ///
     /// # Arguments
@@ -25,7 +26,7 @@ impl<R: ReservedSlotRepository> GetSlotUseCase<R> {
     /// # Errors
     /// - 指定されたIDの予約枠が見つからない場合
     /// - リポジトリエラー
-    pub async fn execute(&self, id: &ReservedSlotId) -> Result<ReservedSlot, ApplicationError> {
+    pub async fn execute(&self, id: &ReservedSlotId) -> Result<SlotView, ApplicationError> {
         self.repository
             .find_slot(id)
             .await?

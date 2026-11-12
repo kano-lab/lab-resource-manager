@@ -14,7 +14,7 @@ use crate::domain::aggregates::reservation::ReservedSlotId;
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::infrastructure::config::ResourceConfig;
 use crate::interface::mcp::auth::ResolvedCaller;
 use crate::interface::mcp::dto::{
@@ -29,7 +29,7 @@ use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use std::sync::Arc;
 
 /// MCPサーバーが呼び出すユースケース
-pub struct McpUseCases<R: ReservationRepository + ReservedSlotRepository> {
+pub struct McpUseCases<R: ReservationRepository + ReservedSlotQuery> {
     /// 単発予約を作る
     pub create_reservation: Arc<CreateReservationUseCase<R>>,
     /// 指定期間の予約枠を一覧する
@@ -52,12 +52,12 @@ pub struct McpUseCases<R: ReservationRepository + ReservedSlotRepository> {
 ///
 /// 全フィールドが`Arc`のため安価に`Clone`でき、接続ごとに新しいインスタンスを渡せる。
 /// `R: Clone`を要求しないよう`Clone`は手動実装する（`derive(Clone)`は`R: Clone`を要求してしまう）。
-pub struct LrmMcpServer<R: ReservationRepository + ReservedSlotRepository> {
+pub struct LrmMcpServer<R: ReservationRepository + ReservedSlotQuery> {
     usecases: Arc<McpUseCases<R>>,
     resource_config: Arc<ResourceConfig>,
 }
 
-impl<R: ReservationRepository + ReservedSlotRepository> Clone for LrmMcpServer<R> {
+impl<R: ReservationRepository + ReservedSlotQuery> Clone for LrmMcpServer<R> {
     fn clone(&self) -> Self {
         Self {
             usecases: self.usecases.clone(),
@@ -121,7 +121,7 @@ fn success_text(message: &str) -> CallToolResult {
 #[tool_router]
 impl<R> LrmMcpServer<R>
 where
-    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
 {
     /// 新しいLrmMcpServerを作成
     pub fn new(usecases: McpUseCases<R>, resource_config: Arc<ResourceConfig>) -> Self {
@@ -395,7 +395,7 @@ where
 #[tool_handler]
 impl<R> ServerHandler for LrmMcpServer<R>
 where
-    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
 {
     fn get_info(&self) -> ServerConfig {
         let mut info = ServerConfig::new(ServerCapabilities::builder().enable_tools().build());

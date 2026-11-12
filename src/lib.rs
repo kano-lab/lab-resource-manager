@@ -123,17 +123,18 @@ pub mod prelude {
 
     // Domain types
     pub use crate::domain::aggregates::reservation::{
-        Reservation, ReservationEvent, ReservationId, ReservedSlot, ReservedSlotId, Schedule,
+        Reservation, ReservationEvent, ReservationId, ReservedSlotId, Schedule,
         errors::ReservationError,
         factory::{ResourceFactory, ResourceFactoryError},
         value_objects::{Gpu, Resource},
     };
     pub use crate::domain::common::TimePeriod;
+    pub use crate::domain::read_models::SlotView;
 
     // Ports (traits)
     pub use crate::domain::ports::{
         notifier::{NotificationError, Notifier},
-        repositories::{RepositoryError, ReservationRepository, ReservedSlotRepository},
+        repositories::{RepositoryError, ReservationRepository, ReservedSlotQuery},
         reservation_proposal::{ReservationProposal, ReservationProposalNotifier},
         resource_usage_observer::{ObservationError, ObservedUsage, ResourceUsageObserver},
     };
@@ -164,7 +165,7 @@ pub mod prelude {
 pub use application::{error::ApplicationError, usecases::NotifyReservationChangesUseCase};
 pub use domain::ports::{
     notifier::{NotificationError, Notifier},
-    repositories::{RepositoryError, ReservationRepository, ReservedSlotRepository},
+    repositories::{RepositoryError, ReservationRepository, ReservedSlotQuery},
 };
 pub use infrastructure::{
     config::load_config,

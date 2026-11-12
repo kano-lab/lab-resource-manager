@@ -1,9 +1,8 @@
 //! 予約枠の見え方の変化から、予約に起きた出来事を読み取る
 
-use crate::domain::aggregates::reservation::{
-    Reservation, ReservationEvent, ReservedSlot, ReservedSlotId,
-};
-use crate::domain::ports::repositories::{RepositoryError, ReservedSlotRepository};
+use crate::domain::aggregates::reservation::{Reservation, ReservationEvent, ReservedSlotId};
+use crate::domain::ports::repositories::{RepositoryError, ReservedSlotQuery};
+use crate::domain::read_models::SlotView;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
@@ -52,11 +51,11 @@ impl ReservationChangeInterpreter {
     ///
     /// # Errors
     /// 見えなくなった予約枠の確認でリポジトリエラーが起きた場合
-    pub async fn interpret<R: ReservedSlotRepository + ?Sized>(
+    pub async fn interpret<R: ReservedSlotQuery + ?Sized>(
         &self,
         repository: &R,
-        previous: &HashMap<ReservedSlotId, ReservedSlot>,
-        current: &HashMap<ReservedSlotId, ReservedSlot>,
+        previous: &HashMap<ReservedSlotId, SlotView>,
+        current: &HashMap<ReservedSlotId, SlotView>,
         now: DateTime<Utc>,
     ) -> Result<InterpretedChanges, RepositoryError> {
         let mut changes = InterpretedChanges::default();
@@ -107,21 +106,21 @@ mod tests {
     use chrono::Duration;
 
     /// 見えなくなった予約枠を確かめるときに、保存先に残っている予約枠だけを返すスタブ
-    struct Stored(Vec<ReservedSlot>);
+    struct Stored(Vec<SlotView>);
 
     #[async_trait]
-    impl ReservedSlotRepository for Stored {
+    impl ReservedSlotQuery for Stored {
         async fn find_slot(
             &self,
             id: &ReservedSlotId,
-        ) -> Result<Option<ReservedSlot>, RepositoryError> {
+        ) -> Result<Option<SlotView>, RepositoryError> {
             Ok(self.0.iter().find(|slot| slot.id() == id).cloned())
         }
 
         async fn find_slots_overlapping(
             &self,
             _time_period: &TimePeriod,
-        ) -> Result<Vec<ReservedSlot>, RepositoryError> {
+        ) -> Result<Vec<SlotView>, RepositoryError> {
             unimplemented!("このテストでは使用しない")
         }
 
@@ -129,11 +128,11 @@ mod tests {
             &self,
             _holder_email: &EmailAddress,
             _time_period: &TimePeriod,
-        ) -> Result<Vec<ReservedSlot>, RepositoryError> {
+        ) -> Result<Vec<SlotView>, RepositoryError> {
             unimplemented!("このテストでは使用しない")
         }
 
-        async fn save_slot(&self, _slot: &ReservedSlot) -> Result<(), RepositoryError> {
+        async fn save_slot(&self, _slot: &SlotView) -> Result<(), RepositoryError> {
             unimplemented!("このテストでは使用しない")
         }
 
@@ -146,8 +145,8 @@ mod tests {
         EmailAddress::new("holder@example.com".to_string()).unwrap()
     }
 
-    fn slot(id: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> ReservedSlot {
-        ReservedSlot::reconstruct(
+    fn slot(id: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> SlotView {
+        SlotView::reconstruct(
             ReservedSlotId::from_string(id.to_string()),
             holder(),
             TimePeriod::new(start, end).unwrap(),
@@ -161,7 +160,7 @@ mod tests {
         .unwrap()
     }
 
-    fn seen(slots: &[&ReservedSlot]) -> HashMap<ReservedSlotId, ReservedSlot> {
+    fn seen(slots: &[&SlotView]) -> HashMap<ReservedSlotId, SlotView> {
         slots
             .iter()
             .map(|slot| (slot.id().clone(), (*slot).clone()))
@@ -169,9 +168,9 @@ mod tests {
     }
 
     async fn interpret(
-        stored: Vec<ReservedSlot>,
-        previous: &[&ReservedSlot],
-        current: &[&ReservedSlot],
+        stored: Vec<SlotView>,
+        previous: &[&SlotView],
+        current: &[&SlotView],
         now: DateTime<Utc>,
     ) -> InterpretedChanges {
         ReservationChangeInterpreter::new()

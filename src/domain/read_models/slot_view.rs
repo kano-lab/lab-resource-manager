@@ -1,7 +1,6 @@
-use super::entity::Reservation;
-use super::errors::ReservationError;
-use super::events::ReservationEvent;
-use super::value_objects::*;
+use crate::domain::aggregates::reservation::{
+    Reservation, ReservationEvent, errors::ReservationError, value_objects::*,
+};
 use crate::domain::common::{EmailAddress, TimePeriod};
 use chrono::{DateTime, Utc};
 
@@ -13,7 +12,7 @@ use chrono::{DateTime, Utc};
 /// 時間の変更、今で終了、取り消しは予約枠に対して行い、どれも予約者本人だけができる。
 /// 競合の判定、空きの計算、使われていない予約枠の検知も予約枠を単位とする。
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReservedSlot {
+pub struct SlotView {
     id: ReservedSlotId,
     holder_email: EmailAddress,
     time_period: TimePeriod,
@@ -21,7 +20,7 @@ pub struct ReservedSlot {
     notes: Option<String>,
 }
 
-impl ReservedSlot {
+impl SlotView {
     /// 単発予約の予約枠を、既存のIDで再構築する（リポジトリからの再構築用）
     ///
     /// 予約枠を新しく作る手段ではない。予約枠は予約を作ることで生まれる
@@ -56,7 +55,7 @@ impl ReservedSlot {
     }
 
     /// 単発予約の予約枠を組み立てる（予約側で検証済みの値から）
-    pub(super) fn of_one_time_reservation(
+    pub(crate) fn of_one_time_reservation(
         id: ReservedSlotId,
         holder_email: EmailAddress,
         time_period: TimePeriod,
@@ -192,7 +191,7 @@ impl ReservedSlot {
 }
 
 #[cfg(test)]
-impl ReservedSlot {
+impl SlotView {
     /// 新しい単発予約を作り、その予約枠を返す（テスト用）
     pub(crate) fn of_new_one_time_reservation(
         holder_email: EmailAddress,
@@ -220,8 +219,8 @@ mod tests {
         EmailAddress::new("other@example.com".to_string()).unwrap()
     }
 
-    fn slot_running_from(start: DateTime<Utc>, end: DateTime<Utc>) -> ReservedSlot {
-        ReservedSlot::of_new_one_time_reservation(
+    fn slot_running_from(start: DateTime<Utc>, end: DateTime<Utc>) -> SlotView {
+        SlotView::of_new_one_time_reservation(
             holder(),
             TimePeriod::new(start, end).unwrap(),
             vec![Resource::Gpu(Gpu::new(

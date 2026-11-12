@@ -131,9 +131,9 @@ fn format_period(period: &TimePeriod, window: &TimePeriod, timezone: Option<&str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::ReservedSlot;
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::EmailAddress;
+    use crate::domain::read_models::SlotView;
     use crate::domain::services::reservation::availability::calculate;
     use chrono::{DateTime, TimeZone, Utc};
 
@@ -161,12 +161,8 @@ mod tests {
         ))
     }
 
-    fn reservation(
-        resources: Vec<Resource>,
-        from: DateTime<Utc>,
-        to: DateTime<Utc>,
-    ) -> ReservedSlot {
-        ReservedSlot::of_new_one_time_reservation(
+    fn reservation(resources: Vec<Resource>, from: DateTime<Utc>, to: DateTime<Utc>) -> SlotView {
+        SlotView::of_new_one_time_reservation(
             EmailAddress::new("sato@example.com".to_string()).unwrap(),
             TimePeriod::new(from, to).unwrap(),
             resources,
@@ -177,7 +173,7 @@ mod tests {
 
     fn availabilities(
         resources: &[Resource],
-        slots: &[ReservedSlot],
+        slots: &[SlotView],
         window: &TimePeriod,
     ) -> Vec<ResourceAvailability> {
         calculate(resources, window, slots)

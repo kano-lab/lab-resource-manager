@@ -7,7 +7,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{
-    IdentityLinkRepository, ReservationRepository, ReservedSlotRepository,
+    IdentityLinkRepository, ReservationRepository, ReservedSlotQuery,
 };
 use crate::domain::services::reservation::availability::{AvailabilityState, ResourceAvailability};
 use crate::infrastructure::config::ResourceConfig;
@@ -33,7 +33,7 @@ pub async fn now_view<R, N>(
     app: &SlackApp<R, N>,
 ) -> Result<SlackMessageContent, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
@@ -61,7 +61,7 @@ pub async fn day_view<R, N>(
     date: NaiveDate,
 ) -> Result<SlackMessageContent, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
@@ -87,7 +87,7 @@ pub async fn availabilities_in<R, N>(
     window: &TimePeriod,
 ) -> Result<Vec<ResourceAvailability>, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let resources = app.resource_config().all_resources();

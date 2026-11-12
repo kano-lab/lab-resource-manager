@@ -7,12 +7,13 @@ use super::event_gateway::CalendarEventGateway;
 use super::repository::GoogleCalendarReservationRepository;
 use crate::domain::aggregates::identity_link::entity::IdentityLink;
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
+use crate::domain::aggregates::reservation::Reservation;
 use crate::domain::aggregates::reservation::value_objects::Resource;
-use crate::domain::aggregates::reservation::{Reservation, ReservedSlot};
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::{
-    IdentityLinkRepository, RepositoryError, ReservationRepository, ReservedSlotRepository,
+    IdentityLinkRepository, RepositoryError, ReservationRepository, ReservedSlotQuery,
 };
+use crate::domain::read_models::SlotView;
 use crate::infrastructure::config::{
     DeviceConfig, ResourceConfig, ServerConfig, StorageBackend, StorageConfig,
 };
@@ -499,10 +500,10 @@ fn repository_with_identities(
     (repository, gateway)
 }
 
-fn gpu_usage(holder: &str, device_number: u32) -> ReservedSlot {
+fn gpu_usage(holder: &str, device_number: u32) -> SlotView {
     use crate::domain::aggregates::reservation::value_objects::Gpu;
     let now = Utc::now();
-    ReservedSlot::of_new_one_time_reservation(
+    SlotView::of_new_one_time_reservation(
         crate::domain::common::EmailAddress::new(holder.to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(Gpu::new(
@@ -588,7 +589,7 @@ async fn added_metadata_lines_do_not_leak_into_notes() {
             "kkawaguchi",
         ));
     let now = Utc::now();
-    let slot = ReservedSlot::of_new_one_time_reservation(
+    let slot = SlotView::of_new_one_time_reservation(
         crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(
@@ -681,7 +682,7 @@ async fn newly_written_description_round_trips() {
             "kkawaguchi",
         ));
     let now = Utc::now();
-    let slot = ReservedSlot::of_new_one_time_reservation(
+    let slot = SlotView::of_new_one_time_reservation(
         crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(
@@ -830,7 +831,7 @@ async fn saving_a_slot_updates_its_event_instead_of_inserting_again() {
         .unwrap();
 
     // 期間を変えて同じ予約枠を保存し直す
-    let extended = ReservedSlot::reconstruct(
+    let extended = SlotView::reconstruct(
         slot.id().clone(),
         slot.holder_email().clone(),
         TimePeriod::new(

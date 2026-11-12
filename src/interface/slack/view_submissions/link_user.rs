@@ -3,7 +3,7 @@
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::{
     ACTION_LINK_EMAIL_INPUT, ACTION_LINK_OS_USERNAME_INPUT, ACTION_LINK_SERVER_SELECT,
@@ -68,7 +68,7 @@ pub async fn handle<R, N>(
     view_submission: &SlackInteractionViewSubmissionEvent,
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     debug!("handling identity link submission");

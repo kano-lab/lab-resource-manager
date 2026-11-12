@@ -1,8 +1,8 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::{RepositoryError, ReservedSlotRepository};
+use crate::domain::ports::repositories::{RepositoryError, ReservedSlotQuery};
+use crate::domain::read_models::SlotView;
 use chrono::Utc;
 use std::sync::Arc;
 use tracing::info;
@@ -14,11 +14,11 @@ use tracing::info;
 ///
 /// 締める時刻は常に現在時刻とする。任意の終了時刻を指定したい場合は
 /// `UpdateSlotUseCase`が担う。
-pub struct EndSlotEarlyUseCase<R: ReservedSlotRepository> {
+pub struct EndSlotEarlyUseCase<R: ReservedSlotQuery> {
     repository: Arc<R>,
 }
 
-impl<R: ReservedSlotRepository> EndSlotEarlyUseCase<R> {
+impl<R: ReservedSlotQuery> EndSlotEarlyUseCase<R> {
     /// 新しいEndSlotEarlyUseCaseインスタンスを作成
     ///
     /// # Arguments
@@ -45,7 +45,7 @@ impl<R: ReservedSlotRepository> EndSlotEarlyUseCase<R> {
         &self,
         id: &ReservedSlotId,
         requested_by: &EmailAddress,
-    ) -> Result<ReservedSlot, ApplicationError> {
+    ) -> Result<SlotView, ApplicationError> {
         let mut slot = self
             .repository
             .find_slot(id)
@@ -82,8 +82,8 @@ mod tests {
         EmailAddress::new(address.to_string()).unwrap()
     }
 
-    fn slot_of(holder: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> ReservedSlot {
-        ReservedSlot::of_new_one_time_reservation(
+    fn slot_of(holder: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> SlotView {
+        SlotView::of_new_one_time_reservation(
             email(holder),
             TimePeriod::new(start, end).unwrap(),
             vec![Resource::Gpu(Gpu::new(
@@ -96,7 +96,7 @@ mod tests {
         .unwrap()
     }
 
-    async fn repository_with(slot: &ReservedSlot) -> Arc<MockReservationRepository> {
+    async fn repository_with(slot: &SlotView) -> Arc<MockReservationRepository> {
         let repository = Arc::new(MockReservationRepository::new());
         repository.put_slot(slot);
         repository

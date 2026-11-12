@@ -2,9 +2,9 @@
 //!
 //! ドメインエンティティはserde非依存のため、JSON出力専用のDTOをここに定義する。
 
-use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::common::TimePeriod;
+use crate::domain::read_models::SlotView;
 use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::infrastructure::config::ResourceConfig;
 use chrono::{DateTime, Utc};
@@ -23,8 +23,8 @@ pub struct SlotDto {
     pub notes: Option<String>,
 }
 
-impl From<&ReservedSlot> for SlotDto {
-    fn from(slot: &ReservedSlot) -> Self {
+impl From<&SlotView> for SlotDto {
+    fn from(slot: &SlotView) -> Self {
         Self {
             id: slot.id().as_str().to_string(),
             holder_email: slot.holder_email().as_str().to_string(),
@@ -362,7 +362,7 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2026, 11, 12, 0, 0, 0).unwrap();
         let window = TimePeriod::new(start, start + Duration::hours(6)).unwrap();
         let gpu = Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
-        let slot = ReservedSlot::of_new_one_time_reservation(
+        let slot = SlotView::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start + Duration::hours(1), start + Duration::hours(2)).unwrap(),
             vec![gpu.clone()],

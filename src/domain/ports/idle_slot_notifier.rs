@@ -1,6 +1,6 @@
-use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::Gpu;
 use crate::domain::ports::notifier::NotificationError;
+use crate::domain::read_models::SlotView;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 
@@ -48,7 +48,7 @@ impl IdleEvidence {
 /// 他の利用者は実際には空いている時間を待つことになる。
 #[derive(Debug, Clone)]
 pub struct IdleSlot {
-    slot: ReservedSlot,
+    slot: SlotView,
     idle_since: DateTime<Utc>,
     evidence: IdleEvidence,
 }
@@ -60,7 +60,7 @@ impl IdleSlot {
     /// * `slot` - 対象の予約枠
     /// * `idle_since` - 使われていないと分かっている最も早い時刻
     /// * `evidence` - そう判断した根拠
-    pub fn new(slot: ReservedSlot, idle_since: DateTime<Utc>, evidence: IdleEvidence) -> Self {
+    pub fn new(slot: SlotView, idle_since: DateTime<Utc>, evidence: IdleEvidence) -> Self {
         Self {
             slot,
             idle_since,
@@ -69,7 +69,7 @@ impl IdleSlot {
     }
 
     /// 対象の予約枠を取得
-    pub fn slot(&self) -> &ReservedSlot {
+    pub fn slot(&self) -> &SlotView {
         &self.slot
     }
 

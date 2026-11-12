@@ -1,18 +1,18 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::{ReservationEvent, ReservedSlotId};
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::{RepositoryError, ReservedSlotRepository};
+use crate::domain::ports::repositories::{RepositoryError, ReservedSlotQuery};
 use std::sync::Arc;
 use tracing::info;
 
 /// 予約枠を取り消すユースケース
 ///
 /// 単発予約の予約枠を取り消すと、その単発予約も無くなる。
-pub struct CancelSlotUseCase<R: ReservedSlotRepository> {
+pub struct CancelSlotUseCase<R: ReservedSlotQuery> {
     repository: Arc<R>,
 }
 
-impl<R: ReservedSlotRepository> CancelSlotUseCase<R> {
+impl<R: ReservedSlotQuery> CancelSlotUseCase<R> {
     /// 新しいインスタンスを作成
     ///
     /// # Arguments
@@ -67,9 +67,9 @@ impl<R: ReservedSlotRepository> CancelSlotUseCase<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::ReservedSlot;
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::TimePeriod;
+    use crate::domain::read_models::SlotView;
     use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
     use chrono::{Duration, Utc};
 
@@ -77,9 +77,9 @@ mod tests {
         EmailAddress::new(address.to_string()).unwrap()
     }
 
-    fn upcoming_slot() -> ReservedSlot {
+    fn upcoming_slot() -> SlotView {
         let start = Utc::now() + Duration::hours(1);
-        ReservedSlot::of_new_one_time_reservation(
+        SlotView::of_new_one_time_reservation(
             email("holder@example.com"),
             TimePeriod::new(start, start + Duration::hours(1)).unwrap(),
             vec![Resource::Gpu(Gpu::new(

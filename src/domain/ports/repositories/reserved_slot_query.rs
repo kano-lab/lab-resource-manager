@@ -1,5 +1,6 @@
+use crate::domain::read_models::SlotView;
 use crate::domain::{
-    aggregates::reservation::{ReservedSlot, ReservedSlotId},
+    aggregates::reservation::ReservedSlotId,
     common::{EmailAddress, TimePeriod},
     ports::repositories::RepositoryError,
 };
@@ -28,10 +29,9 @@ use async_trait::async_trait;
 /// 予約されないまま使われるリソースは、実利用の観測（`ResourceUsageObserver`）が
 /// 扱う領域である。
 #[async_trait]
-pub trait ReservedSlotRepository {
+pub trait ReservedSlotQuery {
     /// IDで予約枠を検索
-    async fn find_slot(&self, id: &ReservedSlotId)
-    -> Result<Option<ReservedSlot>, RepositoryError>;
+    async fn find_slot(&self, id: &ReservedSlotId) -> Result<Option<SlotView>, RepositoryError>;
 
     /// 指定期間と重なる予約枠を検索
     ///
@@ -41,7 +41,7 @@ pub trait ReservedSlotRepository {
     async fn find_slots_overlapping(
         &self,
         time_period: &TimePeriod,
-    ) -> Result<Vec<ReservedSlot>, RepositoryError>;
+    ) -> Result<Vec<SlotView>, RepositoryError>;
 
     /// 指定期間に重なる、特定の予約者の予約枠を検索
     ///
@@ -50,13 +50,13 @@ pub trait ReservedSlotRepository {
         &self,
         holder_email: &EmailAddress,
         time_period: &TimePeriod,
-    ) -> Result<Vec<ReservedSlot>, RepositoryError>;
+    ) -> Result<Vec<SlotView>, RepositoryError>;
 
     /// 既にある予約枠の変更を保存する
     ///
     /// # Errors
     /// 予約枠が無い場合、`RepositoryError::NotFound`
-    async fn save_slot(&self, slot: &ReservedSlot) -> Result<(), RepositoryError>;
+    async fn save_slot(&self, slot: &SlotView) -> Result<(), RepositoryError>;
 
     /// 取り消された予約枠を取り除く
     ///

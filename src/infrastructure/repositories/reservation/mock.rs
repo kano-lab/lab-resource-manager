@@ -1,8 +1,9 @@
 use crate::domain::common::TimePeriod;
+use crate::domain::read_models::SlotView;
 use crate::domain::{
-    aggregates::reservation::{Reservation, ReservedSlot, ReservedSlotId},
+    aggregates::reservation::{Reservation, ReservedSlotId},
     common::EmailAddress,
-    ports::repositories::{RepositoryError, ReservationRepository, ReservedSlotRepository},
+    ports::repositories::{RepositoryError, ReservationRepository, ReservedSlotQuery},
 };
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -11,7 +12,7 @@ use std::sync::{Arc, Mutex};
 /// テスト用のインメモリ予約・予約枠リポジトリ実装
 #[derive(Clone)]
 pub struct MockReservationRepository {
-    slots: Arc<Mutex<HashMap<String, ReservedSlot>>>,
+    slots: Arc<Mutex<HashMap<String, SlotView>>>,
 }
 
 impl Default for MockReservationRepository {
@@ -32,7 +33,7 @@ impl MockReservationRepository {
     ///
     /// アプリを通さずにカレンダーへ書かれた予約や、テストの前提となる予約枠を用意する。
     /// 同じIDの予約枠があれば置き換える。
-    pub fn put_slot(&self, slot: &ReservedSlot) {
+    pub fn put_slot(&self, slot: &SlotView) {
         self.slots
             .lock()
             .unwrap()
@@ -52,18 +53,15 @@ impl ReservationRepository for MockReservationRepository {
 }
 
 #[async_trait]
-impl ReservedSlotRepository for MockReservationRepository {
-    async fn find_slot(
-        &self,
-        id: &ReservedSlotId,
-    ) -> Result<Option<ReservedSlot>, RepositoryError> {
+impl ReservedSlotQuery for MockReservationRepository {
+    async fn find_slot(&self, id: &ReservedSlotId) -> Result<Option<SlotView>, RepositoryError> {
         Ok(self.slots.lock().unwrap().get(id.as_str()).cloned())
     }
 
     async fn find_slots_overlapping(
         &self,
         time_period: &TimePeriod,
-    ) -> Result<Vec<ReservedSlot>, RepositoryError> {
+    ) -> Result<Vec<SlotView>, RepositoryError> {
         Ok(self
             .slots
             .lock()
@@ -78,7 +76,7 @@ impl ReservedSlotRepository for MockReservationRepository {
         &self,
         holder_email: &EmailAddress,
         time_period: &TimePeriod,
-    ) -> Result<Vec<ReservedSlot>, RepositoryError> {
+    ) -> Result<Vec<SlotView>, RepositoryError> {
         Ok(self
             .slots
             .lock()
@@ -90,7 +88,7 @@ impl ReservedSlotRepository for MockReservationRepository {
             .collect())
     }
 
-    async fn save_slot(&self, slot: &ReservedSlot) -> Result<(), RepositoryError> {
+    async fn save_slot(&self, slot: &SlotView) -> Result<(), RepositoryError> {
         let mut slots = self.slots.lock().unwrap();
         let stored = slots
             .get_mut(slot.id().as_str())

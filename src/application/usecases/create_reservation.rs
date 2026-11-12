@@ -2,18 +2,18 @@ use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::{Reservation, ReservationId, value_objects::Resource};
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::domain::services::ResourceConflictChecker;
 use std::sync::Arc;
 use tracing::info;
 
 /// 単発予約を作るユースケース
-pub struct CreateReservationUseCase<R: ReservationRepository + ReservedSlotRepository> {
+pub struct CreateReservationUseCase<R: ReservationRepository + ReservedSlotQuery> {
     repository: Arc<R>,
     conflict_checker: ResourceConflictChecker,
 }
 
-impl<R: ReservationRepository + ReservedSlotRepository> CreateReservationUseCase<R> {
+impl<R: ReservationRepository + ReservedSlotQuery> CreateReservationUseCase<R> {
     /// 新しいインスタンスを作成
     ///
     /// # Arguments

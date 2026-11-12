@@ -1,8 +1,9 @@
 use crate::application::ApplicationError;
-use crate::domain::aggregates::reservation::{ReservedSlot, ReservedSlotId};
+use crate::domain::aggregates::reservation::ReservedSlotId;
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::Notifier;
-use crate::domain::ports::repositories::ReservedSlotRepository;
+use crate::domain::ports::repositories::ReservedSlotQuery;
+use crate::domain::read_models::SlotView;
 use crate::domain::services::ReservationChangeInterpreter;
 use chrono::{Duration, Utc};
 use std::collections::HashMap;
@@ -23,7 +24,7 @@ use tracing::info;
 /// 予定どおり終わった予約枠は自然に監視範囲から外れ、何も伝えない。
 pub struct NotifyReservationChangesUseCase<R, N>
 where
-    R: ReservedSlotRepository,
+    R: ReservedSlotQuery,
     N: Notifier,
 {
     repository: Arc<R>,
@@ -34,12 +35,12 @@ where
     /// 前回と今回の状態を突き合わせて差分を通知するため、範囲を狭めると
     /// 範囲外に出た予約枠が取り消しとして扱われる。用途に見合う長さを与える必要がある。
     watch_window: Duration,
-    previous_slots: tokio::sync::Mutex<HashMap<ReservedSlotId, ReservedSlot>>,
+    previous_slots: tokio::sync::Mutex<HashMap<ReservedSlotId, SlotView>>,
 }
 
 impl<R, N> NotifyReservationChangesUseCase<R, N>
 where
-    R: ReservedSlotRepository,
+    R: ReservedSlotQuery,
     N: Notifier,
 {
     /// 新しいインスタンスを作成し、初期状態を取得する
@@ -111,7 +112,7 @@ where
     async fn fetch_current_slots(
         repository: &R,
         watch_window: Duration,
-    ) -> Result<HashMap<ReservedSlotId, ReservedSlot>, ApplicationError> {
+    ) -> Result<HashMap<ReservedSlotId, SlotView>, ApplicationError> {
         // 監視する期間は現在時刻を起点に取り直す。ポーリングごとに窓が前へ進む
         let now = Utc::now();
         let window = TimePeriod::new(now, now + watch_window)?;

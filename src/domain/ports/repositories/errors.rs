@@ -14,7 +14,7 @@ pub enum RepositoryError {
     ConnectionError(String),
     /// 無効なメールアドレス
     InvalidEmail(EmailAddressError),
-    /// ReservedSlotのドメインルール違反
+    /// SlotViewのドメインルール違反
     InvalidReservation(ReservationError),
     /// 不明なエラー
     Unknown(String),

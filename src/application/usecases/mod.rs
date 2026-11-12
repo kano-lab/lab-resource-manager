@@ -31,7 +31,7 @@
 //! ```rust,ignore
 //! pub struct SomeUseCase<R, N>
 //! where
-//!     R: ReservedSlotRepository,  // trait（抽象）に依存
+//!     R: ReservedSlotQuery,  // trait（抽象）に依存
 //!     N: Notifier,                 // trait（抽象）に依存
 //! ```
 //!

@@ -7,7 +7,6 @@ use crate::application::usecases::detect_idle_slots::{
     DetectIdleSlotsUseCase, IdleCriteria, NoticePolicy,
 };
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
-use crate::domain::aggregates::reservation::ReservedSlot;
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
@@ -15,6 +14,7 @@ use crate::domain::ports::{
     GpuActivity, IdleEvidence, ObservationSnapshot, ObservedUsage, ServerObservation,
     UnattributedUsage,
 };
+use crate::domain::read_models::SlotView;
 use crate::infrastructure::idle_slot_notifier::MockIdleSlotNotifier;
 use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
 use crate::infrastructure::resource_usage_observer::MockResourceUsageObserver;
@@ -93,9 +93,9 @@ fn gpu(device_number: u32) -> Resource {
     ))
 }
 
-fn reservation_of(holder: &str, resources: Vec<Resource>, ends_in: Duration) -> ReservedSlot {
+fn reservation_of(holder: &str, resources: Vec<Resource>, ends_in: Duration) -> SlotView {
     let now = Utc::now();
-    ReservedSlot::of_new_one_time_reservation(
+    SlotView::of_new_one_time_reservation(
         EmailAddress::new(holder.to_string()).unwrap(),
         TimePeriod::new(now - Duration::hours(1), now + ends_in).unwrap(),
         resources,

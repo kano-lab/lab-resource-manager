@@ -1,16 +1,16 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::ReservedSlotRepository;
+use crate::domain::ports::repositories::ReservedSlotQuery;
 use crate::domain::services::reservation::availability::{self, ResourceAvailability};
 use std::sync::Arc;
 
 /// 指定期間における各リソースの空きを調べるユースケース
-pub struct CheckResourceAvailabilityUseCase<R: ReservedSlotRepository> {
+pub struct CheckResourceAvailabilityUseCase<R: ReservedSlotQuery> {
     repository: Arc<R>,
 }
 
-impl<R: ReservedSlotRepository> CheckResourceAvailabilityUseCase<R> {
+impl<R: ReservedSlotQuery> CheckResourceAvailabilityUseCase<R> {
     /// 新しいCheckResourceAvailabilityUseCaseインスタンスを作成
     ///
     /// # Arguments

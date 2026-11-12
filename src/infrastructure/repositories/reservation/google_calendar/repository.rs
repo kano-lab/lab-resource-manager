@@ -1,13 +1,14 @@
 use super::event_gateway::{CalendarEventGateway, GoogleCalendarEventGateway};
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::reservation::{
-    Reservation, ReservedSlot, ReservedSlotId, factory::ResourceFactory, value_objects::Resource,
+    Reservation, ReservedSlotId, factory::ResourceFactory, value_objects::Resource,
 };
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::{
-    IdentityLinkRepository, RepositoryError, ReservationRepository, ReservedSlotRepository,
+    IdentityLinkRepository, RepositoryError, ReservationRepository, ReservedSlotQuery,
 };
+use crate::domain::read_models::SlotView;
 use crate::infrastructure::config::{ResourceConfig, StorageConfig};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -148,7 +149,7 @@ impl GoogleCalendarReservationRepository {
     /// アプリが管理する行はマーカーで囲む。カレンダーを開いた人が状況を把握できるよう、
     /// 予約者のメールアドレスに加えて、分かる範囲の情報（OSユーザー名・予約ID）を並べる。
     /// 備考はマーカーの外に置き、利用者が自由に編集できる領域として残す。
-    pub(super) async fn build_description(&self, slot: &ReservedSlot) -> String {
+    pub(super) async fn build_description(&self, slot: &SlotView) -> String {
         let mut lines = vec![
             MANAGED_SECTION_BEGIN.to_string(),
             format!("{HOLDER_LINE_PREFIX}{}", slot.holder_email().as_str()),
@@ -178,7 +179,7 @@ impl GoogleCalendarReservationRepository {
     /// OSユーザー名の名前空間はサーバーごとに異なりうるため、予約したサーバーの紐付けを見る。
     /// 部屋の予約や紐付けが無い場合はNoneを返す。表示のための情報であり、
     /// 引けないことを理由に予約の保存を失敗させない。
-    async fn resolve_os_user_name(&self, slot: &ReservedSlot) -> Option<String> {
+    async fn resolve_os_user_name(&self, slot: &SlotView) -> Option<String> {
         let server = slot
             .resources()
             .iter()
@@ -271,11 +272,11 @@ impl GoogleCalendarReservationRepository {
             .insert(event_id.to_string())
     }
 
-    /// 取得したイベント群をReservedSlotへ変換する
+    /// 取得したイベント群をSlotViewへ変換する
     ///
     /// 予約として解釈できないイベント（カレンダー上で直接作られた自由記述のイベントなど）は
     /// 警告を残して飛ばす。1件の解釈失敗で予約機能全体を止めないための判断。
-    fn parse_events(&self, events: Vec<(Event, String, String)>) -> Vec<ReservedSlot> {
+    fn parse_events(&self, events: Vec<(Event, String, String)>) -> Vec<SlotView> {
         events
             .into_iter()
             .filter_map(|(event, calendar_id, resource_context)| {
@@ -303,12 +304,12 @@ impl GoogleCalendarReservationRepository {
             .collect()
     }
 
-    /// イベントをReservedSlotに変換
+    /// イベントをSlotViewに変換
     fn parse_event(
         &self,
         event: Event,
         resource_context: &str,
-    ) -> Result<ReservedSlot, RepositoryError> {
+    ) -> Result<SlotView, RepositoryError> {
         // Event ID から Domain ID を取得
         let event_id = event.id.clone().unwrap_or_default();
 
@@ -369,8 +370,7 @@ impl GoogleCalendarReservationRepository {
             .as_ref()
             .and_then(|desc| Self::extract_notes(desc));
 
-        ReservedSlot::reconstruct(id, user, time_period, items, notes)
-            .map_err(RepositoryError::from)
+        SlotView::reconstruct(id, user, time_period, items, notes).map_err(RepositoryError::from)
     }
 
     /// descriptionから備考（アプリ管理セクションの外側）を取り出す
@@ -489,7 +489,7 @@ impl GoogleCalendarReservationRepository {
     /// 過去に採番した対応表がある予約はそちらを優先する。
     async fn locate_existing_event(
         &self,
-        slot: &ReservedSlot,
+        slot: &SlotView,
         target_calendar_id: &str,
     ) -> Result<Option<ExternalId>, RepositoryError> {
         let event_id = event_id_for(slot.id());
@@ -532,12 +532,12 @@ impl GoogleCalendarReservationRepository {
     /// イベントIDと予約枠IDは表記が異なりうる（ハイフンの有無）。
     /// IDを指定して取得した予約枠は、必ずそのIDで返す必要がある。
     /// 単発予約の予約IDは予約枠IDに従う。
-    fn with_id(slot: ReservedSlot, id: &ReservedSlotId) -> Result<ReservedSlot, RepositoryError> {
+    fn with_id(slot: SlotView, id: &ReservedSlotId) -> Result<SlotView, RepositoryError> {
         if slot.id() == id {
             return Ok(slot);
         }
 
-        ReservedSlot::reconstruct(
+        SlotView::reconstruct(
             id.clone(),
             slot.holder_email().clone(),
             slot.time_period().clone(),
@@ -550,7 +550,7 @@ impl GoogleCalendarReservationRepository {
     /// 予約IDから導出したイベントIDを指定して、カレンダーにイベントを作成する
     async fn insert_event_for(
         &self,
-        slot: &ReservedSlot,
+        slot: &SlotView,
         calendar_id: &str,
     ) -> Result<(), RepositoryError> {
         let mut event = self.create_event_from_slot(slot).await?;
@@ -561,13 +561,13 @@ impl GoogleCalendarReservationRepository {
         Ok(())
     }
 
-    /// ReservedSlotから適切なカレンダーIDを取得
+    /// SlotViewから適切なカレンダーIDを取得
     ///
     /// # 前提条件
-    /// このメソッドは、ReservedSlot内のすべてのリソースが同一のカレンダーに属することを前提としています。
+    /// このメソッドは、SlotView内のすべてのリソースが同一のカレンダーに属することを前提としています。
     /// （例: すべてGPU、またはすべて部屋）
     /// 混在している場合はエラーを返します。
-    fn get_calendar_id_for_slot(&self, slot: &ReservedSlot) -> Result<String, RepositoryError> {
+    fn get_calendar_id_for_slot(&self, slot: &SlotView) -> Result<String, RepositoryError> {
         let resources = slot.resources();
         if resources.is_empty() {
             return Err(RepositoryError::Unknown("リソースが空です".to_string()));
@@ -637,12 +637,12 @@ impl GoogleCalendarReservationRepository {
         }
     }
 
-    /// ReservedSlotをGoogle Calendar Eventに変換
+    /// SlotViewをGoogle Calendar Eventに変換
     ///
     /// # 前提条件
-    /// このメソッドは、get_calendar_id_for_slotで検証済みのReservedSlotを受け取ることを前提としています。
+    /// このメソッドは、get_calendar_id_for_slotで検証済みのSlotViewを受け取ることを前提としています。
     /// すなわち、すべてのリソースが同一のカレンダーに属していることが保証されています。
-    async fn create_event_from_slot(&self, slot: &ReservedSlot) -> Result<Event, RepositoryError> {
+    async fn create_event_from_slot(&self, slot: &SlotView) -> Result<Event, RepositoryError> {
         // 注: get_calendar_id_for_slotで検証済みのため、resources()[0]は安全に使用できる
         let summary = match &slot.resources()[0] {
             Resource::Gpu(_) => self.format_gpu_spec(slot.resources()).ok_or_else(|| {
@@ -672,11 +672,8 @@ impl GoogleCalendarReservationRepository {
 
     /// event_idから直接イベントを検索（マッピングがない場合）
     ///
-    /// 全カレンダーから該当するイベントを検索してReservedSlotを返します。
-    async fn find_by_event_id(
-        &self,
-        event_id: &str,
-    ) -> Result<Option<ReservedSlot>, RepositoryError> {
+    /// 全カレンダーから該当するイベントを検索してSlotViewを返します。
+    async fn find_by_event_id(&self, event_id: &str) -> Result<Option<SlotView>, RepositoryError> {
         // 各カレンダーでイベントの検索を試みる
         for (calendar_id, resource_context) in self.calendars() {
             match self.gateway.get_event(&calendar_id, event_id).await? {
@@ -734,17 +731,14 @@ impl GoogleCalendarReservationRepository {
 }
 
 #[async_trait]
-impl ReservedSlotRepository for GoogleCalendarReservationRepository {
-    async fn find_slot(
-        &self,
-        id: &ReservedSlotId,
-    ) -> Result<Option<ReservedSlot>, RepositoryError> {
+impl ReservedSlotQuery for GoogleCalendarReservationRepository {
+    async fn find_slot(&self, id: &ReservedSlotId) -> Result<Option<SlotView>, RepositoryError> {
         // 予約IDから導出したイベントIDで全カレンダーを探す
         let found = self.find_by_event_id(&event_id_for(id)).await?;
         found.map(|slot| Self::with_id(slot, id)).transpose()
     }
 
-    /// 指定期間と重複するReservedSlotを検索
+    /// 指定期間と重複するSlotViewを検索
     ///
     /// 対象期間そのものをカレンダーに問い合わせる。終了済みかどうかで絞ってはいけない。
     /// 事後予約のように過去の期間を予約する場合、相手の予約が既に終了していても
@@ -752,7 +746,7 @@ impl ReservedSlotRepository for GoogleCalendarReservationRepository {
     async fn find_slots_overlapping(
         &self,
         time_period: &TimePeriod,
-    ) -> Result<Vec<ReservedSlot>, RepositoryError> {
+    ) -> Result<Vec<SlotView>, RepositoryError> {
         let events = self
             .fetch_events(time_period.start(), Some(time_period.end()))
             .await?;
@@ -768,7 +762,7 @@ impl ReservedSlotRepository for GoogleCalendarReservationRepository {
         &self,
         holder_email: &EmailAddress,
         time_period: &TimePeriod,
-    ) -> Result<Vec<ReservedSlot>, RepositoryError> {
+    ) -> Result<Vec<SlotView>, RepositoryError> {
         Ok(self
             .find_slots_overlapping(time_period)
             .await?
@@ -777,7 +771,7 @@ impl ReservedSlotRepository for GoogleCalendarReservationRepository {
             .collect())
     }
 
-    async fn save_slot(&self, slot: &ReservedSlot) -> Result<(), RepositoryError> {
+    async fn save_slot(&self, slot: &SlotView) -> Result<(), RepositoryError> {
         let new_calendar_id = self.get_calendar_id_for_slot(slot)?;
 
         if let Some(external_id) = self.locate_existing_event(slot, &new_calendar_id).await? {

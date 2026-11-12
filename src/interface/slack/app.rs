@@ -4,7 +4,7 @@
 
 use crate::application::idle_notice_log::IdleNoticeLog;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::infrastructure::config::{AppConfig, ResourceConfig};
 use crate::interface::slack::dependencies::{SlackRepositories, SlackUseCases};
 use chrono::{DateTime, Utc};
@@ -21,7 +21,7 @@ use tracing::{debug, error, info, warn};
 /// `run()`メソッドでアプリケーション全体を実行します。
 pub struct SlackApp<R, N>
 where
-    R: ReservationRepository + ReservedSlotRepository,
+    R: ReservationRepository + ReservedSlotQuery,
     N: Notifier,
 {
     // 設定
@@ -49,7 +49,7 @@ where
 
 impl<R, N> SlackApp<R, N>
 where
-    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     /// 新しいSlackAppを作成

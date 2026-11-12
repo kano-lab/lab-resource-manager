@@ -1,13 +1,13 @@
 use super::errors::ReservationError;
-use super::reserved_slot::ReservedSlot;
 use super::value_objects::{ReservationId, ReservedSlotId, Resource};
 use crate::domain::common::{EmailAddress, TimePeriod};
+use crate::domain::read_models::SlotView;
 
 /// 予約
 ///
 /// 予約者が、リソースを使う時間を前もって押さえる約束。作る・取り消すの単位である。
 /// 予約者・リソース・備考はどの予約にもあり、いつ押さえるかは日程（[`Schedule`]）が表す。
-/// 予約が実際に押さえている時間は、予約枠（[`ReservedSlot`]）として別に扱う。
+/// 予約が実際に押さえている時間は、予約枠（[`SlotView`]）として別に扱う。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reservation {
     id: ReservationId,
@@ -79,7 +79,7 @@ impl Reservation {
     ///
     /// 単発予約と予約枠は1対1で、同じIDと内容を持つ。永続化層はこの2つを
     /// 1つのレコードとして持つため、予約枠から予約を組み立てられる。
-    pub fn from_one_time_slot(slot: &ReservedSlot) -> Self {
+    pub fn from_one_time_slot(slot: &SlotView) -> Self {
         Self {
             id: slot.reservation_id(),
             holder_email: slot.holder_email().clone(),
@@ -117,9 +117,9 @@ impl Reservation {
     /// 単発予約の予約枠を取得する
     ///
     /// 単発予約は予約枠を1つだけ持ち、その予約枠は予約と同じIDを持つ。
-    pub fn one_time_slot(&self) -> Option<ReservedSlot> {
+    pub fn one_time_slot(&self) -> Option<SlotView> {
         match &self.schedule {
-            Schedule::OneTime(time_period) => Some(ReservedSlot::of_one_time_reservation(
+            Schedule::OneTime(time_period) => Some(SlotView::of_one_time_reservation(
                 ReservedSlotId::from_string(self.id.as_str().to_string()),
                 self.holder_email.clone(),
                 time_period.clone(),

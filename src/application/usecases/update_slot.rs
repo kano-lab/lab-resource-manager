@@ -2,18 +2,18 @@ use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::repositories::{RepositoryError, ReservedSlotRepository};
+use crate::domain::ports::repositories::{RepositoryError, ReservedSlotQuery};
 use crate::domain::services::ResourceConflictChecker;
 use std::sync::Arc;
 use tracing::info;
 
 /// 予約枠を更新するユースケース
-pub struct UpdateSlotUseCase<R: ReservedSlotRepository> {
+pub struct UpdateSlotUseCase<R: ReservedSlotQuery> {
     repository: Arc<R>,
     conflict_checker: ResourceConflictChecker,
 }
 
-impl<R: ReservedSlotRepository> UpdateSlotUseCase<R> {
+impl<R: ReservedSlotQuery> UpdateSlotUseCase<R> {
     /// 新しいUpdateSlotUseCaseインスタンスを作成
     ///
     /// # Arguments
@@ -96,8 +96,8 @@ impl<R: ReservedSlotRepository> UpdateSlotUseCase<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::ReservedSlot;
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
+    use crate::domain::read_models::SlotView;
     use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
     use chrono::{DateTime, Duration, Utc};
 
@@ -105,8 +105,8 @@ mod tests {
         EmailAddress::new(address.to_string()).unwrap()
     }
 
-    fn slot_of(holder: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> ReservedSlot {
-        ReservedSlot::of_new_one_time_reservation(
+    fn slot_of(holder: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> SlotView {
+        SlotView::of_new_one_time_reservation(
             email(holder),
             TimePeriod::new(start, end).unwrap(),
             vec![Resource::Gpu(Gpu::new(
