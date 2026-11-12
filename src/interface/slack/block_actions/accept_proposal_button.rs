@@ -265,7 +265,7 @@ where
 mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::ReservedSlot;
-    use crate::domain::aggregates::reservation::value_objects::TimePeriod;
+    use crate::domain::common::TimePeriod;
     use crate::domain::services::reservation::errors::ResourceConflictError;
     use chrono::Utc;
 

@@ -21,8 +21,6 @@ pub mod errors;
 pub mod factory;
 /// 予約枠
 pub mod reserved_slot;
-/// Reservation集約のドメインサービス
-pub mod service;
 /// Reservation集約の値オブジェクト
 pub mod value_objects;
 

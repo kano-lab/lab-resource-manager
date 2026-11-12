@@ -10,9 +10,10 @@ use crate::application::usecases::{
     CreateReservationUseCase, EndSlotEarlyUseCase, GetReservationUseCase, GetSlotUseCase,
     ListSlotsHeldByUseCase, ListSlotsUseCase, UpdateSlotUseCase,
 };
-use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::aggregates::reservation::{ReservationId, ReservedSlotId};
 use crate::domain::common::EmailAddress;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::infrastructure::config::ResourceConfig;
 use crate::interface::mcp::auth::ResolvedCaller;
@@ -94,8 +95,7 @@ fn resolved_caller(parts: &http::request::Parts) -> Result<EmailAddress, ErrorDa
 const LISTING_WINDOW_DAYS: i64 = 60;
 
 /// 一覧の対象期間（現在時刻から`LISTING_WINDOW_DAYS`日先まで）
-fn listing_window()
--> Result<TimePeriod, crate::domain::aggregates::reservation::errors::ReservationError> {
+fn listing_window() -> Result<TimePeriod, crate::domain::common::TimePeriodError> {
     let now = chrono::Utc::now();
     TimePeriod::new(now, now + chrono::Duration::days(LISTING_WINDOW_DAYS))
 }

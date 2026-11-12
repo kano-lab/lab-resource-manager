@@ -1,5 +1,6 @@
 use crate::domain::aggregates::identity_link::errors::IdentityLinkError;
 use crate::domain::aggregates::reservation::errors::ReservationError;
+use crate::domain::common::TimePeriodError;
 use crate::domain::ports::{
     notifier::NotificationError, repositories::RepositoryError,
     resource_collection_access::ResourceCollectionAccessError,
@@ -23,6 +24,8 @@ pub enum ApplicationError {
     /// 実サーバーの利用状況観測中に発生したエラー
     Observation(ObservationError),
 
+    /// 不正な期間
+    InvalidTimePeriod(TimePeriodError),
     /// 予約に関するドメインエラー
     Reservation(ReservationError),
     /// ID紐付けに関するドメインエラー
@@ -61,6 +64,7 @@ impl fmt::Display for ApplicationError {
                 write!(f, "リソースコレクションアクセスエラー: {}", e)
             }
             ApplicationError::Observation(e) => write!(f, "利用状況観測エラー: {}", e),
+            ApplicationError::InvalidTimePeriod(e) => write!(f, "期間エラー: {}", e),
             ApplicationError::Reservation(e) => write!(f, "予約エラー: {}", e),
             ApplicationError::IdentityLink(e) => write!(f, "ID紐付けエラー: {}", e),
             ApplicationError::ExternalSystemAlreadyLinked {
@@ -104,6 +108,7 @@ impl std::error::Error for ApplicationError {
             ApplicationError::Notification(e) => Some(e),
             ApplicationError::ResourceCollectionAccess(e) => Some(e),
             ApplicationError::Observation(e) => Some(e),
+            ApplicationError::InvalidTimePeriod(e) => Some(e),
             ApplicationError::Reservation(e) => Some(e),
             ApplicationError::IdentityLink(e) => Some(e),
             ApplicationError::ExternalSystemAlreadyLinked { .. } => None,
@@ -118,6 +123,12 @@ impl std::error::Error for ApplicationError {
 impl From<RepositoryError> for ApplicationError {
     fn from(e: RepositoryError) -> Self {
         ApplicationError::Repository(e)
+    }
+}
+
+impl From<TimePeriodError> for ApplicationError {
+    fn from(e: TimePeriodError) -> Self {
+        ApplicationError::InvalidTimePeriod(e)
     }
 }
 

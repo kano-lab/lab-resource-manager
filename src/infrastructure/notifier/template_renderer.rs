@@ -2,8 +2,9 @@
 //!
 //! 通知メッセージのテンプレートとプレースホルダー置換を処理します。
 
-use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::aggregates::reservation::{OneTimeReservation, Reservation, ReservedSlot};
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::NotificationEvent;
 use crate::infrastructure::config::{FormatConfig, TemplateConfig};
 use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
@@ -263,8 +264,9 @@ impl<'a> TemplateRenderer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::value_objects::{Gpu, TimePeriod};
+    use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::common::EmailAddress;
+    use crate::domain::common::TimePeriod;
     use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
     use chrono::{TimeZone, Utc};
 

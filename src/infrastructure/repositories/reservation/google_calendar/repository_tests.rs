@@ -7,8 +7,9 @@ use super::event_gateway::CalendarEventGateway;
 use super::repository::GoogleCalendarReservationRepository;
 use crate::domain::aggregates::identity_link::entity::IdentityLink;
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
-use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::aggregates::reservation::{Reservation, ReservationId, ReservedSlot};
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::{
     IdentityLinkRepository, RepositoryError, ReservationRepository,
 };

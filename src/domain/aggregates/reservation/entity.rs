@@ -1,6 +1,7 @@
 use super::reserved_slot::ReservedSlot;
-use super::value_objects::{ReservationId, Resource, TimePeriod};
+use super::value_objects::{ReservationId, Resource};
 use crate::domain::common::EmailAddress;
+use crate::domain::common::TimePeriod;
 
 /// 予約
 ///
@@ -61,7 +62,7 @@ impl OneTimeReservation {
             id: slot.reservation_id().clone(),
             holder_email: slot.holder_email().clone(),
             time_period: slot.time_period().clone(),
-            resources: slot.resources().clone(),
+            resources: slot.resources().to_vec(),
             notes: slot.notes().cloned(),
         }
     }

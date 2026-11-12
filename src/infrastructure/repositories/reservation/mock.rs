@@ -1,7 +1,7 @@
+use crate::domain::common::TimePeriod;
 use crate::domain::{
     aggregates::reservation::{
         OneTimeReservation, Reservation, ReservationId, ReservedSlot, ReservedSlotId,
-        value_objects::TimePeriod,
     },
     common::EmailAddress,
     ports::repositories::{RepositoryError, ReservationRepository},

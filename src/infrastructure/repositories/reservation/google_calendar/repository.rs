@@ -2,10 +2,10 @@ use super::event_gateway::{CalendarEventGateway, GoogleCalendarEventGateway};
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::reservation::{
     OneTimeReservation, Reservation, ReservationId, ReservedSlot, ReservedSlotId,
-    factory::ResourceFactory,
-    value_objects::{Resource, TimePeriod},
+    factory::ResourceFactory, value_objects::Resource,
 };
 use crate::domain::common::EmailAddress;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::{
     IdentityLinkRepository, RepositoryError, ReservationRepository,
 };

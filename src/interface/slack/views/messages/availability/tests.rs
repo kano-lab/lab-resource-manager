@@ -1,6 +1,7 @@
 use super::*;
 use crate::domain::aggregates::reservation::ReservedSlot;
-use crate::domain::aggregates::reservation::value_objects::{Gpu, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::Gpu;
+use crate::domain::common::TimePeriod;
 use crate::domain::services::reservation::availability::calculate;
 use chrono::TimeZone;
 

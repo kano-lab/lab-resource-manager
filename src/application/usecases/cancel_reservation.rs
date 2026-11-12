@@ -69,8 +69,9 @@ mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::{
         ReservedSlot,
-        value_objects::{Gpu, Resource, TimePeriod},
+        value_objects::{Gpu, Resource},
     };
+    use crate::domain::common::TimePeriod;
     use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
     use chrono::{Duration, Utc};
 

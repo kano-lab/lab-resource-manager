@@ -7,6 +7,9 @@
 pub mod email_address;
 /// 共通値オブジェクトのエラー型
 pub mod errors;
+/// 期間の値オブジェクト
+pub mod time_period;
 
 pub use email_address::EmailAddress;
-pub use errors::EmailAddressError;
+pub use errors::{EmailAddressError, TimePeriodError};
+pub use time_period::TimePeriod;

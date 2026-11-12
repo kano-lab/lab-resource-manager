@@ -2,7 +2,8 @@
 //!
 //! リソースと時刻のスタイル別フォーマット関数を提供します。
 
-use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::Resource;
+use crate::domain::common::TimePeriod;
 use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
 use chrono::{Local, Utc};
 use chrono_tz::Tz;
@@ -17,9 +18,21 @@ pub fn format_resources_styled(resources: &[Resource], style: ResourceStyle) -> 
     }
 }
 
-/// フル形式: "Thalys / A100 80GB PCIe / GPU:0"
+/// フル形式: "Thalys / A100 80GB PCIe / GPU:0"（リソースごとに改行）
 fn format_resources_full(resources: &[Resource]) -> String {
-    crate::domain::aggregates::reservation::service::format_resources(resources)
+    resources
+        .iter()
+        .map(|resource| match resource {
+            Resource::Gpu(spec) => format!(
+                "{} / {} / GPU:{}",
+                spec.server(),
+                spec.model(),
+                spec.device_number()
+            ),
+            Resource::Room { name } => name.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// コンパクト形式: "Thalys 0,1,2"（サーバーごとにグループ化）
@@ -100,8 +113,28 @@ pub fn format_time_styled(
 }
 
 /// フル形式: "2024-01-15 19:00 - 2024-01-15 21:00 (Asia/Tokyo)"
+///
+/// タイムゾーンを指定した場合、そのタイムゾーンでの時刻とタイムゾーン名を表示する。
+/// 指定がないか解釈できない場合は、システムのローカルタイムゾーンとそのオフセットで表示する。
 fn format_time_full(period: &TimePeriod, timezone_str: Option<&str>) -> String {
-    crate::domain::aggregates::reservation::service::format_time_period(period, timezone_str)
+    match timezone_str.and_then(|s| s.parse::<Tz>().ok()) {
+        Some(tz) => format!(
+            "{} - {} ({})",
+            period.start().with_timezone(&tz).format("%Y-%m-%d %H:%M"),
+            period.end().with_timezone(&tz).format("%Y-%m-%d %H:%M"),
+            tz.name()
+        ),
+        None => {
+            let start = period.start().with_timezone(&Local);
+            let end = period.end().with_timezone(&Local);
+            format!(
+                "{} - {} ({})",
+                start.format("%Y-%m-%d %H:%M"),
+                end.format("%Y-%m-%d %H:%M"),
+                start.offset()
+            )
+        }
+    }
 }
 
 /// スマート形式: 同日なら終了日省略 "1/15 19:00 - 21:00"
@@ -387,5 +420,66 @@ mod tests {
         assert_eq!(date_format_string(DateFormat::Ymd), "%Y-%m-%d");
         assert_eq!(date_format_string(DateFormat::Md), "%-m/%-d");
         assert_eq!(date_format_string(DateFormat::MdJapanese), "%-m月%-d日");
+    }
+
+    // Full-style formatting tests
+
+    #[test]
+    fn full_time_without_a_timezone_uses_the_local_offset() {
+        let period = create_test_period(10, 12);
+
+        // テスト環境のタイムゾーンによって異なるため、形だけを確かめる
+        let result = format_time_full(&period, None);
+        assert!(result.contains("2024-01-15"));
+        assert!(result.contains(" - "));
+        assert!(result.contains('(') && result.contains(')'));
+    }
+
+    #[test]
+    fn full_time_in_a_named_timezone_shows_its_iana_name() {
+        let period = create_test_period(10, 12);
+
+        assert_eq!(
+            format_time_full(&period, Some("Asia/Tokyo")),
+            "2024-01-15 19:00 - 2024-01-15 21:00 (Asia/Tokyo)"
+        );
+        assert_eq!(
+            format_time_full(&period, Some("America/New_York")),
+            "2024-01-15 05:00 - 2024-01-15 07:00 (America/New_York)"
+        );
+    }
+
+    #[test]
+    fn full_time_with_an_unknown_timezone_falls_back_to_local() {
+        let period = create_test_period(10, 12);
+
+        let result = format_time_full(&period, Some("Invalid/Timezone"));
+        assert!(result.contains("2024-01-15"));
+        assert!(!result.contains("Invalid/Timezone"));
+    }
+
+    #[test]
+    fn full_resources_put_one_resource_per_line() {
+        let resources = vec![
+            Resource::Gpu(Gpu::new(
+                "Thalys".to_string(),
+                0,
+                "A100 80GB PCIe".to_string(),
+            )),
+            Resource::Gpu(Gpu::new(
+                "Thalys".to_string(),
+                1,
+                "A100 80GB PCIe".to_string(),
+            )),
+            Resource::Room {
+                name: "会議室A".to_string(),
+            },
+        ];
+
+        assert_eq!(
+            format_resources_full(&resources),
+            "Thalys / A100 80GB PCIe / GPU:0\nThalys / A100 80GB PCIe / GPU:1\n会議室A"
+        );
+        assert_eq!(format_resources_full(&[]), "");
     }
 }

@@ -1,9 +1,10 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::{
     ReservedSlot,
-    value_objects::{ReservedSlotId, Resource, TimePeriod},
+    value_objects::{ReservedSlotId, Resource},
 };
 use crate::domain::common::EmailAddress;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::domain::services::ResourceConflictChecker;
 use chrono::{DateTime, Duration, Utc};

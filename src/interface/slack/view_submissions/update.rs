@@ -2,7 +2,8 @@
 
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
-use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::interface::slack::app::SlackApp;

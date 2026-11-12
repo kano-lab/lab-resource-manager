@@ -82,7 +82,8 @@ impl<R: ReservationRepository> EndSlotEarlyUseCase<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, TimePeriod};
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
+    use crate::domain::common::TimePeriod;
     use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
     use chrono::{DateTime, Duration};
 

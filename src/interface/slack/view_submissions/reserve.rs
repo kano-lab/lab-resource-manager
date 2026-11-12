@@ -52,10 +52,7 @@ where
     // Parse datetime
     let start_datetime = parse_datetime(&start_date, &start_time)?;
     let end_datetime = parse_datetime(&end_date, &end_time)?;
-    let time_period = crate::domain::aggregates::reservation::value_objects::TimePeriod::new(
-        start_datetime,
-        end_datetime,
-    )?;
+    let time_period = crate::domain::common::TimePeriod::new(start_datetime, end_datetime)?;
     debug!(start = %start_datetime, end = %end_datetime, "parsed period");
 
     // Get holder email from user_id

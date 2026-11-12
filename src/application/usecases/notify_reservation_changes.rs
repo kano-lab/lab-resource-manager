@@ -1,7 +1,8 @@
 use crate::application::ApplicationError;
 use crate::domain::aggregates::reservation::{
-    OneTimeReservation, Reservation, ReservedSlot, ReservedSlotId, value_objects::TimePeriod,
+    OneTimeReservation, Reservation, ReservedSlot, ReservedSlotId,
 };
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::domain::ports::{NotificationEvent, Notifier};
 use chrono::{Duration, Utc};

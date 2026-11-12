@@ -1,7 +1,8 @@
 use crate::application::error::ApplicationError;
 use crate::application::idle_notice_log::IdleNoticeLog;
 use crate::domain::aggregates::reservation::ReservedSlot;
-use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource};
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::domain::ports::{
@@ -27,9 +28,9 @@ pub enum NoticePolicy {
     Notify,
 }
 
-/// 予約が使われていないと見なす基準
+/// 予約枠が使われていないと見なす基準
 ///
-/// 押さえたまま計算していない予約には、プロセスすら立っていない予約より長い猶予を置く。
+/// 押さえたまま計算していない予約枠には、プロセスすら立っていない予約枠より長い猶予を置く。
 /// メモリを確保して待たせている状態は、立ち上げ直すと時間がかかる使い方（常駐させた
 /// 推論サーバー、開いたままのノートブック）で意図的に選ばれていることがあり、
 /// 手が離れているとは限らない。
@@ -41,7 +42,7 @@ pub struct IdleCriteria {
     pub held_threshold: Duration,
     /// これ以上の稼働率が出ていれば、計算が走っているとみなす
     pub computing_utilization_percent: u32,
-    /// 押さえたまま計算していない予約について、知らせるか様子を見るか
+    /// 押さえたまま計算していない予約枠について、知らせるか様子を見るか
     pub held_notices: NoticePolicy,
     /// 観測がこれ以上途切れたら、使われていない時間を計り直す
     ///
@@ -53,7 +54,7 @@ pub struct IdleCriteria {
 impl IdleCriteria {
     /// この見立てを予約者に知らせるとしたら、どの根拠でどれだけ待つか
     ///
-    /// 使われている予約と、使われているかを問えない予約については何も返さない。
+    /// 使われている予約枠と、使われているかを問えない予約枠については何も返さない。
     fn notice_terms(&self, activity: &SlotActivity) -> Option<(IdleEvidence, Duration)> {
         match activity {
             SlotActivity::InUse | SlotActivity::Undecidable => None,
@@ -92,7 +93,7 @@ enum NoticeOutcome {
     NotDue,
 }
 
-/// 予約が使われていない状態が、いつから、どんな様子で続いているか
+/// 予約枠が使われていない状態が、いつから、どんな様子で続いているか
 #[derive(Debug, Clone)]
 struct IdleSpell {
     since: DateTime<Utc>,
@@ -101,22 +102,22 @@ struct IdleSpell {
     evidence: IdleEvidence,
 }
 
-/// 進行中の予約のうち、使われていないものを検知して予約者へ知らせるユースケース
+/// 進行中の予約枠のうち、使われていないものを検知して予約者へ知らせるユースケース
 ///
 /// # 判定
-/// 予約が押さえているGPUについて、利用がひとつも観測されないか、乗ってはいるが
+/// 予約枠が押さえているGPUについて、利用がひとつも観測されないか、乗ってはいるが
 /// 計算が走っていない状態が続いたら、予約者へ知らせる。誰のプロセスかは問わない。
-/// コンテナ等の中間層はプロセスの名義を予約者に辿れなくするが、予約が押さえる
+/// コンテナ等の中間層はプロセスの名義を予約者に辿れなくするが、予約枠が押さえる
 /// デバイスの上で起きていることは、名義によらず予約者の責任範囲である。
 /// 名義の照合（無断使用の検出）は`ReconcileObservedUsagesUseCase`の仕事。
 ///
 /// # 判定しない場合
-/// - 観測できていないサーバー（レポートの欠落・鮮度切れ）を含む予約
+/// - 観測できていないサーバー（レポートの欠落・鮮度切れ）を含む予約枠
 ///   監視が止まっている間の沈黙は、使われていないことの証拠にならない
-/// - 部屋の予約
+/// - 部屋の予約枠
 ///   利用を観測する手段がない
-/// - 残り時間が閾値に満たない予約
-///   まもなく終わる予約を急かしても、予約者に取れる手はほとんどない
+/// - 残り時間が閾値に満たない予約枠
+///   まもなく終わる予約枠を急かしても、予約者に取れる手はほとんどない
 pub struct DetectIdleSlotsUseCase<R, O, N>
 where
     R: ReservationRepository,
@@ -128,7 +129,7 @@ where
     notifier: N,
     criteria: IdleCriteria,
     notices: Arc<IdleNoticeLog>,
-    /// 予約ごとの「使われていないと確かめられた最初の時刻」と、そのときの様子
+    /// 予約枠ごとの「使われていないと確かめられた最初の時刻」と、そのときの様子
     idle_spells: Mutex<HashMap<String, IdleSpell>>,
 }
 
@@ -160,16 +161,16 @@ where
         }
     }
 
-    /// 一度だけポーリングを実行し、使われていない予約を知らせる
+    /// 一度だけポーリングを実行し、使われていない予約枠を知らせる
     ///
     /// # Errors
     /// 観測・リポジトリアクセスに失敗した場合（個別の通知失敗は記録して続行する）
     pub async fn poll_once(&self) -> Result<(), ApplicationError> {
         let started_at = Utc::now();
         let now = started_at;
-        // 対象は「今この瞬間に進行中の予約」だけなので、現在時刻を含む最小の期間を問う
+        // 対象は「今この瞬間に進行中の予約枠」だけなので、現在時刻を含む最小の期間を問う
         let in_progress = TimePeriod::new(now, now + Duration::seconds(1))?;
-        let reservations = self.repository.find_slots_overlapping(&in_progress).await?;
+        let slots = self.repository.find_slots_overlapping(&in_progress).await?;
         let snapshot = self.observer.observe_active_usages().await?;
 
         let mut absent = 0_usize;
@@ -180,11 +181,11 @@ where
         let mut unreachable = 0_usize;
         let mut failures = 0_usize;
 
-        for reservation in &reservations {
-            let activity = self.judge(reservation, &snapshot);
+        for slot in &slots {
+            let activity = self.judge(slot, &snapshot);
 
             if matches!(activity, SlotActivity::InUse) {
-                self.forget(reservation.id());
+                self.forget(slot.id());
                 continue;
             }
 
@@ -200,10 +201,7 @@ where
                 IdleEvidence::HeldWithoutComputing { .. } => held += 1,
             }
 
-            match self
-                .notify_if_due(reservation, evidence, threshold, now)
-                .await
-            {
+            match self.notify_if_due(slot, evidence, threshold, now).await {
                 Ok(NoticeOutcome::Sent) => notified += 1,
                 Ok(NoticeOutcome::Withheld) => withheld += 1,
                 Ok(NoticeOutcome::Unreachable) => unreachable += 1,
@@ -211,18 +209,18 @@ where
                 Err(e) => {
                     failures += 1;
                     error!(
-                        slot_id = %reservation.id().as_str(),
+                        slot_id = %slot.id().as_str(),
                         error = %e,
-                        "telling the holder about an idle reservation failed"
+                        "telling the holder about an idle slot failed"
                     );
                 }
             }
         }
 
-        self.forget_reservations_that_ended(&reservations);
+        self.forget_slots_that_ended(&slots);
 
         info!(
-            reservations_in_progress = reservations.len(),
+            slots_in_progress = slots.len(),
             servers_observed = snapshot.observed_server_count(),
             absent,
             held,
@@ -232,17 +230,17 @@ where
             unreachable,
             failures,
             elapsed_ms = (Utc::now() - started_at).num_milliseconds(),
-            "idle reservation pass finished"
+            "idle slot pass finished"
         );
 
         Ok(())
     }
 
-    /// 予約が使われているかを見立てる
+    /// 予約枠が使われているかを見立てる
     ///
-    /// 観測できていないサーバーを含む予約については、見立てそのものを差し控える。
-    fn judge(&self, reservation: &ReservedSlot, snapshot: &ObservationSnapshot) -> SlotActivity {
-        let Some(servers) = servers_of(reservation) else {
+    /// 観測できていないサーバーを含む予約枠については、見立てそのものを差し控える。
+    fn judge(&self, slot: &ReservedSlot, snapshot: &ObservationSnapshot) -> SlotActivity {
+        let Some(servers) = servers_of(slot) else {
             return SlotActivity::Undecidable;
         };
 
@@ -251,7 +249,7 @@ where
         }
 
         judge_slot_activity(
-            reservation.resources(),
+            slot.resources(),
             snapshot,
             self.criteria.computing_utilization_percent,
         )
@@ -260,72 +258,72 @@ where
     /// 使われていない時間が閾値に達していれば予約者へ知らせる
     async fn notify_if_due(
         &self,
-        reservation: &ReservedSlot,
+        slot: &ReservedSlot,
         evidence: IdleEvidence,
         threshold: Duration,
         now: DateTime<Utc>,
     ) -> Result<NoticeOutcome, ApplicationError> {
-        let idle_since = self.idle_since_of(reservation.id(), &evidence, now);
+        let idle_since = self.idle_since_of(slot.id(), &evidence, now);
 
-        if !is_worth_telling(reservation, idle_since, now, threshold) {
+        if !is_worth_telling(slot, idle_since, now, threshold) {
             return Ok(NoticeOutcome::NotDue);
         }
 
-        if self.notices.is_silenced(reservation.id(), now) {
+        if self.notices.is_silenced(slot.id(), now) {
             return Ok(NoticeOutcome::NotDue);
         }
 
         if self.criteria.policy_for(&evidence) == NoticePolicy::Observe {
             info!(
-                slot_id = %reservation.id().as_str(),
+                slot_id = %slot.id().as_str(),
                 idle_since = %idle_since,
                 evidence = ?evidence,
-                "an idle reservation would have been reported; only watching for now"
+                "an idle slot would have been reported; only watching for now"
             );
             // 様子を見ている間も黙る期間は置く。毎分同じことを数え直しても分かることは増えない
-            self.notices.silence(reservation.id(), now);
+            self.notices.silence(slot.id(), now);
             return Ok(NoticeOutcome::Withheld);
         }
 
         info!(
-            slot_id = %reservation.id().as_str(),
-            holder = %reservation.holder_email().as_str(),
+            slot_id = %slot.id().as_str(),
+            holder = %slot.holder_email().as_str(),
             idle_since = %idle_since,
             evidence = ?evidence,
-            "telling the holder about an idle reservation"
+            "telling the holder about an idle slot"
         );
 
         match self
             .notifier
-            .notify_idle(IdleSlot::new(reservation.clone(), idle_since, evidence))
+            .notify_idle(IdleSlot::new(slot.clone(), idle_since, evidence))
             .await
         {
             Ok(()) => {
                 // 知らせられてから黙る。先に記録すると、送信に失敗したまま二度と知らせなくなる
-                self.notices.silence(reservation.id(), now);
+                self.notices.silence(slot.id(), now);
                 Ok(NoticeOutcome::Sent)
             }
             Err(NotificationError::RecipientUnknown(reason)) => {
                 info!(
-                    slot_id = %reservation.id().as_str(),
-                    holder = %reservation.holder_email().as_str(),
+                    slot_id = %slot.id().as_str(),
+                    holder = %slot.holder_email().as_str(),
                     reason = %reason,
-                    "the holder cannot be reached; leaving the reservation quiet"
+                    "the holder cannot be reached; leaving the slot quiet"
                 );
                 // 宛先を知らないことは、送る手段の不調ではない。次のポーリングで
                 // 確かめ直しても届くようにはならないため、送れたときと同じだけ黙る
-                self.notices.silence(reservation.id(), now);
+                self.notices.silence(slot.id(), now);
                 Ok(NoticeOutcome::Unreachable)
             }
             Err(e) => Err(e.into()),
         }
     }
 
-    /// この予約が今の様子で使われていないと確かめられた最初の時刻（初めてなら今）
+    /// この予約枠が今の様子で使われていないと確かめられた最初の時刻（初めてなら今）
     ///
     /// 次の二つの場合に計り直す。
     ///
-    /// 様子が変わったとき。プロセスが立っていなかった予約で推論サーバーが立ち上がったなら、
+    /// 様子が変わったとき。プロセスが立っていなかった予約枠で推論サーバーが立ち上がったなら、
     /// それは何かが起きた合図であり、それまでの沈黙を引き継いで急かすのは筋が違う。
     ///
     /// 観測が長く途切れたとき。見えていなかった間に使われていたかもしれず、その沈黙を
@@ -365,21 +363,19 @@ where
         }
     }
 
-    /// 使われ始めた予約を忘れる（次に使われなくなったら改めて知らせる）
+    /// 使われ始めた予約枠を忘れる（次に使われなくなったら改めて知らせる）
     fn forget(&self, slot_id: &ReservedSlotId) {
         self.idle_spells.lock().unwrap().remove(slot_id.as_str());
         self.notices.resume(slot_id);
     }
 
-    /// 進行中でなくなった予約についての記録を落とす
+    /// 進行中でなくなった予約枠についての記録を落とす
     ///
-    /// 終わった予約に対して知らせることはもう何もない。記録を持ち続けても
-    /// 増えていくだけで、次に同じ予約が現れることもない。
-    fn forget_reservations_that_ended(&self, in_progress: &[ReservedSlot]) {
-        let still_running: HashSet<&str> = in_progress
-            .iter()
-            .map(|reservation| reservation.id().as_str())
-            .collect();
+    /// 終わった予約枠に対して知らせることはもう何もない。記録を持ち続けても
+    /// 増えていくだけで、次に同じ予約枠が現れることもない。
+    fn forget_slots_that_ended(&self, in_progress: &[ReservedSlot]) {
+        let still_running: HashSet<&str> =
+            in_progress.iter().map(|slot| slot.id().as_str()).collect();
 
         self.idle_spells
             .lock()
@@ -390,11 +386,11 @@ where
     }
 }
 
-/// 予約が押さえているGPUのサーバー名（部屋を含む予約は観測の対象外）
-fn servers_of(reservation: &ReservedSlot) -> Option<HashSet<String>> {
+/// 予約枠が押さえているGPUのサーバー名（部屋を含む予約枠は観測の対象外）
+fn servers_of(slot: &ReservedSlot) -> Option<HashSet<String>> {
     let mut servers = HashSet::new();
 
-    for resource in reservation.resources() {
+    for resource in slot.resources() {
         match resource {
             Resource::Gpu(gpu) => {
                 servers.insert(gpu.server().to_string());
@@ -420,27 +416,28 @@ fn carries_on(
         && now - spell.last_confirmed_at <= gap_tolerance
 }
 
-/// 使われていない予約について、いま予約者へ知らせるべきか
+/// 使われていない予約枠について、いま予約者へ知らせるべきか
 ///
 /// 使われていない時間が閾値に達していても、残り時間が閾値に満たなければ知らせない。
-/// まもなく終わる予約を急かしても、予約者が開けられる時間はほとんど残っていない。
+/// まもなく終わる予約枠を急かしても、予約者が開けられる時間はほとんど残っていない。
 fn is_worth_telling(
-    reservation: &ReservedSlot,
+    slot: &ReservedSlot,
     idle_since: DateTime<Utc>,
     now: DateTime<Utc>,
     threshold: Duration,
 ) -> bool {
-    now - idle_since >= threshold && reservation.time_period().end() - now >= threshold
+    now - idle_since >= threshold && slot.time_period().end() - now >= threshold
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::value_objects::{Gpu, TimePeriod};
+    use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::common::EmailAddress;
+    use crate::domain::common::TimePeriod;
     use crate::domain::services::reservation::GpusAtRest;
 
-    fn reservation_ending_in(remaining: Duration, now: DateTime<Utc>) -> ReservedSlot {
+    fn slot_ending_in(remaining: Duration, now: DateTime<Utc>) -> ReservedSlot {
         ReservedSlot::new(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(now - Duration::hours(1), now + remaining).unwrap(),
@@ -481,10 +478,10 @@ mod tests {
     #[test]
     fn an_idle_stretch_shorter_than_the_threshold_is_not_worth_telling() {
         let now = Utc::now();
-        let reservation = reservation_ending_in(Duration::hours(4), now);
+        let slot = slot_ending_in(Duration::hours(4), now);
 
         assert!(!is_worth_telling(
-            &reservation,
+            &slot,
             now - Duration::minutes(20),
             now,
             Duration::minutes(30)
@@ -494,10 +491,10 @@ mod tests {
     #[test]
     fn an_idle_stretch_past_the_threshold_is_worth_telling() {
         let now = Utc::now();
-        let reservation = reservation_ending_in(Duration::hours(4), now);
+        let slot = slot_ending_in(Duration::hours(4), now);
 
         assert!(is_worth_telling(
-            &reservation,
+            &slot,
             now - Duration::minutes(31),
             now,
             Duration::minutes(30)
@@ -508,26 +505,21 @@ mod tests {
     fn a_reservation_about_to_end_is_not_worth_telling() {
         let now = Utc::now();
         // 1時間使われていないが、残りは10分しかない
-        let reservation = reservation_ending_in(Duration::minutes(10), now);
+        let slot = slot_ending_in(Duration::minutes(10), now);
 
         assert!(
-            !is_worth_telling(
-                &reservation,
-                now - Duration::hours(1),
-                now,
-                Duration::minutes(30)
-            ),
-            "開けられる時間がほとんどない予約を急かさない"
+            !is_worth_telling(&slot, now - Duration::hours(1), now, Duration::minutes(30)),
+            "開けられる時間がほとんどない予約枠を急かさない"
         );
     }
 
     #[test]
     fn a_reservation_with_exactly_the_threshold_left_is_still_worth_telling() {
         let now = Utc::now();
-        let reservation = reservation_ending_in(Duration::minutes(30), now);
+        let slot = slot_ending_in(Duration::minutes(30), now);
 
         assert!(is_worth_telling(
-            &reservation,
+            &slot,
             now - Duration::minutes(30),
             now,
             Duration::minutes(30)
@@ -550,13 +542,13 @@ mod tests {
 
         let (_, absent) = criteria
             .notice_terms(&SlotActivity::Absent)
-            .expect("プロセスのない予約は知らせる対象");
+            .expect("プロセスのない予約枠は知らせる対象");
         let (_, held) = criteria
             .notice_terms(&SlotActivity::HeldWithoutComputing(gpus_at_rest(
                 vec![0],
                 1,
             )))
-            .expect("計算していない予約は知らせる対象");
+            .expect("計算していない予約枠は知らせる対象");
 
         assert!(
             held > absent,

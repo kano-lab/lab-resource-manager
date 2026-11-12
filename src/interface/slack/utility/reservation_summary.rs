@@ -45,8 +45,9 @@ pub fn build(slot: &ReservedSlot, resource_config: &ResourceConfig) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, TimePeriod};
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::EmailAddress;
+    use crate::domain::common::TimePeriod;
     use crate::infrastructure::config::{DeviceConfig, ServerConfig};
     use chrono::{TimeZone, Utc};
 

@@ -8,8 +8,9 @@ use crate::application::usecases::detect_idle_slots::{
 };
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
 use crate::domain::aggregates::reservation::ReservedSlot;
-use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::common::EmailAddress;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::domain::ports::{
     GpuActivity, IdleEvidence, ObservationSnapshot, ObservedUsage, ServerObservation,

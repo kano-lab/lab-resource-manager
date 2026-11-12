@@ -195,7 +195,7 @@ fn build_idle_blocks(slot: &ReservedSlot, text: &str) -> Vec<SlackBlock> {
     ]);
 
     serde_json::from_value(blocks_json).unwrap_or_else(|e| {
-        warn!(error = %e, "building the idle reservation message blocks failed");
+        warn!(error = %e, "building the idle slot message blocks failed");
         vec![]
     })
 }
@@ -203,8 +203,9 @@ fn build_idle_blocks(slot: &ReservedSlot, text: &str) -> Vec<SlackBlock> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, TimePeriod};
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::EmailAddress;
+    use crate::domain::common::TimePeriod;
     use chrono::Duration;
 
     fn sample_slot() -> ReservedSlot {

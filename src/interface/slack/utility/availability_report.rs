@@ -3,8 +3,8 @@
 //! `/free`コマンドと、その応答に置いたボタンの両方から使います。
 //! どちらの入口から来ても同じ見え方になるよう、調べる範囲と表示の組み立てを1箇所に置きます。
 
-use crate::domain::aggregates::reservation::value_objects::TimePeriod;
 use crate::domain::common::EmailAddress;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{IdentityLinkRepository, ReservationRepository};
 use crate::domain::services::reservation::availability::{AvailabilityState, ResourceAvailability};

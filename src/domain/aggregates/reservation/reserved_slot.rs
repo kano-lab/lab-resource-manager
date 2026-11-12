@@ -1,6 +1,7 @@
 use super::errors::ReservationError;
 use super::value_objects::*;
 use crate::domain::common::EmailAddress;
+use crate::domain::common::TimePeriod;
 use chrono::{DateTime, Utc};
 
 /// 予約枠
@@ -100,7 +101,7 @@ impl ReservedSlot {
     }
 
     /// 押さえるリソースを取得
-    pub fn resources(&self) -> &Vec<Resource> {
+    pub fn resources(&self) -> &[Resource] {
         &self.resources
     }
 
@@ -241,12 +242,12 @@ mod tests {
         let start = Utc::now() - Duration::hours(1);
         let mut slot = slot_running_from(start, start + Duration::hours(4));
         let id = slot.id().clone();
-        let resources = slot.resources().clone();
+        let resources = slot.resources().to_vec();
 
         slot.end_early(start + Duration::minutes(30)).unwrap();
 
         assert_eq!(slot.id(), &id, "同じ予約枠であり続ける");
-        assert_eq!(slot.resources(), &resources);
+        assert_eq!(slot.resources(), resources.as_slice());
         assert_eq!(slot.holder_email().as_str(), "holder@example.com");
     }
 }

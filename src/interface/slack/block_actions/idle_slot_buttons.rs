@@ -29,7 +29,7 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     let Some(slot_id_str) = &action.value else {
-        error!("idle reservation button carried no slot id");
+        error!("idle slot button carried no slot id");
         return Ok(());
     };
 
@@ -56,7 +56,7 @@ where
             }
         }
         other => {
-            error!(action_id = %other, "unknown idle reservation action");
+            error!(action_id = %other, "unknown idle slot action");
             return Ok(());
         }
     };
@@ -96,7 +96,7 @@ where
         slot_id = %slot_id.as_str(),
         requested_by = %requested_by.as_str(),
         origin = "slack",
-        "releasing an idle reservation early"
+        "ending an idle slot early"
     );
 
     match app
@@ -114,7 +114,7 @@ where
                 slot_id = %slot_id.as_str(),
                 reason = %failure,
                 origin = "slack",
-                "releasing the idle reservation was refused"
+                "ending the idle slot early was refused"
             );
             reservation_failure::end_early_message(&failure)
         }
@@ -135,7 +135,7 @@ where
         slot_id = %slot_id.as_str(),
         requested_by = %requested_by.as_str(),
         origin = "slack",
-        "cancelling an idle reservation"
+        "cancelling an idle slot"
     );
 
     match app
@@ -150,7 +150,7 @@ where
                 slot_id = %slot_id.as_str(),
                 reason = %failure,
                 origin = "slack",
-                "cancelling the idle reservation was refused"
+                "cancelling the idle slot was refused"
             );
             reservation_failure::cancel_message(&failure)
         }
@@ -180,10 +180,10 @@ async fn reply<R, N>(
 
         match session.chat_update(&settled).await {
             Ok(updated) => {
-                info!(channel = %updated.channel, ts = %updated.ts, "settled the idle reservation dm");
+                info!(channel = %updated.channel, ts = %updated.ts, "settled the idle slot dm");
                 return;
             }
-            Err(e) => warn!(error = %e, "replacing the idle reservation dm failed"),
+            Err(e) => warn!(error = %e, "replacing the idle slot dm failed"),
         }
     }
 

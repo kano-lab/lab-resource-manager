@@ -6,7 +6,8 @@
 //! 日を切り替えたときは、新しいメッセージを積まずに元のメッセージを差し替えます。
 //! 積み上がると、どれがいまの状態なのか読み手が判断できなくなります。
 
-use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::Resource;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::domain::services::reservation::availability::ResourceAvailability;

@@ -1,4 +1,5 @@
-use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource};
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::domain::services::reservation::errors::{ConflictCheckError, ResourceConflictError};
 use std::collections::HashMap;

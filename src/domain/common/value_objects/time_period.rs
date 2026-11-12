@@ -1,7 +1,10 @@
-use super::super::errors::ReservationError;
+use super::errors::TimePeriodError;
 use chrono::{DateTime, Utc};
 
-/// 時間期間を表す値オブジェクト
+/// 期間を表す値オブジェクト
+///
+/// 開始時刻から終了時刻までの、長さを持つひとつながりの時間。予約枠が押さえる時間、
+/// 空きを調べる範囲、実利用を観測した時間など、複数の集約やサービスで共有する。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TimePeriod {
     start: DateTime<Utc>,
@@ -9,17 +12,17 @@ pub struct TimePeriod {
 }
 
 impl TimePeriod {
-    /// 新しい時間期間を作成
+    /// 新しい期間を作成
     ///
     /// # Arguments
     /// * `start` - 開始時刻
     /// * `end` - 終了時刻
     ///
     /// # Errors
-    /// 終了時刻が開始時刻より前の場合、`ReservationError::InvalidTimePeriod`を返す
-    pub fn new(start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Self, ReservationError> {
+    /// 終了時刻が開始時刻より後でない場合、`TimePeriodError::EndNotAfterStart`を返す
+    pub fn new(start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Self, TimePeriodError> {
         if start >= end {
-            return Err(ReservationError::InvalidTimePeriod { start, end });
+            return Err(TimePeriodError::EndNotAfterStart { start, end });
         }
         Ok(Self { start, end })
     }
@@ -34,7 +37,7 @@ impl TimePeriod {
         self.end
     }
 
-    /// 他の時間期間と重複するかを判定
+    /// 他の期間と重複するかを判定
     pub fn overlaps_with(&self, other: &TimePeriod) -> bool {
         self.start < other.end && other.start < self.end
     }

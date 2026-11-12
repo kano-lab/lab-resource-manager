@@ -1,5 +1,6 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::Resource;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::domain::services::reservation::availability::{self, ResourceAvailability};
 use std::sync::Arc;

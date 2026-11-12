@@ -1,7 +1,7 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::ReservedSlot;
-use crate::domain::aggregates::reservation::value_objects::TimePeriod;
 use crate::domain::common::EmailAddress;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::ReservationRepository;
 use std::sync::Arc;
 

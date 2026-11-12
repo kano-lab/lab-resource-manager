@@ -1,6 +1,7 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::{RepositoryError, ReservationRepository};
 use crate::domain::services::{
     AuthorizationPolicy, ReservationAuthorizationPolicy, ResourceConflictChecker,

@@ -607,7 +607,7 @@ sudo journalctl -u lab-resource-manager -o json | jq 'select(.MESSAGE | contains
 
 ```text
 reconcile pass finished
-  observed=6 reservations_in_progress=5 matched_to_a_reservation=5
+  observed=6 slots_in_progress=5 matched_to_a_slot=5
   unreserved_sessions=1 failures=0 elapsed_ms=412
 change detection pass finished
   slots=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380

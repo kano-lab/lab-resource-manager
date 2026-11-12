@@ -77,7 +77,8 @@ fn build_unauthorized_message(reserved_slot: &ReservedSlot) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, TimePeriod};
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
+    use crate::domain::common::TimePeriod;
     use chrono::{TimeZone, Utc};
 
     fn sample_slot() -> ReservedSlot {

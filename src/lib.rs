@@ -126,8 +126,9 @@ pub mod prelude {
         OneTimeReservation, Reservation, ReservationId, ReservedSlot, ReservedSlotId,
         errors::ReservationError,
         factory::{ResourceFactory, ResourceFactoryError},
-        value_objects::{Gpu, Resource, TimePeriod},
+        value_objects::{Gpu, Resource},
     };
+    pub use crate::domain::common::TimePeriod;
 
     // Ports (traits)
     pub use crate::domain::ports::{
