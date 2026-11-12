@@ -32,7 +32,7 @@ src/
 │   ├── aggregates/          # 集約（Reservation, IdentityLink）
 │   ├── common/              # Shared Kernel（EmailAddress等）
 │   ├── ports/               # ポート（Repository, Notifierトレイト）
-│   ├── read_models/         # 読み取りモデル（SlotView: 期間で引く予約枠の写し）
+│   ├── read_models/         # 読み取りモデル（ReservedSlotView: 期間で引く予約枠の写し）
 │   └── errors.rs            # ドメインエラー
 ├── application/             # アプリケーション層（ユースケース）
 │   └── usecases/            # 通知、アクセス許可ユースケース

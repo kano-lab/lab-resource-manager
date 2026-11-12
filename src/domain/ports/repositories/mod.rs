@@ -21,10 +21,10 @@
 //! ### 2. ドメイン駆動のクエリ
 //! ```rust,ignore
 //! // ✅ ドメインの言葉
-//! async fn find_slots_overlapping(&self, time_period: &TimePeriod) -> Result<Vec<SlotView>>;
+//! async fn find_slots_overlapping(&self, time_period: &TimePeriod) -> Result<Vec<ReservedSlotView>>;
 //!
 //! // ❌ 技術の言葉
-//! async fn find_by_sql(&self, query: &str) -> Result<Vec<SlotView>>;
+//! async fn find_by_sql(&self, query: &str) -> Result<Vec<ReservedSlotView>>;
 //! ```
 //!
 //! ### 3. 集約単位で定義

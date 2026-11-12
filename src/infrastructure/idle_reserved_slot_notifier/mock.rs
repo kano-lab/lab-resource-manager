@@ -1,4 +1,6 @@
-use crate::domain::ports::idle_slot_notifier::{IdleSlot, IdleSlotNotifier};
+use crate::domain::ports::idle_reserved_slot_notifier::{
+    IdleReservedSlot, IdleReservedSlotNotifier,
+};
 use crate::domain::ports::notifier::NotificationError;
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
@@ -7,20 +9,20 @@ use std::sync::{Arc, Mutex};
 ///
 /// 送信内容を標準出力に表示しつつ、テストからの検証用に内部へ保持する。
 #[derive(Clone, Default)]
-pub struct MockIdleSlotNotifier {
-    notices: Arc<Mutex<Vec<IdleSlot>>>,
+pub struct MockIdleReservedSlotNotifier {
+    notices: Arc<Mutex<Vec<IdleReservedSlot>>>,
     fails: Arc<Mutex<bool>>,
     recipient_unknown: Arc<Mutex<bool>>,
 }
 
-impl MockIdleSlotNotifier {
+impl MockIdleReservedSlotNotifier {
     /// 新しいモック実装を作成
     pub fn new() -> Self {
         Self::default()
     }
 
     /// これまでに送信された通知の一覧を取得
-    pub fn sent_notices(&self) -> Vec<IdleSlot> {
+    pub fn sent_notices(&self) -> Vec<IdleReservedSlot> {
         self.notices.lock().unwrap().clone()
     }
 
@@ -36,8 +38,8 @@ impl MockIdleSlotNotifier {
 }
 
 #[async_trait]
-impl IdleSlotNotifier for MockIdleSlotNotifier {
-    async fn notify_idle(&self, idle: IdleSlot) -> Result<(), NotificationError> {
+impl IdleReservedSlotNotifier for MockIdleReservedSlotNotifier {
+    async fn notify_idle(&self, idle: IdleReservedSlot) -> Result<(), NotificationError> {
         if *self.fails.lock().unwrap() {
             return Err(NotificationError::SendFailure(
                 "test induced failure".to_string(),
@@ -51,7 +53,7 @@ impl IdleSlotNotifier for MockIdleSlotNotifier {
         }
 
         println!(
-            "📤 [MockIdleSlotNotifier] {} の予約 {} が {} から使われていない（{:?}）",
+            "📤 [MockIdleReservedSlotNotifier] {} の予約 {} が {} から使われていない（{:?}）",
             idle.slot().holder_email().as_str(),
             idle.slot().id().as_str(),
             idle.idle_since(),

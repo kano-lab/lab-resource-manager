@@ -265,7 +265,7 @@ where
 mod tests {
     use super::*;
     use crate::domain::common::TimePeriod;
-    use crate::domain::read_models::SlotView;
+    use crate::domain::read_models::ReservedSlotView;
     use crate::domain::services::reservation::errors::ResourceConflictError;
     use chrono::Utc;
 
@@ -279,7 +279,7 @@ mod tests {
 
     fn conflict_with(holder: &str, device_number: u32) -> ResourceConflictError {
         let now = Utc::now();
-        let existing_slot = SlotView::of_new_one_time_reservation(
+        let existing_slot = ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new(holder.to_string()).unwrap(),
             TimePeriod::new(now, now + Duration::hours(2)).unwrap(),
             vec![gpu(device_number)],

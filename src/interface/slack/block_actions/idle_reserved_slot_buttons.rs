@@ -29,7 +29,7 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     let Some(slot_id_str) = &action.value else {
-        error!("idle slot button carried no slot id");
+        error!("idle reserved slot button carried no reserved slot id");
         return Ok(());
     };
 
@@ -56,7 +56,7 @@ where
             }
         }
         other => {
-            error!(action_id = %other, "unknown idle slot action");
+            error!(action_id = %other, "unknown idle reserved slot action");
             return Ok(());
         }
     };
@@ -75,7 +75,7 @@ where
 {
     app.idle_notices().silence(slot_id, Utc::now());
     info!(
-        slot_id = %slot_id.as_str(),
+        reserved_slot_id = %slot_id.as_str(),
         origin = "slack",
         "the holder intends to keep using the reservation"
     );
@@ -93,15 +93,15 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     info!(
-        slot_id = %slot_id.as_str(),
+        reserved_slot_id = %slot_id.as_str(),
         requested_by = %requested_by.as_str(),
         origin = "slack",
-        "ending an idle slot early"
+        "ending an idle reserved slot early"
     );
 
     match app
         .usecases()
-        .end_slot_early
+        .end_reserved_slot_early
         .execute(slot_id, requested_by)
         .await
     {
@@ -111,10 +111,10 @@ where
         ),
         Err(failure) => {
             warn!(
-                slot_id = %slot_id.as_str(),
+                reserved_slot_id = %slot_id.as_str(),
                 reason = %failure,
                 origin = "slack",
-                "ending the idle slot early was refused"
+                "ending the idle reserved slot early was refused"
             );
             reservation_failure::end_early_message(&failure)
         }
@@ -132,25 +132,25 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     info!(
-        slot_id = %slot_id.as_str(),
+        reserved_slot_id = %slot_id.as_str(),
         requested_by = %requested_by.as_str(),
         origin = "slack",
-        "cancelling an idle slot"
+        "cancelling an idle reserved slot"
     );
 
     match app
         .usecases()
-        .cancel_slot
+        .cancel_reserved_slot
         .execute(slot_id, requested_by)
         .await
     {
         Ok(_) => "✅ 予約を取り消しました。".to_string(),
         Err(failure) => {
             warn!(
-                slot_id = %slot_id.as_str(),
+                reserved_slot_id = %slot_id.as_str(),
                 reason = %failure,
                 origin = "slack",
-                "cancelling the idle slot was refused"
+                "cancelling the idle reserved slot was refused"
             );
             reservation_failure::cancel_message(&failure)
         }
@@ -180,10 +180,10 @@ async fn reply<R, N>(
 
         match session.chat_update(&settled).await {
             Ok(updated) => {
-                info!(channel = %updated.channel, ts = %updated.ts, "settled the idle slot dm");
+                info!(channel = %updated.channel, ts = %updated.ts, "settled the idle reserved slot dm");
                 return;
             }
-            Err(e) => warn!(error = %e, "replacing the idle slot dm failed"),
+            Err(e) => warn!(error = %e, "replacing the idle reserved slot dm failed"),
         }
     }
 

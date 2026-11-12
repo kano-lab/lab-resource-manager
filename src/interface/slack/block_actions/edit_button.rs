@@ -21,7 +21,7 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     let Some(slot_id_str) = &action.value else {
-        error!("cancel button carried no slot id");
+        error!("cancel button carried no reserved slot id");
         return Ok(());
     };
 

@@ -9,7 +9,7 @@ use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::{
     IdentityLinkRepository, RepositoryError, ReservationRepository, ReservedSlotQuery,
 };
-use crate::domain::read_models::SlotView;
+use crate::domain::read_models::ReservedSlotView;
 use crate::infrastructure::config::{ResourceConfig, StorageConfig};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -732,7 +732,7 @@ impl ReservedSlotQuery for GoogleCalendarReservationRepository {
     async fn find_slots_overlapping(
         &self,
         time_period: &TimePeriod,
-    ) -> Result<Vec<SlotView>, RepositoryError> {
+    ) -> Result<Vec<ReservedSlotView>, RepositoryError> {
         Ok(self
             .find_overlapping(time_period)
             .await?
@@ -741,7 +741,7 @@ impl ReservedSlotQuery for GoogleCalendarReservationRepository {
                 reservation
                     .slots_in(time_period)
                     .iter()
-                    .map(|slot| SlotView::of(reservation, slot))
+                    .map(|slot| ReservedSlotView::of(reservation, slot))
                     .collect::<Vec<_>>()
             })
             .collect())
@@ -751,7 +751,7 @@ impl ReservedSlotQuery for GoogleCalendarReservationRepository {
         &self,
         holder_email: &EmailAddress,
         time_period: &TimePeriod,
-    ) -> Result<Vec<SlotView>, RepositoryError> {
+    ) -> Result<Vec<ReservedSlotView>, RepositoryError> {
         Ok(self
             .find_slots_overlapping(time_period)
             .await?

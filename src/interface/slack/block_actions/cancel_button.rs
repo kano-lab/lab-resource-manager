@@ -20,7 +20,7 @@ where
     N: Notifier + Send + Sync + 'static,
 {
     let Some(slot_id_str) = &action.value else {
-        error!("cancel button carried no slot id");
+        error!("cancel button carried no reserved slot id");
         return Ok(());
     };
 
@@ -29,7 +29,7 @@ where
         return Ok(());
     };
 
-    debug!(slot_id = %slot_id_str, "cancel requested");
+    debug!(reserved_slot_id = %slot_id_str, "cancel requested");
 
     // エフェメラルメッセージの宛先として、このユーザーが最後にいたチャンネルを控える
     let channel_id = interaction_reply::channel_id(block_actions);
@@ -41,7 +41,7 @@ where
     }
 
     // 依存性を取得
-    let cancel_slot_usecase = &app.usecases().cancel_slot;
+    let cancel_reserved_slot_usecase = &app.usecases().cancel_reserved_slot;
     let identity_repo = &app.repositories().identity_link;
 
     // ユーザーのメールアドレスを取得
@@ -50,13 +50,13 @@ where
     // 予約を削除
     let slot_id = ReservedSlotId::from_string(slot_id_str.to_string());
     info!(
-        slot_id = %slot_id.as_str(),
+        reserved_slot_id = %slot_id.as_str(),
         holder = %holder_email.as_str(),
         origin = "slack",
         "cancelling a reservation"
     );
 
-    let result = cancel_slot_usecase
+    let result = cancel_reserved_slot_usecase
         .execute(&slot_id, &EmailAddress::new(holder_email.clone())?)
         .await;
 
@@ -64,11 +64,11 @@ where
     if let Some(ch_id) = channel_id {
         let message_text = match &result {
             Ok(_) => {
-                info!(slot_id = %slot_id.as_str(), origin = "slack", "reserved slot cancelled");
+                info!(reserved_slot_id = %slot_id.as_str(), origin = "slack", "reserved slot cancelled");
                 "✅ 予約を取り消しました。".to_string()
             }
             Err(e) => {
-                error!(slot_id = %slot_id.as_str(), origin = "slack", error = %e, "cancelling the reservation failed");
+                error!(reserved_slot_id = %slot_id.as_str(), origin = "slack", error = %e, "cancelling the reservation failed");
                 reservation_failure::cancel_message(e)
             }
         };

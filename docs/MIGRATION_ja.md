@@ -13,14 +13,14 @@ v3.0.0 では、予約を「予約」と「予約枠」の言葉で扱うよう�
 
 | 以前 | v3.0.0 |
 | --- | --- |
-| `list_all_reservations` | `list_slots` |
-| `list_my_reservations` | `list_my_slots` |
-| `get_reservation` | `get_slot`（予約枠の取得） |
-| `update_reservation` | `update_slot` |
-| `release_reservation_early` | `end_slot_early` |
-| `cancel_reservation` | `cancel_slot`（予約枠1つの取り消し） |
+| `list_all_reservations` | `list_reserved_slots` |
+| `list_my_reservations` | `list_my_reserved_slots` |
+| `get_reservation` | `get_reserved_slot`（予約枠の取得） |
+| `update_reservation` | `update_reserved_slot` |
+| `release_reservation_early` | `end_reserved_slot_early` |
+| `cancel_reservation` | `cancel_reserved_slot`（予約枠1つの取り消し） |
 
-`cancel_slot`は、以前の`cancel_reservation`と同じく予約枠を1つ取り消します。
+`cancel_reserved_slot`は、以前の`cancel_reservation`と同じく予約枠を1つ取り消します。
 
 ### 通知テンプレートの設定キー
 
@@ -29,22 +29,22 @@ v3.0.0 では、予約を「予約」と「予約枠」の言葉で扱うよう�
 
 ### ログのフィールド名
 
-ログのフィールド`usage_id`は`slot_id`（予約枠）または`reservation_id`（予約）に、
+ログのフィールド`usage_id`は`reserved_slot_id`（予約枠）または`reservation_id`（予約）に、
 `owner`は`holder`になりました。各ポーリングの要約行は次の形になります。
 
 ```text
 reconcile pass finished
-  observed=6 slots_in_progress=5 matched_to_a_slot=5
+  observed=6 reserved_slots_in_progress=5 matched_to_a_reserved_slot=5
   unreserved_sessions=1 failures=0 elapsed_ms=412
-idle slot pass finished
-  slots_in_progress=5 servers_observed=3 absent=0 held=1 held_partially=0
+idle reserved slot pass finished
+  reserved_slots_in_progress=5 servers_observed=3 absent=0 held=1 held_partially=0
   notified=1 withheld=0 unreachable=0 failures=0 elapsed_ms=95
 change detection pass finished
-  slots=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
+  reservations=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
 ```
 
-以前の`reservations_in_progress`は`slots_in_progress`に、`matched_to_a_reservation`は
-`matched_to_a_slot`に、`idle reservation pass finished`は`idle slot pass finished`になりました。
+以前の`reservations_in_progress`は`reserved_slots_in_progress`に、`matched_to_a_reservation`は
+`matched_to_a_reserved_slot`に、`idle reservation pass finished`は`idle reserved slot pass finished`になりました。
 
 journalctlでこれらのフィールドを絞り込みに使っている場合は書き換えてください。
 

@@ -5,10 +5,11 @@ use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::repositories::ReservedSlotQuery;
 use crate::domain::ports::{
-    IdleEvidence, IdleSlot, IdleSlotNotifier, ObservationSnapshot, ResourceUsageObserver,
+    IdleEvidence, IdleReservedSlot, IdleReservedSlotNotifier, ObservationSnapshot,
+    ResourceUsageObserver,
 };
-use crate::domain::read_models::SlotView;
-use crate::domain::services::reservation::{SlotActivity, judge_slot_activity};
+use crate::domain::read_models::ReservedSlotView;
+use crate::domain::services::reservation::{ReservedSlotActivity, judge_reserved_slot_activity};
 use chrono::{DateTime, Duration, Utc};
 use std::collections::{HashMap, HashSet};
 use std::mem::discriminant;
@@ -55,11 +56,13 @@ impl IdleCriteria {
     /// この見立てを予約者に知らせるとしたら、どの根拠でどれだけ待つか
     ///
     /// 使われている予約枠と、使われているかを問えない予約枠については何も返さない。
-    fn notice_terms(&self, activity: &SlotActivity) -> Option<(IdleEvidence, Duration)> {
+    fn notice_terms(&self, activity: &ReservedSlotActivity) -> Option<(IdleEvidence, Duration)> {
         match activity {
-            SlotActivity::InUse | SlotActivity::Undecidable => None,
-            SlotActivity::Absent => Some((IdleEvidence::NoProcesses, self.absent_threshold)),
-            SlotActivity::HeldWithoutComputing(at_rest) => Some((
+            ReservedSlotActivity::InUse | ReservedSlotActivity::Undecidable => None,
+            ReservedSlotActivity::Absent => {
+                Some((IdleEvidence::NoProcesses, self.absent_threshold))
+            }
+            ReservedSlotActivity::HeldWithoutComputing(at_rest) => Some((
                 IdleEvidence::HeldWithoutComputing {
                     at_rest: at_rest.at_rest().to_vec(),
                     observed_count: at_rest.observed_count(),
@@ -118,11 +121,11 @@ struct IdleSpell {
 ///   利用を観測する手段がない
 /// - 残り時間が閾値に満たない予約枠
 ///   まもなく終わる予約枠を急かしても、予約者に取れる手はほとんどない
-pub struct DetectIdleSlotsUseCase<R, O, N>
+pub struct DetectIdleReservedSlotsUseCase<R, O, N>
 where
     R: ReservedSlotQuery,
     O: ResourceUsageObserver,
-    N: IdleSlotNotifier,
+    N: IdleReservedSlotNotifier,
 {
     repository: Arc<R>,
     observer: Arc<O>,
@@ -133,11 +136,11 @@ where
     idle_spells: Mutex<HashMap<String, IdleSpell>>,
 }
 
-impl<R, O, N> DetectIdleSlotsUseCase<R, O, N>
+impl<R, O, N> DetectIdleReservedSlotsUseCase<R, O, N>
 where
     R: ReservedSlotQuery,
     O: ResourceUsageObserver,
-    N: IdleSlotNotifier,
+    N: IdleReservedSlotNotifier,
 {
     /// 新しいユースケースインスタンスを作成
     ///
@@ -184,7 +187,7 @@ where
         for slot in &slots {
             let activity = self.judge(slot, &snapshot);
 
-            if matches!(activity, SlotActivity::InUse) {
+            if matches!(activity, ReservedSlotActivity::InUse) {
                 self.forget(slot.id());
                 continue;
             }
@@ -209,9 +212,9 @@ where
                 Err(e) => {
                     failures += 1;
                     error!(
-                        slot_id = %slot.id().as_str(),
+                        reserved_slot_id = %slot.id().as_str(),
                         error = %e,
-                        "telling the holder about an idle slot failed"
+                        "telling the holder about an idle reserved slot failed"
                     );
                 }
             }
@@ -220,7 +223,7 @@ where
         self.forget_slots_that_ended(&slots);
 
         info!(
-            slots_in_progress = slots.len(),
+            reserved_slots_in_progress = slots.len(),
             servers_observed = snapshot.observed_server_count(),
             absent,
             held,
@@ -230,7 +233,7 @@ where
             unreachable,
             failures,
             elapsed_ms = (Utc::now() - started_at).num_milliseconds(),
-            "idle slot pass finished"
+            "idle reserved slot pass finished"
         );
 
         Ok(())
@@ -239,16 +242,20 @@ where
     /// 予約枠が使われているかを見立てる
     ///
     /// 観測できていないサーバーを含む予約枠については、見立てそのものを差し控える。
-    fn judge(&self, slot: &SlotView, snapshot: &ObservationSnapshot) -> SlotActivity {
+    fn judge(
+        &self,
+        slot: &ReservedSlotView,
+        snapshot: &ObservationSnapshot,
+    ) -> ReservedSlotActivity {
         let Some(servers) = servers_of(slot) else {
-            return SlotActivity::Undecidable;
+            return ReservedSlotActivity::Undecidable;
         };
 
         if !servers.iter().all(|server| snapshot.covers(server)) {
-            return SlotActivity::Undecidable;
+            return ReservedSlotActivity::Undecidable;
         }
 
-        judge_slot_activity(
+        judge_reserved_slot_activity(
             slot.resources(),
             snapshot,
             self.criteria.computing_utilization_percent,
@@ -258,7 +265,7 @@ where
     /// 使われていない時間が閾値に達していれば予約者へ知らせる
     async fn notify_if_due(
         &self,
-        slot: &SlotView,
+        slot: &ReservedSlotView,
         evidence: IdleEvidence,
         threshold: Duration,
         now: DateTime<Utc>,
@@ -275,10 +282,10 @@ where
 
         if self.criteria.policy_for(&evidence) == NoticePolicy::Observe {
             info!(
-                slot_id = %slot.id().as_str(),
+                reserved_slot_id = %slot.id().as_str(),
                 idle_since = %idle_since,
                 evidence = ?evidence,
-                "an idle slot would have been reported; only watching for now"
+                "an idle reserved slot would have been reported; only watching for now"
             );
             // 様子を見ている間も黙る期間は置く。毎分同じことを数え直しても分かることは増えない
             self.notices.silence(slot.id(), now);
@@ -286,16 +293,16 @@ where
         }
 
         info!(
-            slot_id = %slot.id().as_str(),
+            reserved_slot_id = %slot.id().as_str(),
             holder = %slot.holder_email().as_str(),
             idle_since = %idle_since,
             evidence = ?evidence,
-            "telling the holder about an idle slot"
+            "telling the holder about an idle reserved slot"
         );
 
         match self
             .notifier
-            .notify_idle(IdleSlot::new(slot.clone(), idle_since, evidence))
+            .notify_idle(IdleReservedSlot::new(slot.clone(), idle_since, evidence))
             .await
         {
             Ok(()) => {
@@ -305,7 +312,7 @@ where
             }
             Err(NotificationError::RecipientUnknown(reason)) => {
                 info!(
-                    slot_id = %slot.id().as_str(),
+                    reserved_slot_id = %slot.id().as_str(),
                     holder = %slot.holder_email().as_str(),
                     reason = %reason,
                     "the holder cannot be reached; leaving the slot quiet"
@@ -373,7 +380,7 @@ where
     ///
     /// 終わった予約枠に対して知らせることはもう何もない。記録を持ち続けても
     /// 増えていくだけで、次に同じ予約枠が現れることもない。
-    fn forget_slots_that_ended(&self, in_progress: &[SlotView]) {
+    fn forget_slots_that_ended(&self, in_progress: &[ReservedSlotView]) {
         let still_running: HashSet<&str> =
             in_progress.iter().map(|slot| slot.id().as_str()).collect();
 
@@ -387,7 +394,7 @@ where
 }
 
 /// 予約枠が押さえているGPUのサーバー名（部屋を含む予約枠は観測の対象外）
-fn servers_of(slot: &SlotView) -> Option<HashSet<String>> {
+fn servers_of(slot: &ReservedSlotView) -> Option<HashSet<String>> {
     let mut servers = HashSet::new();
 
     for resource in slot.resources() {
@@ -421,7 +428,7 @@ fn carries_on(
 /// 使われていない時間が閾値に達していても、残り時間が閾値に満たなければ知らせない。
 /// まもなく終わる予約枠を急かしても、予約者が開けられる時間はほとんど残っていない。
 fn is_worth_telling(
-    slot: &SlotView,
+    slot: &ReservedSlotView,
     idle_since: DateTime<Utc>,
     now: DateTime<Utc>,
     threshold: Duration,
@@ -437,8 +444,8 @@ mod tests {
     use crate::domain::common::TimePeriod;
     use crate::domain::services::reservation::GpusAtRest;
 
-    fn slot_ending_in(remaining: Duration, now: DateTime<Utc>) -> SlotView {
-        SlotView::of_new_one_time_reservation(
+    fn slot_ending_in(remaining: Duration, now: DateTime<Utc>) -> ReservedSlotView {
+        ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(now - Duration::hours(1), now + remaining).unwrap(),
             vec![Resource::Gpu(Gpu::new(
@@ -528,10 +535,14 @@ mod tests {
 
     #[test]
     fn a_reservation_being_used_is_not_something_to_tell_its_holder_about() {
-        assert!(criteria().notice_terms(&SlotActivity::InUse).is_none());
         assert!(
             criteria()
-                .notice_terms(&SlotActivity::Undecidable)
+                .notice_terms(&ReservedSlotActivity::InUse)
+                .is_none()
+        );
+        assert!(
+            criteria()
+                .notice_terms(&ReservedSlotActivity::Undecidable)
                 .is_none()
         );
     }
@@ -541,10 +552,10 @@ mod tests {
         let criteria = criteria();
 
         let (_, absent) = criteria
-            .notice_terms(&SlotActivity::Absent)
+            .notice_terms(&ReservedSlotActivity::Absent)
             .expect("プロセスのない予約枠は知らせる対象");
         let (_, held) = criteria
-            .notice_terms(&SlotActivity::HeldWithoutComputing(gpus_at_rest(
+            .notice_terms(&ReservedSlotActivity::HeldWithoutComputing(gpus_at_rest(
                 vec![0],
                 1,
             )))
@@ -558,10 +569,9 @@ mod tests {
 
     #[test]
     fn the_evidence_carries_what_was_seen() {
-        let terms = criteria().notice_terms(&SlotActivity::HeldWithoutComputing(gpus_at_rest(
-            vec![0],
-            1,
-        )));
+        let terms = criteria().notice_terms(&ReservedSlotActivity::HeldWithoutComputing(
+            gpus_at_rest(vec![0], 1),
+        ));
 
         assert_eq!(
             terms.map(|(evidence, _)| evidence),
@@ -578,13 +588,13 @@ mod tests {
     #[test]
     fn a_reservation_with_only_some_of_its_gpus_at_rest_is_told_apart() {
         let (partial, _) = criteria()
-            .notice_terms(&SlotActivity::HeldWithoutComputing(gpus_at_rest(
+            .notice_terms(&ReservedSlotActivity::HeldWithoutComputing(gpus_at_rest(
                 vec![3],
                 2,
             )))
             .expect("休んでいるGPUがあるなら知らせる対象");
         let (every, _) = criteria()
-            .notice_terms(&SlotActivity::HeldWithoutComputing(gpus_at_rest(
+            .notice_terms(&ReservedSlotActivity::HeldWithoutComputing(gpus_at_rest(
                 vec![0, 1],
                 2,
             )))

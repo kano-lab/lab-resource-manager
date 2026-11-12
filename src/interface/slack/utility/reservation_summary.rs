@@ -4,7 +4,7 @@
 //! 同じ予約の話をしていることが読み手に伝わりにくくなる。対象リソースに設定された
 //! 通知設定（タイムゾーン・フォーマットスタイル）を流用して見え方を揃える。
 
-use crate::domain::read_models::SlotView;
+use crate::domain::read_models::ReservedSlotView;
 use crate::infrastructure::config::ResourceConfig;
 use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
 
@@ -12,7 +12,7 @@ use crate::infrastructure::notifier::formatter::{format_resources_styled, format
 ///
 /// 複数リソースをまとめた予約では先頭のリソースの通知設定を使う。
 /// 1件の予約が複数の設定にまたがることは通常なく、見え方を1つに決める必要があるため。
-pub fn build(slot: &SlotView, resource_config: &ResourceConfig) -> String {
+pub fn build(slot: &ReservedSlotView, resource_config: &ResourceConfig) -> String {
     let notification = slot
         .resources()
         .first()
@@ -65,10 +65,10 @@ mod tests {
         }
     }
 
-    fn slot() -> SlotView {
+    fn slot() -> ReservedSlotView {
         let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
-        SlotView::of_new_one_time_reservation(
+        ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start, end).unwrap(),
             vec![Resource::Gpu(Gpu::new(

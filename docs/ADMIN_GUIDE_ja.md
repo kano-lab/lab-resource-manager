@@ -496,13 +496,13 @@ CA証明書を信頼させること自体は受動的な設定で、誰にも新
 | --- | --- |
 | `list_resources` | 予約できるリソース（GPUサーバーとデバイス、部屋）を一覧表示 |
 | `check_availability` | 指定期間における各リソースの空きを調べる（最長60日、サーバー・部屋で絞り込み可） |
-| `list_slots` | 今後60日に重なる（進行中を含む）すべての予約枠を一覧表示 |
-| `list_my_slots` | 今後60日に重なる自分の予約枠を一覧表示 |
-| `get_slot` | 予約枠IDを指定して予約枠の詳細を取得 |
+| `list_reserved_slots` | 今後60日に重なる（進行中を含む）すべての予約枠を一覧表示 |
+| `list_my_reserved_slots` | 今後60日に重なる自分の予約枠を一覧表示 |
+| `get_reserved_slot` | 予約枠IDを指定して予約枠の詳細を取得 |
 | `create_reservation` | 単発予約を作る（GPUサーバーまたは部屋） |
-| `update_slot` | 自分の予約枠の時間・備考を変更 |
-| `end_slot_early` | 進行中の自分の予約枠を今の時点で終了し、残り時間を解放 |
-| `cancel_slot` | 自分の予約枠を1つ取り消す |
+| `update_reserved_slot` | 自分の予約枠の時間・備考を変更 |
+| `end_reserved_slot_early` | 進行中の自分の予約枠を今の時点で終了し、残り時間を解放 |
+| `cancel_reserved_slot` | 自分の予約枠を1つ取り消す |
 
 書き込み系ツールは、呼び出し元のBearerトークンに紐づくメールアドレスを予約者として扱います。
 他人の予約の変更・取り消しは、`/reserve`と同じ認可ルール（予約者本人のみ）により拒否されます。
@@ -605,10 +605,10 @@ sudo journalctl -u lab-resource-manager -o json | jq 'select(.MESSAGE | contains
 
 ```text
 reconcile pass finished
-  observed=6 slots_in_progress=5 matched_to_a_slot=5
+  observed=6 reserved_slots_in_progress=5 matched_to_a_reserved_slot=5
   unreserved_sessions=1 failures=0 elapsed_ms=412
 change detection pass finished
-  slots=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
+  reservations=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
 ```
 
 件数が跳ねたり`elapsed_ms`が伸びていれば、目に見える形で壊れる前に問題を捉えられます。

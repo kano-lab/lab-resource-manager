@@ -1,10 +1,12 @@
 //! Slack DM経由の未使用予約の通知実装
 
 use crate::domain::aggregates::reservation::value_objects::Gpu;
-use crate::domain::ports::idle_slot_notifier::{IdleEvidence, IdleSlot, IdleSlotNotifier};
+use crate::domain::ports::idle_reserved_slot_notifier::{
+    IdleEvidence, IdleReservedSlot, IdleReservedSlotNotifier,
+};
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::repositories::IdentityLinkRepository;
-use crate::domain::read_models::SlotView;
+use crate::domain::read_models::ReservedSlotView;
 use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
 use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
 use crate::infrastructure::slack_direct_message::SlackDirectMessenger;
@@ -19,11 +21,11 @@ use crate::interface::slack::constants::{
 };
 
 /// Slack DM経由で未使用の予約を予約者へ知らせる実装
-pub struct SlackIdleSlotNotifier {
+pub struct SlackIdleReservedSlotNotifier {
     messenger: SlackDirectMessenger,
 }
 
-impl SlackIdleSlotNotifier {
+impl SlackIdleReservedSlotNotifier {
     /// 新しい実装を作成
     pub fn new(
         slack_client: Arc<SlackHyperClient>,
@@ -37,8 +39,8 @@ impl SlackIdleSlotNotifier {
 }
 
 #[async_trait]
-impl IdleSlotNotifier for SlackIdleSlotNotifier {
-    async fn notify_idle(&self, idle: IdleSlot) -> Result<(), NotificationError> {
+impl IdleReservedSlotNotifier for SlackIdleReservedSlotNotifier {
+    async fn notify_idle(&self, idle: IdleReservedSlot) -> Result<(), NotificationError> {
         let reservation = idle.slot();
         let text = build_idle_message(reservation, idle.idle_since(), idle.evidence());
         let blocks = build_idle_blocks(reservation, &text);
@@ -51,7 +53,7 @@ impl IdleSlotNotifier for SlackIdleSlotNotifier {
         tracing::info!(
             channel = %sent.channel,
             ts = %sent.ts,
-            slot_id = %reservation.id().as_str(),
+            reserved_slot_id = %reservation.id().as_str(),
             recipient = %reservation.holder_email().as_str(),
             idle_since = %idle.idle_since(),
             evidence = ?idle.evidence(),
@@ -64,7 +66,7 @@ impl IdleSlotNotifier for SlackIdleSlotNotifier {
 
 /// 未使用の予約を知らせるDMの本文を構築する（純粋関数、ユニットテスト対象）
 fn build_idle_message(
-    reservation: &SlotView,
+    reservation: &ReservedSlotView,
     idle_since: DateTime<Utc>,
     evidence: &IdleEvidence,
 ) -> String {
@@ -147,7 +149,7 @@ fn format_memory(used_memory_mib: u64) -> String {
 }
 
 /// 未使用の予約を知らせるDMのBlock Kitメッセージを構築する（純粋関数、ユニットテスト対象）
-fn build_idle_blocks(slot: &SlotView, text: &str) -> Vec<SlackBlock> {
+fn build_idle_blocks(slot: &ReservedSlotView, text: &str) -> Vec<SlackBlock> {
     let slot_id = slot.id().as_str();
 
     let blocks_json = serde_json::json!([
@@ -195,7 +197,7 @@ fn build_idle_blocks(slot: &SlotView, text: &str) -> Vec<SlackBlock> {
     ]);
 
     serde_json::from_value(blocks_json).unwrap_or_else(|e| {
-        warn!(error = %e, "building the idle slot message blocks failed");
+        warn!(error = %e, "building the idle reserved slot message blocks failed");
         vec![]
     })
 }
@@ -208,9 +210,9 @@ mod tests {
     use crate::domain::common::TimePeriod;
     use chrono::Duration;
 
-    fn sample_slot() -> SlotView {
+    fn sample_slot() -> ReservedSlotView {
         let start = Utc::now() - Duration::hours(2);
-        SlotView::of_new_one_time_reservation(
+        ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start, start + Duration::hours(6)).unwrap(),
             vec![Resource::Gpu(Gpu::new(

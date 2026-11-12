@@ -1,6 +1,6 @@
 use crate::domain::aggregates::reservation::value_objects::Gpu;
 use crate::domain::ports::notifier::NotificationError;
-use crate::domain::read_models::SlotView;
+use crate::domain::read_models::ReservedSlotView;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 
@@ -47,20 +47,20 @@ impl IdleEvidence {
 /// 予約は場所取りではなく使う約束である。使わないまま抱えられていると、
 /// 他の利用者は実際には空いている時間を待つことになる。
 #[derive(Debug, Clone)]
-pub struct IdleSlot {
-    slot: SlotView,
+pub struct IdleReservedSlot {
+    slot: ReservedSlotView,
     idle_since: DateTime<Utc>,
     evidence: IdleEvidence,
 }
 
-impl IdleSlot {
+impl IdleReservedSlot {
     /// 新しい検知結果を作成
     ///
     /// # Arguments
     /// * `slot` - 対象の予約枠
     /// * `idle_since` - 使われていないと分かっている最も早い時刻
     /// * `evidence` - そう判断した根拠
-    pub fn new(slot: SlotView, idle_since: DateTime<Utc>, evidence: IdleEvidence) -> Self {
+    pub fn new(slot: ReservedSlotView, idle_since: DateTime<Utc>, evidence: IdleEvidence) -> Self {
         Self {
             slot,
             idle_since,
@@ -69,7 +69,7 @@ impl IdleSlot {
     }
 
     /// 対象の予約枠を取得
-    pub fn slot(&self) -> &SlotView {
+    pub fn slot(&self) -> &ReservedSlotView {
         &self.slot
     }
 
@@ -99,7 +99,7 @@ impl IdleSlot {
 /// 知らせたあとどうするか（解放するか、そのまま使うか）は本人が決めることであり、
 /// このポートは知らせることにのみ責務を持つ。
 #[async_trait]
-pub trait IdleSlotNotifier: Send + Sync {
+pub trait IdleReservedSlotNotifier: Send + Sync {
     /// 使われていない予約枠について予約者へ知らせる
-    async fn notify_idle(&self, idle: IdleSlot) -> Result<(), NotificationError>;
+    async fn notify_idle(&self, idle: IdleReservedSlot) -> Result<(), NotificationError>;
 }

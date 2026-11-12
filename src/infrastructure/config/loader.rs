@@ -5,7 +5,7 @@
 
 use super::app_config::AppConfig;
 use super::defaults;
-use crate::application::usecases::detect_idle_slots::NoticePolicy;
+use crate::application::usecases::detect_idle_reserved_slots::NoticePolicy;
 use chrono::Duration;
 use std::env;
 use std::net::SocketAddr;

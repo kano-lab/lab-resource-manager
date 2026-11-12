@@ -16,7 +16,7 @@ use google_calendar3::{
 
 /// Google Calendar API を使用したリソースコレクションアクセスサービス
 ///
-/// GoogleカレンダーをSlotViewのコレクションとして利用し、
+/// GoogleカレンダーをReservedSlotViewのコレクションとして利用し、
 /// ACL（Access Control List）を通じてユーザーのアクセス権限を管理する。
 pub struct GoogleCalendarAccessService {
     hub: CalendarHub<HttpsConnector<HttpConnector>>,

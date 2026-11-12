@@ -10,13 +10,13 @@ use std::sync::Arc;
 use tracing::info;
 
 /// 予約枠を更新するユースケース
-pub struct UpdateSlotUseCase<R: ReservationRepository + ReservedSlotQuery> {
+pub struct UpdateReservedSlotUseCase<R: ReservationRepository + ReservedSlotQuery> {
     repository: Arc<R>,
     conflict_checker: ResourceConflictChecker,
 }
 
-impl<R: ReservationRepository + ReservedSlotQuery> UpdateSlotUseCase<R> {
-    /// 新しいUpdateSlotUseCaseインスタンスを作成
+impl<R: ReservationRepository + ReservedSlotQuery> UpdateReservedSlotUseCase<R> {
+    /// 新しいUpdateReservedSlotUseCaseインスタンスを作成
     ///
     /// # Arguments
     /// * `repository` - 予約を読み書きし、他の予約枠との競合を確かめるリポジトリ
@@ -88,7 +88,7 @@ impl<R: ReservationRepository + ReservedSlotQuery> UpdateSlotUseCase<R> {
             .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?;
 
         info!(
-            slot_id = %id.as_str(),
+            reserved_slot_id = %id.as_str(),
             holder = %reservation.holder_email().as_str(),
             start = %slot.time_period().start(),
             end = %slot.time_period().end(),
@@ -103,7 +103,7 @@ impl<R: ReservationRepository + ReservedSlotQuery> UpdateSlotUseCase<R> {
 mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
-    use crate::domain::read_models::SlotView;
+    use crate::domain::read_models::ReservedSlotView;
     use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
     use chrono::{DateTime, Duration, Utc};
 
@@ -111,8 +111,8 @@ mod tests {
         EmailAddress::new(address.to_string()).unwrap()
     }
 
-    fn slot_of(holder: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> SlotView {
-        SlotView::of_new_one_time_reservation(
+    fn slot_of(holder: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> ReservedSlotView {
+        ReservedSlotView::of_new_one_time_reservation(
             email(holder),
             TimePeriod::new(start, end).unwrap(),
             vec![Resource::Gpu(Gpu::new(
@@ -134,7 +134,7 @@ mod tests {
         let later =
             TimePeriod::new(start + Duration::hours(2), start + Duration::hours(4)).unwrap();
 
-        UpdateSlotUseCase::new(repository.clone())
+        UpdateReservedSlotUseCase::new(repository.clone())
             .execute(
                 slot.id(),
                 &email("holder@example.com"),
@@ -163,7 +163,7 @@ mod tests {
         repository.put_slot(&theirs);
         let onto_theirs = theirs.time_period().clone();
 
-        let error = UpdateSlotUseCase::new(repository.clone())
+        let error = UpdateReservedSlotUseCase::new(repository.clone())
             .execute(
                 mine.id(),
                 &email("intruder@example.com"),
@@ -194,7 +194,7 @@ mod tests {
         repository.put_slot(&mine);
         repository.put_slot(&theirs);
 
-        let error = UpdateSlotUseCase::new(repository.clone())
+        let error = UpdateReservedSlotUseCase::new(repository.clone())
             .execute(
                 mine.id(),
                 &email("holder@example.com"),

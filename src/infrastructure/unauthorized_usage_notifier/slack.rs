@@ -4,7 +4,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::ports::repositories::IdentityLinkRepository;
 use crate::domain::ports::unauthorized_usage_notifier::UnauthorizedUsageNotifier;
-use crate::domain::read_models::SlotView;
+use crate::domain::read_models::ReservedSlotView;
 use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
 use crate::infrastructure::notifier::formatter::{format_resources_styled, format_time_styled};
 use crate::infrastructure::slack_direct_message::SlackDirectMessenger;
@@ -34,7 +34,7 @@ impl SlackUnauthorizedUsageNotifier {
 impl UnauthorizedUsageNotifier for SlackUnauthorizedUsageNotifier {
     async fn notify(
         &self,
-        reserved_slot: &SlotView,
+        reserved_slot: &ReservedSlotView,
         actual_user_email: &EmailAddress,
     ) -> Result<(), NotificationError> {
         let text = build_unauthorized_message(reserved_slot);
@@ -47,7 +47,7 @@ impl UnauthorizedUsageNotifier for SlackUnauthorizedUsageNotifier {
         tracing::info!(
             channel = %sent.channel,
             ts = %sent.ts,
-            slot_id = %reserved_slot.id().as_str(),
+            reserved_slot_id = %reserved_slot.id().as_str(),
             recipient = %actual_user_email.as_str(),
             "sent an unauthorized-slot dm"
         );
@@ -57,7 +57,7 @@ impl UnauthorizedUsageNotifier for SlackUnauthorizedUsageNotifier {
 }
 
 /// 無断使用検知のDMメッセージを構築する（純粋関数、ユニットテスト対象）
-fn build_unauthorized_message(reserved_slot: &SlotView) -> String {
+fn build_unauthorized_message(reserved_slot: &ReservedSlotView) -> String {
     let resources = format_resources_styled(reserved_slot.resources(), ResourceStyle::Full);
     let time = format_time_styled(
         reserved_slot.time_period(),
@@ -81,11 +81,11 @@ mod tests {
     use crate::domain::common::TimePeriod;
     use chrono::{TimeZone, Utc};
 
-    fn sample_slot() -> SlotView {
+    fn sample_slot() -> ReservedSlotView {
         let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
         let period = TimePeriod::new(start, end).unwrap();
-        SlotView::of_new_one_time_reservation(
+        ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new("owner@example.com".to_string()).unwrap(),
             period,
             vec![Resource::Gpu(Gpu::new(

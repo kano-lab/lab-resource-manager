@@ -8,16 +8,17 @@ use chrono::Duration as ChronoDuration;
 use lab_resource_manager::{
     application::idle_notice_log::IdleNoticeLog,
     application::usecases::{
-        AcceptReservationProposalUseCase, CancelSlotUseCase, CheckResourceAvailabilityUseCase,
-        CreateReservationUseCase, DetectIdleSlotsUseCase, EndSlotEarlyUseCase, GetSlotUseCase,
-        GrantUserResourceAccessUseCase, IdleCriteria, ListSlotsHeldByUseCase, ListSlotsUseCase,
-        NotifyReservationChangesUseCase, ReconcileObservedUsagesUseCase, UpdateSlotUseCase,
+        AcceptReservationProposalUseCase, CancelReservedSlotUseCase,
+        CheckResourceAvailabilityUseCase, CreateReservationUseCase, DetectIdleReservedSlotsUseCase,
+        EndReservedSlotEarlyUseCase, GetReservedSlotUseCase, GrantUserResourceAccessUseCase,
+        IdleCriteria, ListReservedSlotsHeldByUseCase, ListReservedSlotsUseCase,
+        NotifyReservationChangesUseCase, ReconcileObservedUsagesUseCase, UpdateReservedSlotUseCase,
         describe_monitoring::{DescribeMonitoringUseCase, MonitoringSettings},
     },
     domain::ports::ResourceUsageObserver,
     infrastructure::{
         config::{load_config, load_from_env},
-        idle_slot_notifier::SlackIdleSlotNotifier,
+        idle_reserved_slot_notifier::SlackIdleReservedSlotNotifier,
         notifier::NotificationRouter,
         repositories::{
             identity_link::JsonFileIdentityLinkRepository, mcp_token::JsonFileMcpTokenRepository,
@@ -134,9 +135,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let accept_proposal_usecase = Arc::new(AcceptReservationProposalUseCase::new(
         reservation_repo.clone(),
     ));
-    let update_slot_usecase = Arc::new(UpdateSlotUseCase::new(reservation_repo.clone()));
-    let cancel_slot_usecase = Arc::new(CancelSlotUseCase::new(reservation_repo.clone()));
-    let end_slot_early_usecase = Arc::new(EndSlotEarlyUseCase::new(reservation_repo.clone()));
+    let update_reserved_slot_usecase =
+        Arc::new(UpdateReservedSlotUseCase::new(reservation_repo.clone()));
+    let cancel_reserved_slot_usecase =
+        Arc::new(CancelReservedSlotUseCase::new(reservation_repo.clone()));
+    let end_reserved_slot_early_usecase =
+        Arc::new(EndReservedSlotEarlyUseCase::new(reservation_repo.clone()));
     let check_availability_usecase = Arc::new(CheckResourceAvailabilityUseCase::new(
         reservation_repo.clone(),
     ));
@@ -212,12 +216,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_config.reservation_proposal_duration_candidates.clone(),
         ));
 
-        let idle_notifier = SlackIdleSlotNotifier::new(
+        let idle_notifier = SlackIdleReservedSlotNotifier::new(
             slack_client.clone(),
             SlackApiToken::new(app_config.slack_bot_token.clone().into()),
             identity_repo.clone(),
         );
-        let detect_idle_usecase = Arc::new(DetectIdleSlotsUseCase::new(
+        let detect_idle_usecase = Arc::new(DetectIdleReservedSlotsUseCase::new(
             reservation_repo.clone(),
             observer,
             idle_notifier,
@@ -263,12 +267,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mcp_server = LrmMcpServer::new(
             McpUseCases {
                 create_reservation: create_reservation_usecase.clone(),
-                list_slots: Arc::new(ListSlotsUseCase::new(reservation_repo.clone())),
-                list_slots_held_by: Arc::new(ListSlotsHeldByUseCase::new(reservation_repo.clone())),
-                get_slot: Arc::new(GetSlotUseCase::new(reservation_repo.clone())),
-                update_slot: update_slot_usecase.clone(),
-                end_slot_early: end_slot_early_usecase.clone(),
-                cancel_slot: cancel_slot_usecase.clone(),
+                list_reserved_slots: Arc::new(ListReservedSlotsUseCase::new(
+                    reservation_repo.clone(),
+                )),
+                list_slots_held_by: Arc::new(ListReservedSlotsHeldByUseCase::new(
+                    reservation_repo.clone(),
+                )),
+                get_reserved_slot: Arc::new(GetReservedSlotUseCase::new(reservation_repo.clone())),
+                update_reserved_slot: update_reserved_slot_usecase.clone(),
+                end_reserved_slot_early: end_reserved_slot_early_usecase.clone(),
+                cancel_reserved_slot: cancel_reserved_slot_usecase.clone(),
                 check_resource_availability: check_availability_usecase.clone(),
             },
             resource_config.clone(),
@@ -308,9 +316,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             grant_access: grant_access_usecase,
             create_reservation: create_reservation_usecase,
             accept_reservation_proposal: accept_proposal_usecase,
-            update_slot: update_slot_usecase,
-            cancel_slot: cancel_slot_usecase,
-            end_slot_early: end_slot_early_usecase,
+            update_reserved_slot: update_reserved_slot_usecase,
+            cancel_reserved_slot: cancel_reserved_slot_usecase,
+            end_reserved_slot_early: end_reserved_slot_early_usecase,
             check_resource_availability: check_availability_usecase,
             notify_reservation_changes: notify_usecase,
             describe_monitoring: describe_monitoring_usecase,

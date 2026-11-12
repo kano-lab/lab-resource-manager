@@ -3,7 +3,7 @@
 //! このモジュールは設定値の型定義のみを担当し、
 //! デフォルト値や読み込み方法は別モジュールで定義される。
 
-use crate::application::usecases::detect_idle_slots::NoticePolicy;
+use crate::application::usecases::detect_idle_reserved_slots::NoticePolicy;
 use chrono::Duration;
 use std::net::SocketAddr;
 use std::path::PathBuf;

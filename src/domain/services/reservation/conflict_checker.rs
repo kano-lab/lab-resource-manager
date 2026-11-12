@@ -104,13 +104,13 @@ mod tests {
     use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::common::EmailAddress;
     use crate::domain::ports::repositories::RepositoryError;
-    use crate::domain::read_models::SlotView;
+    use crate::domain::read_models::ReservedSlotView;
     use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
 
     /// `find_slots_overlapping`の戻り値だけを固定できるテスト用リポジトリ
     struct StubRepository {
-        overlapping: Vec<SlotView>,
+        overlapping: Vec<ReservedSlotView>,
     }
 
     #[async_trait]
@@ -118,7 +118,7 @@ mod tests {
         async fn find_slots_overlapping(
             &self,
             _time_period: &TimePeriod,
-        ) -> Result<Vec<SlotView>, RepositoryError> {
+        ) -> Result<Vec<ReservedSlotView>, RepositoryError> {
             Ok(self.overlapping.clone())
         }
 
@@ -126,7 +126,7 @@ mod tests {
             &self,
             _holder_email: &EmailAddress,
             _time_period: &TimePeriod,
-        ) -> Result<Vec<SlotView>, RepositoryError> {
+        ) -> Result<Vec<ReservedSlotView>, RepositoryError> {
             unimplemented!("このテストでは使用しない")
         }
     }
@@ -137,8 +137,8 @@ mod tests {
         TimePeriod::new(start, end).unwrap()
     }
 
-    fn slot_with(holder: &str, resources: Vec<Resource>) -> SlotView {
-        SlotView::of_new_one_time_reservation(
+    fn slot_with(holder: &str, resources: Vec<Resource>) -> ReservedSlotView {
+        ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new(holder.to_string()).unwrap(),
             test_period(),
             resources,

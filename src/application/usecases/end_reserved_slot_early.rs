@@ -2,7 +2,7 @@ use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{RepositoryError, ReservationRepository};
-use crate::domain::read_models::SlotView;
+use crate::domain::read_models::ReservedSlotView;
 use chrono::Utc;
 use std::sync::Arc;
 use tracing::info;
@@ -13,13 +13,13 @@ use tracing::info;
 /// 使った分を記録として残したまま残り時間だけを他の利用者へ開くための操作である。
 ///
 /// 締める時刻は常に現在時刻とする。任意の終了時刻を指定したい場合は
-/// `UpdateSlotUseCase`が担う。
-pub struct EndSlotEarlyUseCase<R: ReservationRepository> {
+/// `UpdateReservedSlotUseCase`が担う。
+pub struct EndReservedSlotEarlyUseCase<R: ReservationRepository> {
     repository: Arc<R>,
 }
 
-impl<R: ReservationRepository> EndSlotEarlyUseCase<R> {
-    /// 新しいEndSlotEarlyUseCaseインスタンスを作成
+impl<R: ReservationRepository> EndReservedSlotEarlyUseCase<R> {
+    /// 新しいEndReservedSlotEarlyUseCaseインスタンスを作成
     ///
     /// # Arguments
     /// * `repository` - 予約リポジトリ
@@ -46,7 +46,7 @@ impl<R: ReservationRepository> EndSlotEarlyUseCase<R> {
         &self,
         id: &ReservedSlotId,
         requested_by: &EmailAddress,
-    ) -> Result<SlotView, ApplicationError> {
+    ) -> Result<ReservedSlotView, ApplicationError> {
         let mut reservation = self
             .repository
             .find(id.reservation_id())
@@ -57,7 +57,7 @@ impl<R: ReservationRepository> EndSlotEarlyUseCase<R> {
         reservation.end_slot_early(id.key(), Utc::now(), requested_by)?;
 
         self.repository.save(&mut reservation).await?;
-        let slot = SlotView::of(
+        let slot = ReservedSlotView::of(
             &reservation,
             &reservation
                 .slot(id.key())
@@ -65,7 +65,7 @@ impl<R: ReservationRepository> EndSlotEarlyUseCase<R> {
         );
 
         info!(
-            slot_id = %slot.id().as_str(),
+            reserved_slot_id = %slot.id().as_str(),
             holder = %slot.holder_email().as_str(),
             requested_by = %requested_by.as_str(),
             start = %slot.time_period().start(),
@@ -89,8 +89,8 @@ mod tests {
         EmailAddress::new(address.to_string()).unwrap()
     }
 
-    fn slot_of(holder: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> SlotView {
-        SlotView::of_new_one_time_reservation(
+    fn slot_of(holder: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> ReservedSlotView {
+        ReservedSlotView::of_new_one_time_reservation(
             email(holder),
             TimePeriod::new(start, end).unwrap(),
             vec![Resource::Gpu(Gpu::new(
@@ -103,7 +103,7 @@ mod tests {
         .unwrap()
     }
 
-    async fn repository_with(slot: &SlotView) -> Arc<MockReservationRepository> {
+    async fn repository_with(slot: &ReservedSlotView) -> Arc<MockReservationRepository> {
         let repository = Arc::new(MockReservationRepository::new());
         repository.put_slot(slot);
         repository
@@ -114,7 +114,7 @@ mod tests {
         let start = Utc::now() - Duration::hours(1);
         let slot = slot_of("holder@example.com", start, start + Duration::hours(4));
         let repository = repository_with(&slot).await;
-        let usecase = EndSlotEarlyUseCase::new(repository.clone());
+        let usecase = EndReservedSlotEarlyUseCase::new(repository.clone());
 
         let released = usecase
             .execute(slot.id(), &email("holder@example.com"))
@@ -137,7 +137,7 @@ mod tests {
         let start = Utc::now() - Duration::hours(1);
         let slot = slot_of("holder@example.com", start, start + Duration::hours(4));
         let repository = repository_with(&slot).await;
-        let usecase = EndSlotEarlyUseCase::new(repository.clone());
+        let usecase = EndReservedSlotEarlyUseCase::new(repository.clone());
 
         let error = usecase
             .execute(slot.id(), &email("someone@example.com"))
@@ -162,7 +162,7 @@ mod tests {
         let start = Utc::now() + Duration::hours(1);
         let slot = slot_of("holder@example.com", start, start + Duration::hours(2));
         let repository = repository_with(&slot).await;
-        let usecase = EndSlotEarlyUseCase::new(repository.clone());
+        let usecase = EndReservedSlotEarlyUseCase::new(repository.clone());
 
         let error = usecase
             .execute(slot.id(), &email("holder@example.com"))
@@ -179,7 +179,7 @@ mod tests {
     #[tokio::test]
     async fn a_missing_slot_is_reported_as_not_found() {
         let repository = Arc::new(MockReservationRepository::new());
-        let usecase = EndSlotEarlyUseCase::new(repository);
+        let usecase = EndReservedSlotEarlyUseCase::new(repository);
 
         let error = usecase
             .execute(

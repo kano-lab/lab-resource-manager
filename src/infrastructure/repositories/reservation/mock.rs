@@ -2,7 +2,7 @@ use crate::domain::{
     aggregates::reservation::{Reservation, ReservationId, ReservationStatus, Schedule, Version},
     common::{EmailAddress, TimePeriod},
     ports::repositories::{RepositoryError, ReservationRepository, ReservedSlotQuery},
-    read_models::SlotView,
+    read_models::ReservedSlotView,
 };
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -53,7 +53,7 @@ impl MockReservationRepository {
     }
 
     /// 予約枠の写しから単発予約を組み立て、保存先に既にあるものとして置く
-    pub fn put_slot(&self, slot: &SlotView) {
+    pub fn put_slot(&self, slot: &ReservedSlotView) {
         let reservation = Reservation::reconstruct(
             slot.reservation_id().clone(),
             slot.holder_email().clone(),
@@ -78,18 +78,18 @@ impl MockReservationRepository {
     pub async fn find_slot(
         &self,
         id: &crate::domain::aggregates::reservation::ReservedSlotId,
-    ) -> Result<Option<SlotView>, RepositoryError> {
+    ) -> Result<Option<ReservedSlotView>, RepositoryError> {
         Ok(self
             .find(id.reservation_id())
             .await?
             .and_then(|reservation| {
                 reservation
                     .slot(id.key())
-                    .map(|slot| SlotView::of(&reservation, &slot))
+                    .map(|slot| ReservedSlotView::of(&reservation, &slot))
             }))
     }
 
-    fn views(&self, time_period: &TimePeriod) -> Vec<SlotView> {
+    fn views(&self, time_period: &TimePeriod) -> Vec<ReservedSlotView> {
         self.state
             .lock()
             .unwrap()
@@ -99,7 +99,7 @@ impl MockReservationRepository {
                 reservation
                     .slots_in(time_period)
                     .into_iter()
-                    .map(|slot| SlotView::of(reservation, &slot))
+                    .map(|slot| ReservedSlotView::of(reservation, &slot))
                     .collect::<Vec<_>>()
             })
             .collect()
@@ -173,7 +173,7 @@ impl ReservedSlotQuery for MockReservationRepository {
     async fn find_slots_overlapping(
         &self,
         time_period: &TimePeriod,
-    ) -> Result<Vec<SlotView>, RepositoryError> {
+    ) -> Result<Vec<ReservedSlotView>, RepositoryError> {
         Ok(self.views(time_period))
     }
 
@@ -181,7 +181,7 @@ impl ReservedSlotQuery for MockReservationRepository {
         &self,
         holder_email: &EmailAddress,
         time_period: &TimePeriod,
-    ) -> Result<Vec<SlotView>, RepositoryError> {
+    ) -> Result<Vec<ReservedSlotView>, RepositoryError> {
         Ok(self
             .views(time_period)
             .into_iter()

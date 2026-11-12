@@ -146,7 +146,7 @@ mod tests {
     use crate::domain::common::EmailAddress;
     use crate::domain::common::TimePeriod;
     use crate::domain::ports::repositories::RepositoryError;
-    use crate::domain::read_models::SlotView;
+    use crate::domain::read_models::ReservedSlotView;
     use crate::infrastructure::config::{DeviceConfig, ServerConfig};
     use async_trait::async_trait;
     use chrono::{Duration, Utc};
@@ -200,9 +200,9 @@ mod tests {
         }
     }
 
-    fn reservation(holder: &str, resources: Vec<Resource>) -> SlotView {
+    fn reservation(holder: &str, resources: Vec<Resource>) -> ReservedSlotView {
         let now = Utc::now();
-        SlotView::of_new_one_time_reservation(
+        ReservedSlotView::of_new_one_time_reservation(
             EmailAddress::new(holder.to_string()).unwrap(),
             TimePeriod::new(now, now + Duration::hours(2)).unwrap(),
             resources,

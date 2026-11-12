@@ -44,7 +44,7 @@
 /// 事後予約提案の受諾
 pub mod accept_reservation_proposal;
 /// 予約枠を取り消すユースケース
-pub mod cancel_slot;
+pub mod cancel_reserved_slot;
 /// 指定期間における各リソースの空きを調べるユースケース
 pub mod check_resource_availability;
 /// 単発予約を作るユースケース
@@ -52,19 +52,19 @@ pub mod create_reservation;
 /// 実利用の監視の稼働状況を答えるユースケース
 pub mod describe_monitoring;
 /// 使われていない予約枠を検知して知らせるユースケース
-pub mod detect_idle_slots;
+pub mod detect_idle_reserved_slots;
 #[cfg(test)]
-mod detect_idle_slots_tests;
+mod detect_idle_reserved_slots_tests;
 /// 進行中の予約枠を今の時点で締めるユースケース
-pub mod end_slot_early;
+pub mod end_reserved_slot_early;
 /// IDで予約枠を取得するユースケース
-pub mod get_slot;
+pub mod get_reserved_slot;
 /// ユーザーにリソースアクセス権を付与するユースケース
 pub mod grant_user_resource_access;
 /// 指定期間の予約枠を一覧するユースケース
-pub mod list_slots;
+pub mod list_reserved_slots;
 /// 予約者の予約枠を一覧するユースケース
-pub mod list_slots_held_by;
+pub mod list_reserved_slots_held_by;
 /// 予約の変化を監視して通知するユースケース
 pub mod notify_reservation_changes;
 /// 実サーバーの利用状況と予約枠を突き合わせるユースケース
@@ -74,19 +74,19 @@ mod reconcile_observed_usages_tests;
 #[cfg(test)]
 pub mod test_support;
 /// 予約枠の期間・備考を更新するユースケース
-pub mod update_slot;
+pub mod update_reserved_slot;
 
 pub use accept_reservation_proposal::AcceptReservationProposalUseCase;
-pub use cancel_slot::CancelSlotUseCase;
+pub use cancel_reserved_slot::CancelReservedSlotUseCase;
 pub use check_resource_availability::CheckResourceAvailabilityUseCase;
 pub use create_reservation::CreateReservationUseCase;
 pub use describe_monitoring::DescribeMonitoringUseCase;
-pub use detect_idle_slots::{DetectIdleSlotsUseCase, IdleCriteria};
-pub use end_slot_early::EndSlotEarlyUseCase;
-pub use get_slot::GetSlotUseCase;
+pub use detect_idle_reserved_slots::{DetectIdleReservedSlotsUseCase, IdleCriteria};
+pub use end_reserved_slot_early::EndReservedSlotEarlyUseCase;
+pub use get_reserved_slot::GetReservedSlotUseCase;
 pub use grant_user_resource_access::GrantUserResourceAccessUseCase;
-pub use list_slots::ListSlotsUseCase;
-pub use list_slots_held_by::ListSlotsHeldByUseCase;
+pub use list_reserved_slots::ListReservedSlotsUseCase;
+pub use list_reserved_slots_held_by::ListReservedSlotsHeldByUseCase;
 pub use notify_reservation_changes::NotifyReservationChangesUseCase;
 pub use reconcile_observed_usages::ReconcileObservedUsagesUseCase;
-pub use update_slot::UpdateSlotUseCase;
+pub use update_reserved_slot::UpdateReservedSlotUseCase;

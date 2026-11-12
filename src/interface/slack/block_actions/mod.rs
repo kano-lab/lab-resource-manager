@@ -22,5 +22,5 @@ pub mod cancel_button;
 pub mod edit_button;
 pub mod end_early_button;
 pub mod free_buttons;
-pub mod idle_slot_buttons;
+pub mod idle_reserved_slot_buttons;
 pub mod modal_state_change;
