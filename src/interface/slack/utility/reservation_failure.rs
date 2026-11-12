@@ -5,8 +5,8 @@
 //! 内部のエラー文字列をそのまま見せず、次に何をすればよいかが分かる言葉にする。
 
 use crate::application::error::ApplicationError;
+use crate::domain::aggregates::reservation::ReservationEvent;
 use crate::domain::aggregates::reservation::errors::ReservationError;
-use crate::domain::aggregates::reservation::{ReservationKind, ReservedSlot};
 use crate::domain::ports::repositories::RepositoryError;
 
 /// 予約枠を今の時点で終了できなかった理由
@@ -30,15 +30,16 @@ pub fn end_early_message(failure: &ApplicationError) -> String {
 
 /// 予約枠を取り消したことを伝える文面
 ///
-/// 定期予約の予約枠を取り消しても、定期予約と他の予約枠は残る。
-/// 何が無くなり何が残ったのかを取り違えないよう、言い分ける。
-pub fn cancelled_message(slot: &ReservedSlot) -> String {
-    match slot.reservation_kind() {
-        ReservationKind::OneTime => "✅ 予約を取り消しました。".to_string(),
-        ReservationKind::Recurring => {
+/// 単発予約の予約枠を取り消すと予約ごと無くなるが、定期予約の予約枠を取り消しても、
+/// 定期予約と他の予約枠は残る。何が無くなり何が残ったのかを取り違えないよう、
+/// 取り消しで起きた出来事に合わせて言い分ける。
+pub fn cancelled_message(event: &ReservationEvent) -> String {
+    match event {
+        ReservationEvent::SlotCancelled(_) => {
             "✅ この予約枠を取り消しました。定期予約の他の予約枠はそのまま残っています。"
                 .to_string()
         }
+        _ => "✅ 予約を取り消しました。".to_string(),
     }
 }
 
@@ -57,14 +58,15 @@ pub fn cancel_message(failure: &ApplicationError) -> String {
 mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::{
-        ReservationId,
-        value_objects::{Gpu, Resource, TimePeriod},
+        ReservationId, ReservedSlot,
+        value_objects::{Gpu, Resource},
     };
     use crate::domain::common::EmailAddress;
+    use crate::domain::common::TimePeriod;
     use chrono::{Duration, Utc};
 
     fn slot() -> ReservedSlot {
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(Utc::now(), Utc::now() + Duration::hours(1)).unwrap(),
             vec![Resource::Gpu(Gpu::new(
@@ -79,14 +81,18 @@ mod tests {
 
     #[test]
     fn cancelling_a_slot_of_a_recurring_reservation_says_the_rest_remains() {
+        let holder = EmailAddress::new("holder@example.com".to_string()).unwrap();
         let recurring =
             slot().of_recurring_reservation(ReservationId::from_string("weekly".to_string()));
 
         assert!(
-            cancelled_message(&recurring).contains("残っています"),
+            cancelled_message(&recurring.cancel(&holder).unwrap()).contains("残っています"),
             "定期予約ごと消えたと受け取られてはいけない"
         );
-        assert_eq!(cancelled_message(&slot()), "✅ 予約を取り消しました。");
+        assert_eq!(
+            cancelled_message(&slot().cancel(&holder).unwrap()),
+            "✅ 予約を取り消しました。"
+        );
     }
 
     #[test]

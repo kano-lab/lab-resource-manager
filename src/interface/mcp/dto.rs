@@ -2,10 +2,12 @@
 //!
 //! ドメインエンティティはserde非依存のため、JSON出力専用のDTOをここに定義する。
 
-use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::aggregates::reservation::{
     RecurrenceEnd, RecurrenceFrequency, RecurrenceRule, Reservation, ReservationKind, ReservedSlot,
+    Schedule,
 };
+use crate::domain::common::TimePeriod;
 use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::infrastructure::config::ResourceConfig;
 use chrono::{DateTime, Utc, Weekday};
@@ -141,23 +143,30 @@ pub enum ReservationDto {
 
 impl From<&Reservation> for ReservationDto {
     fn from(reservation: &Reservation) -> Self {
-        let resources = |resources: &[Resource]| resources.iter().map(|r| r.to_string()).collect();
-        match reservation {
-            Reservation::OneTime(one_time) => Self::OneTime {
-                id: one_time.id().as_str().to_string(),
-                holder_email: one_time.holder_email().as_str().to_string(),
-                start: one_time.time_period().start(),
-                end: one_time.time_period().end(),
-                resources: resources(one_time.resources()),
-                notes: one_time.notes().cloned(),
+        let id = reservation.id().as_str().to_string();
+        let holder_email = reservation.holder_email().as_str().to_string();
+        let resources = reservation
+            .resources()
+            .iter()
+            .map(|r| r.to_string())
+            .collect();
+        let notes = reservation.notes().cloned();
+        match reservation.schedule() {
+            Schedule::OneTime(time_period) => Self::OneTime {
+                id,
+                holder_email,
+                start: time_period.start(),
+                end: time_period.end(),
+                resources,
+                notes,
             },
-            Reservation::Recurring(recurring) => Self::Recurring {
-                id: recurring.id().as_str().to_string(),
-                holder_email: recurring.holder_email().as_str().to_string(),
-                resources: resources(recurring.resources()),
-                notes: recurring.notes().cloned(),
-                first_slot: PeriodDto::from(recurring.first_slot_period()),
-                recurrence: recurring.rule().map(RecurrenceDto::from),
+            Schedule::Recurring { first_slot, rule } => Self::Recurring {
+                id,
+                holder_email,
+                resources,
+                notes,
+                first_slot: PeriodDto::from(first_slot),
+                recurrence: rule.as_ref().map(RecurrenceDto::from),
             },
         }
     }
@@ -496,7 +505,7 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2026, 11, 12, 0, 0, 0).unwrap();
         let window = TimePeriod::new(start, start + Duration::hours(6)).unwrap();
         let gpu = Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
-        let slot = ReservedSlot::new(
+        let slot = ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start + Duration::hours(1), start + Duration::hours(2)).unwrap(),
             vec![gpu.clone()],

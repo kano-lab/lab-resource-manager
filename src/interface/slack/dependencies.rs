@@ -16,14 +16,14 @@ use crate::application::usecases::{
 };
 use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{
-    IdentityLinkRepository, McpTokenRepository, ReservationRepository,
+    IdentityLinkRepository, McpTokenRepository, ReservationRepository, ReservedSlotRepository,
 };
 use std::sync::Arc;
 
 /// Slackボットが呼び出すユースケース
 pub struct SlackUseCases<R, N>
 where
-    R: ReservationRepository,
+    R: ReservationRepository + ReservedSlotRepository,
     N: Notifier,
 {
     /// リソースへのアクセス権を付与する

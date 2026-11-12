@@ -1,10 +1,11 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::{
-    ReservedSlot,
-    value_objects::{ReservedSlotId, Resource, TimePeriod},
+    Reservation, ReservedSlot,
+    value_objects::{ReservedSlotId, Resource},
 };
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::common::TimePeriod;
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
 use crate::domain::services::ResourceConflictChecker;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::{HashMap, HashSet};
@@ -21,7 +22,7 @@ type SessionKey = (String, DateTime<Utc>, Vec<String>);
 /// 提案の受諾は「予約を新しく作る」ではなく「この観測セッションの予約を、この長さにする」
 /// という意味を持つ。利用者は提案メッセージの時間候補ボタンを押し直せるため、
 /// 同じ観測セッションに対する受諾が複数回起きても予約は1件に保たれる必要がある。
-pub struct AcceptReservationProposalUseCase<R: ReservationRepository> {
+pub struct AcceptReservationProposalUseCase<R: ReservationRepository + ReservedSlotRepository> {
     repository: Arc<R>,
     conflict_checker: ResourceConflictChecker,
     /// この機会について確定した予約のID
@@ -31,7 +32,7 @@ pub struct AcceptReservationProposalUseCase<R: ReservationRepository> {
     settled_sessions: tokio::sync::Mutex<HashMap<SessionKey, ReservedSlotId>>,
 }
 
-impl<R: ReservationRepository> AcceptReservationProposalUseCase<R> {
+impl<R: ReservationRepository + ReservedSlotRepository> AcceptReservationProposalUseCase<R> {
     /// 新しいユースケースインスタンスを作成
     pub fn new(repository: Arc<R>) -> Self {
         Self {
@@ -96,26 +97,27 @@ impl<R: ReservationRepository> AcceptReservationProposalUseCase<R> {
             )
             .await?;
 
-        let slot = match existing {
-            Some(existing) => ReservedSlot::reconstruct(
-                existing.id().clone(),
-                holder_email,
-                time_period,
-                resources,
-                existing.notes().cloned(),
-            )?,
-            None => ReservedSlot::new(
-                holder_email,
-                time_period,
-                resources,
-                Some(POST_HOC_RESERVATION_NOTES.to_string()),
-            )?,
+        let slot_id = match existing {
+            // 同じ機会への受諾の押し直しは、確定済みの予約枠の時間を変える
+            Some(mut slot) => {
+                slot.reschedule(time_period, &holder_email)?;
+                self.repository.save_slot(&slot).await?;
+                slot.id().clone()
+            }
+            None => {
+                let reservation = Reservation::one_time(
+                    holder_email,
+                    time_period,
+                    resources,
+                    Some(POST_HOC_RESERVATION_NOTES.to_string()),
+                )?;
+                self.repository.add_reservation(&reservation).await?;
+                ReservedSlotId::from_string(reservation.id().as_str().to_string())
+            }
         };
+        settled_sessions.insert(session_key, slot_id.clone());
 
-        self.repository.save_slot(&slot).await?;
-        settled_sessions.insert(session_key, slot.id().clone());
-
-        Ok(slot.id().clone())
+        Ok(slot_id)
     }
 
     /// ひとつの機会を表すキーを作る
@@ -192,14 +194,14 @@ mod tests {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> ReservedSlotId {
-        let slot = ReservedSlot::new(
+        let slot = ReservedSlot::of_new_one_time_reservation(
             email(holder),
             TimePeriod::new(start, end).unwrap(),
             resources,
             Some(POST_HOC_RESERVATION_NOTES.to_string()),
         )
         .unwrap();
-        repository.save_slot(&slot).await.unwrap();
+        repository.put_slot(&slot);
         slot.id().clone()
     }
 
@@ -431,7 +433,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl ReservationRepository for EventuallyConsistentRepository {
+    impl ReservedSlotRepository for EventuallyConsistentRepository {
         async fn find_slot(
             &self,
             id: &ReservedSlotId,
@@ -472,27 +474,37 @@ mod tests {
 
         async fn save_slot(&self, slot: &ReservedSlot) -> Result<(), RepositoryError> {
             let mut pending = self.pending.lock().unwrap();
-            if let Some(existing) = pending.iter_mut().find(|p| p.id() == slot.id()) {
-                *existing = slot.clone();
-            } else {
-                pending.push(slot.clone());
-            }
+            let existing = pending
+                .iter_mut()
+                .find(|p| p.id() == slot.id())
+                .ok_or(RepositoryError::NotFound)?;
+            *existing = slot.clone();
             Ok(())
         }
 
-        async fn delete_slot(&self, _id: &ReservedSlotId) -> Result<(), RepositoryError> {
+        async fn remove_slot(&self, _id: &ReservedSlotId) -> Result<(), RepositoryError> {
             unimplemented!("このテストでは使用しない")
+        }
+    }
+
+    #[async_trait]
+    impl ReservationRepository for EventuallyConsistentRepository {
+        async fn add_reservation(&self, reservation: &Reservation) -> Result<(), RepositoryError> {
+            self.pending
+                .lock()
+                .unwrap()
+                .push(reservation.one_time_slot().unwrap());
+            Ok(())
         }
 
         async fn find_reservation(
             &self,
             _id: &crate::domain::aggregates::reservation::ReservationId,
-        ) -> Result<Option<crate::domain::aggregates::reservation::Reservation>, RepositoryError>
-        {
-            Ok(None)
+        ) -> Result<Option<Reservation>, RepositoryError> {
+            unimplemented!("このテストでは使用しない")
         }
 
-        async fn delete_reservation(
+        async fn remove_reservation(
             &self,
             _id: &crate::domain::aggregates::reservation::ReservationId,
         ) -> Result<(), RepositoryError> {

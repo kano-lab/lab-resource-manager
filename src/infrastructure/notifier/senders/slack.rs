@@ -6,9 +6,9 @@ use slack_morphism::prelude::*;
 use tracing::error;
 
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
-use crate::domain::aggregates::reservation::Reservation;
+use crate::domain::aggregates::reservation::{ReservationEvent, ReservationKind};
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::notifier::{NotificationError, NotificationEvent};
+use crate::domain::ports::notifier::NotificationError;
 use crate::infrastructure::notifier::senders::sender::{NotificationContext, Sender};
 use crate::infrastructure::notifier::template_renderer::{TemplateRenderer, render_event};
 use crate::interface::slack::constants::{
@@ -107,19 +107,22 @@ impl SlackSender {
     /// メッセージブロックを構築（イベントに応じてボタンを追加）
     fn build_message_blocks(message: &str, context: &NotificationContext) -> Vec<SlackBlock> {
         // ボタンは予約枠に対する操作（更新・今で終了・取り消し）なので、対象の予約枠が
-        // ちょうど1つに決まり、まだ残っている場合にだけ付ける。単発予約は予約枠を1つだけ
-        // 持つので、予約のIDがそのまま予約枠のIDになる。定期予約全体を指す通知からは
-        // 対象の予約枠を決められないため付けない
+        // ちょうど1つに決まり、まだ手を入れられる場合にだけ付ける。今で終了した予約枠や
+        // 取り消された予約には付けない。単発予約は予約枠を1つだけ持つので、予約のIDが
+        // そのまま予約枠のIDになる。定期予約全体を指す通知からは対象の予約枠を決められない
         let actionable_slot_id = match context.event {
-            NotificationEvent::ReservationCreated(Reservation::OneTime(reservation))
-            | NotificationEvent::ReservationUpdated(Reservation::OneTime(reservation)) => {
+            ReservationEvent::Reserved(reservation) | ReservationEvent::Changed(reservation)
+                if reservation.kind() == ReservationKind::OneTime =>
+            {
                 Some(reservation.id().as_str())
             }
-            NotificationEvent::SlotUpdated(slot) => Some(slot.id().as_str()),
-            NotificationEvent::ReservationCreated(Reservation::Recurring(_))
-            | NotificationEvent::ReservationUpdated(Reservation::Recurring(_))
-            | NotificationEvent::ReservationCancelled(_)
-            | NotificationEvent::SlotCancelled(_) => None,
+            ReservationEvent::SlotChanged(slot) => Some(slot.id().as_str()),
+            ReservationEvent::Reserved(_)
+            | ReservationEvent::Changed(_)
+            | ReservationEvent::EndedEarly(_)
+            | ReservationEvent::Cancelled(_)
+            | ReservationEvent::SlotEndedEarly(_)
+            | ReservationEvent::SlotCancelled(_) => None,
         };
 
         let blocks_json = if let Some(slot_id) = actionable_slot_id {

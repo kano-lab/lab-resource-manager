@@ -1,72 +1,17 @@
 // NOTE: これ以上肥大化するようであればnotifierディレクトリを作成してその中に適宜分割する
 use crate::domain::{
-    aggregates::reservation::{Reservation, ReservedSlot, value_objects::Resource},
-    common::EmailAddress,
-    errors::DomainError,
-    ports::PortError,
+    aggregates::reservation::ReservationEvent, errors::DomainError, ports::PortError,
 };
 use async_trait::async_trait;
 use std::fmt;
 
-/// 通知イベントの種類
+/// 予約に起きた出来事を予約チャンネルへ知らせるポート
 ///
-/// 予約は作る・取り消すの単位であり、通知も予約を単位とする。定期予約を1件作れば、
-/// 予約枠がいくつあっても1件として伝える。定期予約の予約枠が1つだけ変わったときに限り、
-/// その予約枠を単位として伝える。
-#[derive(Debug, Clone)]
-pub enum NotificationEvent {
-    /// 予約が作られた
-    ReservationCreated(Reservation),
-    /// 予約が変更された
-    ///
-    /// 単発予約では、その予約枠の変更や今で終了を含む。定期予約では、時間帯や
-    /// 繰り返しの規則の変更、途中からの打ち切りなど、複数の予約枠に及ぶ変更を指す。
-    ReservationUpdated(Reservation),
-    /// 予約が取り消された
-    ReservationCancelled(Reservation),
-    /// 定期予約の予約枠が1つだけ変更された（今で終了を含む）
-    SlotUpdated(ReservedSlot),
-    /// 定期予約の予約枠が1つだけ取り消された
-    SlotCancelled(ReservedSlot),
-}
-
-impl NotificationEvent {
-    /// イベントの対象の予約者
-    pub fn holder_email(&self) -> &EmailAddress {
-        match self {
-            Self::ReservationCreated(reservation)
-            | Self::ReservationUpdated(reservation)
-            | Self::ReservationCancelled(reservation) => reservation.holder_email(),
-            Self::SlotUpdated(slot) | Self::SlotCancelled(slot) => slot.holder_email(),
-        }
-    }
-
-    /// イベントの対象が押さえるリソース
-    pub fn resources(&self) -> &[Resource] {
-        match self {
-            Self::ReservationCreated(reservation)
-            | Self::ReservationUpdated(reservation)
-            | Self::ReservationCancelled(reservation) => reservation.resources(),
-            Self::SlotUpdated(slot) | Self::SlotCancelled(slot) => slot.resources(),
-        }
-    }
-
-    /// イベントの対象（予約または予約枠）のID
-    pub fn subject_id(&self) -> &str {
-        match self {
-            Self::ReservationCreated(reservation)
-            | Self::ReservationUpdated(reservation)
-            | Self::ReservationCancelled(reservation) => reservation.id().as_str(),
-            Self::SlotUpdated(slot) | Self::SlotCancelled(slot) => slot.id().as_str(),
-        }
-    }
-}
-
-/// 通知サービスのポート
+/// 何をどの言葉で知らせるか（テンプレート、宛先、ボタン）は実装が決める。
 #[async_trait]
 pub trait Notifier: Send + Sync {
-    /// イベントを通知する
-    async fn notify(&self, event: NotificationEvent) -> Result<(), NotificationError>;
+    /// 出来事を知らせる
+    async fn notify(&self, event: ReservationEvent) -> Result<(), NotificationError>;
 }
 
 /// 通知エラー

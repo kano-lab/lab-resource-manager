@@ -33,12 +33,21 @@ v3.0.0 では、予約を「予約（単発予約・定期予約）」と「予�
 ### ログのフィールド名
 
 ログのフィールド`usage_id`は`slot_id`（予約枠）または`reservation_id`（予約）に、
-`owner`は`holder`になりました。変更検知の要約行は次の形になります。
+`owner`は`holder`になりました。各ポーリングの要約行は次の形になります。
 
 ```text
+reconcile pass finished
+  observed=6 slots_in_progress=5 matched_to_a_slot=5
+  unreserved_sessions=1 failures=0 elapsed_ms=412
+idle slot pass finished
+  slots_in_progress=5 servers_observed=3 absent=0 held=1 held_partially=0
+  notified=1 withheld=0 unreachable=0 failures=0 elapsed_ms=95
 change detection pass finished
   slots=23 appeared=0 disappeared=0 notifications=0 elapsed_ms=380
 ```
+
+以前の`reservations_in_progress`は`slots_in_progress`に、`matched_to_a_reservation`は
+`matched_to_a_slot`に、`idle reservation pass finished`は`idle slot pass finished`になりました。
 
 journalctlでこれらのフィールドを絞り込みに使っている場合は書き換えてください。
 

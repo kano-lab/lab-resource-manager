@@ -4,7 +4,7 @@ use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
 use crate::domain::services::reservation::errors::ResourceConflictError;
 use crate::infrastructure::reservation_proposal::ProposalAcceptPayload;
 use crate::interface::slack::app::SlackApp;
@@ -20,7 +20,7 @@ pub async fn handle<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let Some(value) = &action.value else {
@@ -158,7 +158,7 @@ fn log_failure(failure: &AcceptFailure) {
 /// `/reserve`と同じ整形を通し、相手が本人であれば予約しなくてよいことを伝える。
 async fn build_failure_message<R, N>(app: &SlackApp<R, N>, failure: &AcceptFailure) -> String
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let AcceptFailure::Rejected {
@@ -191,7 +191,7 @@ async fn create_reservation_from_payload<R, N>(
     value: &str,
 ) -> Result<(), AcceptFailure>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let payload: ProposalAcceptPayload = serde_json::from_str(value)?;
@@ -233,7 +233,7 @@ fn resolve_gpu_resources<R, N>(
     device_numbers: &[u32],
 ) -> Result<Vec<Resource>, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let server = app
@@ -265,7 +265,7 @@ where
 mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::ReservedSlot;
-    use crate::domain::aggregates::reservation::value_objects::TimePeriod;
+    use crate::domain::common::TimePeriod;
     use crate::domain::services::reservation::errors::ResourceConflictError;
     use chrono::Utc;
 
@@ -279,7 +279,7 @@ mod tests {
 
     fn conflict_with(holder: &str, device_number: u32) -> ResourceConflictError {
         let now = Utc::now();
-        let existing_slot = ReservedSlot::new(
+        let existing_slot = ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new(holder.to_string()).unwrap(),
             TimePeriod::new(now, now + Duration::hours(2)).unwrap(),
             vec![gpu(device_number)],

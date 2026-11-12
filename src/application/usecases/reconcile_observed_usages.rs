@@ -1,9 +1,10 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::identity_link::value_objects::ExternalIdentity;
 use crate::domain::aggregates::reservation::ReservedSlot;
-use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::{IdentityLinkRepository, ReservationRepository};
+use crate::domain::common::TimePeriod;
+use crate::domain::ports::repositories::{IdentityLinkRepository, ReservedSlotRepository};
 use crate::domain::ports::{
     ObservedUsage, ReservationProposal, ReservationProposalNotifier, ResourceUsageObserver,
     UnauthorizedUsageNotifier,
@@ -22,18 +23,18 @@ const SESSION_GROUPING_WINDOW: Duration = Duration::minutes(5);
 /// 提案済みの機会を表すキー（利用者・正規化したリソース名・開始時刻）
 type ProposedSessionKey = (ExternalIdentity, Vec<String>, DateTime<Utc>);
 
-/// 無断使用を知らせた機会を表すキー（利用者・予約ID・その機会の開始時刻）
+/// 無断使用を知らせた機会を表すキー（利用者・予約枠ID・その機会の開始時刻）
 ///
-/// 予約単位で数えるため、同じ予約が複数のリソースを押さえていても1回で済む。
+/// 予約枠単位で数えるため、同じ予約枠が複数のリソースを押さえていても1回で済む。
 type NotifiedUnauthorizedKey = (ExternalIdentity, String, DateTime<Utc>);
 
-/// 実サーバーの利用状況と予約を突き合わせ、未予約利用の提案・無断使用の通知を行うユースケース
+/// 実サーバーの利用状況と予約枠を突き合わせ、未予約利用の提案・無断使用の通知を行うユースケース
 ///
 /// # 検知ロジック
-/// - 予約と一致する利用者による利用: 何もしない（正常）
-/// - 予約と異なる利用者による利用（無断使用）: `UnauthorizedUsageNotifier`で本人に直接通知する
+/// - 予約者本人による利用: 何もしない（正常）
+/// - 予約者と異なる利用者による利用（無断使用）: `UnauthorizedUsageNotifier`で本人に直接通知する
 /// - 利用者の身元が不明（IdentityLink未登録）: 無断使用かどうか原理的に判定できないためスキップする
-/// - 予約が存在しない利用: `unreserved_threshold`以上継続していれば、
+/// - 進行中の予約枠が無いリソースの利用: `unreserved_threshold`以上継続していれば、
 ///   `ReservationProposalNotifier`経由で利用者本人に事後予約を提案する
 ///
 /// # 提案のまとめ
@@ -46,7 +47,7 @@ type NotifiedUnauthorizedKey = (ExternalIdentity, String, DateTime<Utc>);
 /// プロセス内メモリのみで保持し、永続化しない。
 pub struct ReconcileObservedUsagesUseCase<R, O, I, P, U>
 where
-    R: ReservationRepository,
+    R: ReservedSlotRepository,
     O: ResourceUsageObserver,
     I: IdentityLinkRepository,
     P: ReservationProposalNotifier,
@@ -65,7 +66,7 @@ where
 
 impl<R, O, I, P, U> ReconcileObservedUsagesUseCase<R, O, I, P, U>
 where
-    R: ReservationRepository,
+    R: ReservedSlotRepository,
     O: ResourceUsageObserver,
     I: IdentityLinkRepository,
     P: ReservationProposalNotifier,
@@ -98,7 +99,7 @@ where
         }
     }
 
-    /// 一度だけポーリングを実行し、実利用と予約の突合・通知を行う
+    /// 一度だけポーリングを実行し、実利用と予約枠の突合・通知を行う
     ///
     /// # Errors
     /// 観測・リポジトリアクセス・通知送信に失敗した場合
@@ -107,24 +108,24 @@ where
         let snapshot = self.observer.observe_active_usages().await?;
         let observed = snapshot.usages();
         let now = started_at;
-        // 突合の相手は「今この瞬間に進行中の予約」だけなので、現在時刻を含む最小の期間を問う
+        // 突合の相手は「今この瞬間に進行中の予約枠」だけなので、現在時刻を含む最小の期間を問う
         let in_progress = TimePeriod::new(now, now + Duration::seconds(1))?;
-        let current_usages = self.repository.find_slots_overlapping(&in_progress).await?;
+        let slots_in_progress = self.repository.find_slots_overlapping(&in_progress).await?;
 
         let mut unreserved = Vec::new();
         let mut reserved = 0_usize;
         let mut failures = 0_usize;
-        // 同じ予約の複数リソースを使っていても知らせるのは1回なので、予約ごとにまとめる
+        // 同じ予約枠の複数リソースを使っていても知らせるのは1回なので、予約枠ごとにまとめる
         let mut reserved_by_usage: HashMap<(ExternalIdentity, String), &ObservedUsage> =
             HashMap::new();
 
         for usage in observed {
-            match Self::find_active_reservation(&current_usages, usage.resource(), now) {
-                Some(reservation) => {
+            match Self::find_running_slot(&slots_in_progress, usage.resource(), now) {
+                Some(slot) => {
                     reserved += 1;
                     let key = (
                         usage.external_identity().clone(),
-                        reservation.id().as_str().to_string(),
+                        slot.id().as_str().to_string(),
                     );
                     // 同じ機会の開始時刻として、最も早い観測を代表に選ぶ
                     reserved_by_usage
@@ -145,12 +146,12 @@ where
         }
 
         for observed_usage in reserved_by_usage.into_values() {
-            let Some(reservation) =
-                Self::find_active_reservation(&current_usages, observed_usage.resource(), now)
+            let Some(slot) =
+                Self::find_running_slot(&slots_in_progress, observed_usage.resource(), now)
             else {
                 continue;
             };
-            if let Err(e) = self.reconcile_reserved(observed_usage, reservation).await {
+            if let Err(e) = self.reconcile_reserved(observed_usage, slot).await {
                 failures += 1;
                 error!(
                     resource = %observed_usage.resource(),
@@ -164,7 +165,7 @@ where
         let session_count = sessions.len();
 
         self.forget_opportunities_that_ended(&sessions).await;
-        self.forget_reservations_that_ended(&current_usages).await;
+        self.forget_slots_that_ended(&slots_in_progress).await;
 
         for session in sessions {
             if let Err(e) = self.propose_for_session(&session).await {
@@ -176,8 +177,8 @@ where
         // 1周の要約。個別の出来事より、件数の推移から異常に気づける
         info!(
             observed = observed.len(),
-            reservations_in_progress = current_usages.len(),
-            matched_to_a_reservation = reserved,
+            slots_in_progress = slots_in_progress.len(),
+            matched_to_a_slot = reserved,
             unreserved_sessions = session_count,
             failures,
             elapsed_ms = (Utc::now() - started_at).num_milliseconds(),
@@ -210,19 +211,17 @@ where
             .retain(|key| still_running.contains(key));
     }
 
-    /// 終わった予約についての「通知済み」を忘れる
+    /// 終わった予約枠についての「通知済み」を忘れる
     ///
-    /// 予約が終われば、その予約を巡って知らせることはもうない。
-    async fn forget_reservations_that_ended(&self, in_progress: &[ReservedSlot]) {
-        let still_running: HashSet<&str> = in_progress
-            .iter()
-            .map(|reservation| reservation.id().as_str())
-            .collect();
+    /// 予約枠が終われば、その予約枠を巡って知らせることはもうない。
+    async fn forget_slots_that_ended(&self, in_progress: &[ReservedSlot]) {
+        let still_running: HashSet<&str> =
+            in_progress.iter().map(|slot| slot.id().as_str()).collect();
 
         self.notified_unauthorized_keys
             .lock()
             .await
-            .retain(|(_, usage_id, _)| still_running.contains(usage_id.as_str()));
+            .retain(|(_, slot_id, _)| still_running.contains(slot_id.as_str()));
     }
 
     /// 未予約の利用を「同じ機会に使い始めた一群」へ分ける
@@ -266,30 +265,31 @@ where
         sessions
     }
 
-    fn find_active_reservation<'a>(
-        usages: &'a [ReservedSlot],
+    /// `now`の時点で`resource`を押さえている予約枠を探す
+    fn find_running_slot<'a>(
+        slots: &'a [ReservedSlot],
         resource: &Resource,
         now: DateTime<Utc>,
     ) -> Option<&'a ReservedSlot> {
-        usages.iter().find(|usage| {
-            usage.time_period().start() <= now
-                && now < usage.time_period().end()
-                && usage.resources().iter().any(|r| r.conflicts_with(resource))
+        slots.iter().find(|slot| {
+            slot.time_period().start() <= now
+                && now < slot.time_period().end()
+                && slot.resources().iter().any(|r| r.conflicts_with(resource))
         })
     }
 
-    /// 予約の利用者と観測された利用者が一致するか確認し、一致しなければ無断使用として通知する
+    /// 予約者と観測された利用者が一致するか確認し、一致しなければ無断使用として通知する
     async fn reconcile_reserved(
         &self,
         observed: &ObservedUsage,
-        reservation: &ReservedSlot,
+        slot: &ReservedSlot,
     ) -> Result<(), ApplicationError> {
         // 利用者の身元が不明な場合、無断使用かどうか原理的に判定できないためスキップする
         let Some(actual_email) = self.resolve_email(observed).await? else {
             return Ok(());
         };
 
-        if &actual_email == reservation.holder_email() {
+        if &actual_email == slot.holder_email() {
             return Ok(());
         }
 
@@ -297,7 +297,7 @@ where
         // 送信成功後にのみ記録することで失敗時の再試行を保つ）
         let key = (
             observed.external_identity().clone(),
-            reservation.id().as_str().to_string(),
+            slot.id().as_str().to_string(),
             observed.active_since(),
         );
         if self.notified_unauthorized_keys.lock().await.contains(&key) {
@@ -307,13 +307,13 @@ where
         info!(
             resource = %observed.resource(),
             actual_user = %actual_email.as_str(),
-            reserved_by = %reservation.holder_email().as_str(),
-            usage_id = %reservation.id().as_str(),
+            reserved_by = %slot.holder_email().as_str(),
+            slot_id = %slot.id().as_str(),
             "notifying unauthorized usage"
         );
 
         self.unauthorized_notifier
-            .notify(reservation, &actual_email)
+            .notify(slot, &actual_email)
             .await?;
         self.notified_unauthorized_keys.lock().await.insert(key);
         Ok(())

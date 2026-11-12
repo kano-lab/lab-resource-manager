@@ -3,7 +3,7 @@
 use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::utility::{interaction_reply, reservation_failure, user_resolver};
 use slack_morphism::prelude::*;
@@ -16,7 +16,7 @@ pub async fn handle<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let Some(slot_id_str) = &action.value else {
@@ -63,9 +63,9 @@ where
     // ユーザーにフィードバックメッセージを送信
     if let Some(ch_id) = channel_id {
         let message_text = match &result {
-            Ok(cancelled) => {
+            Ok(event) => {
                 info!(slot_id = %slot_id.as_str(), origin = "slack", "reserved slot cancelled");
-                reservation_failure::cancelled_message(cancelled)
+                reservation_failure::cancelled_message(event)
             }
             Err(e) => {
                 error!(slot_id = %slot_id.as_str(), origin = "slack", error = %e, "cancelling the reservation failed");

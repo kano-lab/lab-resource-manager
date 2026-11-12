@@ -15,10 +15,7 @@ pub mod ids;
 pub mod recurrence;
 /// リソース（GPU、部屋など）の値オブジェクト
 pub mod resource;
-/// 時間枠の値オブジェクト
-pub mod time_period;
 
 pub use ids::{ReservationId, ReservedSlotId};
 pub use recurrence::{RecurrenceEnd, RecurrenceFrequency, RecurrenceRule};
 pub use resource::{Gpu, Resource};
-pub use time_period::TimePeriod;

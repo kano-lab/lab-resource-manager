@@ -31,7 +31,7 @@
 //! ```rust,ignore
 //! pub struct SomeUseCase<R, N>
 //! where
-//!     R: ReservationRepository,  // trait（抽象）に依存
+//!     R: ReservedSlotRepository,  // trait（抽象）に依存
 //!     N: Notifier,                 // trait（抽象）に依存
 //! ```
 //!
@@ -71,7 +71,7 @@ pub mod list_slots;
 pub mod list_slots_held_by;
 /// 予約の変化を監視して通知するユースケース
 pub mod notify_reservation_changes;
-/// 実サーバーの利用状況と予約を突き合わせるユースケース
+/// 実サーバーの利用状況と予約枠を突き合わせるユースケース
 pub mod reconcile_observed_usages;
 #[cfg(test)]
 mod reconcile_observed_usages_tests;

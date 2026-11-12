@@ -1,6 +1,6 @@
-//! 予約枠に関するドメインサービス
+//! 予約と予約枠に関するドメインサービス
 //!
-//! 予約枠（ReservedSlot）に関連するビジネスロジックを提供する。
+//! 予約（Reservation）と予約枠（ReservedSlot）に関連するビジネスロジックを提供する。
 //!
 //! # 概要
 //!
@@ -10,16 +10,21 @@
 //! # モジュール
 //!
 //! - `availability` - 対象期間における各リソースの空きを算出
+//! - `change_interpreter` - 予約枠の見え方の変化から、予約に起きた出来事を読み取る
 //! - `conflict_checker` - リソースの時間的競合をチェック
 //! - `errors` - サービス層のエラー型定義
 //! - `slot_activity` - 予約枠が使われているかの見立て
 
 pub mod availability;
+pub mod change_interpreter;
 pub mod conflict_checker;
 pub mod errors;
 pub mod slot_activity;
 
 pub use availability::{AvailabilityState, BusyPeriod, ResourceAvailability};
+pub use change_interpreter::{
+    InterpretedChanges, ReservationChangeInterpreter, WatchedReservations,
+};
 pub use conflict_checker::ResourceConflictChecker;
 pub use errors::ResourceConflictError;
 pub use slot_activity::{GpusAtRest, SlotActivity, judge_slot_activity};

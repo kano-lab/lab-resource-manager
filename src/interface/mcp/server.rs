@@ -10,10 +10,10 @@ use crate::application::usecases::{
     CreateReservationUseCase, EndSlotEarlyUseCase, GetReservationUseCase, GetSlotUseCase,
     ListSlotsHeldByUseCase, ListSlotsUseCase, UpdateSlotUseCase,
 };
-use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, TimePeriod};
-use crate::domain::aggregates::reservation::{ReservationId, ReservationKind, ReservedSlotId};
-use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
+use crate::domain::aggregates::reservation::{ReservationEvent, ReservationId, ReservedSlotId};
+use crate::domain::common::{EmailAddress, TimePeriod};
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
 use crate::infrastructure::config::ResourceConfig;
 use crate::interface::mcp::auth::ResolvedCaller;
 use crate::interface::mcp::dto::{
@@ -29,7 +29,7 @@ use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use std::sync::Arc;
 
 /// MCPサーバーが呼び出すユースケース
-pub struct McpUseCases<R: ReservationRepository> {
+pub struct McpUseCases<R: ReservationRepository + ReservedSlotRepository> {
     /// 単発予約を作る
     pub create_reservation: Arc<CreateReservationUseCase<R>>,
     /// 予約を取得する
@@ -56,12 +56,12 @@ pub struct McpUseCases<R: ReservationRepository> {
 ///
 /// 全フィールドが`Arc`のため安価に`Clone`でき、接続ごとに新しいインスタンスを渡せる。
 /// `R: Clone`を要求しないよう`Clone`は手動実装する（`derive(Clone)`は`R: Clone`を要求してしまう）。
-pub struct LrmMcpServer<R: ReservationRepository> {
+pub struct LrmMcpServer<R: ReservationRepository + ReservedSlotRepository> {
     usecases: Arc<McpUseCases<R>>,
     resource_config: Arc<ResourceConfig>,
 }
 
-impl<R: ReservationRepository> Clone for LrmMcpServer<R> {
+impl<R: ReservationRepository + ReservedSlotRepository> Clone for LrmMcpServer<R> {
     fn clone(&self) -> Self {
         Self {
             usecases: self.usecases.clone(),
@@ -94,8 +94,7 @@ fn resolved_caller(parts: &http::request::Parts) -> Result<EmailAddress, ErrorDa
 const LISTING_WINDOW_DAYS: i64 = 60;
 
 /// 一覧の対象期間（現在時刻から`LISTING_WINDOW_DAYS`日先まで）
-fn listing_window()
--> Result<TimePeriod, crate::domain::aggregates::reservation::errors::ReservationError> {
+fn listing_window() -> Result<TimePeriod, crate::domain::common::TimePeriodError> {
     let now = chrono::Utc::now();
     TimePeriod::new(now, now + chrono::Duration::days(LISTING_WINDOW_DAYS))
 }
@@ -125,7 +124,7 @@ fn success_text(message: &str) -> CallToolResult {
 #[tool_router]
 impl<R> LrmMcpServer<R>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
 {
     /// 新しいLrmMcpServerを作成
     pub fn new(usecases: McpUseCases<R>, resource_config: Arc<ResourceConfig>) -> Self {
@@ -407,13 +406,11 @@ where
         let id = ReservedSlotId::from_string(params.id);
 
         match self.usecases.cancel_slot.execute(&id, &caller).await {
-            Ok(cancelled) => Ok(success_text(match cancelled.reservation_kind() {
-                ReservationKind::OneTime => {
-                    "予約枠を取り消しました（単発予約なので予約も無くなりました）"
-                }
-                ReservationKind::Recurring => {
+            Ok(event) => Ok(success_text(match event {
+                ReservationEvent::SlotCancelled(_) => {
                     "予約枠を取り消しました（定期予約と他の予約枠は残っています）"
                 }
+                _ => "予約枠を取り消しました（単発予約なので予約も無くなりました）",
             })),
             Err(e) => Ok(tool_error(e)),
         }
@@ -431,7 +428,7 @@ where
         let id = ReservationId::from_string(params.id);
 
         match self.usecases.cancel_reservation.execute(&id, &caller).await {
-            Ok(()) => Ok(success_text("予約を取り消しました")),
+            Ok(_) => Ok(success_text("予約を取り消しました")),
             Err(e) => Ok(tool_error(e)),
         }
     }
@@ -440,7 +437,7 @@ where
 #[tool_handler]
 impl<R> ServerHandler for LrmMcpServer<R>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
 {
     fn get_info(&self) -> ServerConfig {
         let mut info = ServerConfig::new(ServerCapabilities::builder().enable_tools().build());

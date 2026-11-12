@@ -1,22 +1,23 @@
 //! リソースの空き算出
 //!
-//! 予約（`ReservedSlot`）は「誰がいつ使うか」を表すが、「いつ空いているか」は
-//! そのままでは読み取れない。ここでは対象期間から予約の占める区間を差し引き、
+//! 予約枠（`ReservedSlot`）は「誰がいつ使うか」を表すが、「いつ空いているか」は
+//! そのままでは読み取れない。ここでは対象期間から予約枠の占める区間を差し引き、
 //! リソースごとの空き区間を求める。
 //!
 //! # 空きの意味
-//! 空きとは「その期間に重なる予約がない」ことである。予約されないまま使われている
-//! リソースは予約として現れないため、ここでは空きとして扱われる
-//! （`ReservationRepository`および`ResourceConflictChecker`と同じ立場）。
+//! 空きとは「その期間に重なる予約枠がない」ことである。予約されないまま使われている
+//! リソースは予約枠として現れないため、ここでは空きとして扱われる
+//! （`ReservedSlotRepository`および`ResourceConflictChecker`と同じ立場）。
 
 use crate::domain::aggregates::reservation::ReservedSlot;
-use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource};
 use crate::domain::common::EmailAddress;
+use crate::domain::common::TimePeriod;
 use chrono::{DateTime, Utc};
 
-/// あるリソースを押さえている予約の一区間
+/// あるリソースを押さえている予約枠の一区間
 ///
-/// 対象期間の外にはみ出す予約は、期間内に収まる部分だけを持つ。
+/// 対象期間の外にはみ出す予約枠は、期間内に収まる部分だけを持つ。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BusyPeriod {
     slot_id: ReservedSlotId,
@@ -25,7 +26,7 @@ pub struct BusyPeriod {
 }
 
 impl BusyPeriod {
-    /// 押さえている予約のID
+    /// 押さえている予約枠のID
     pub fn slot_id(&self) -> &ReservedSlotId {
         &self.slot_id
     }
@@ -46,11 +47,11 @@ impl BusyPeriod {
 pub enum AvailabilityState<'a> {
     /// 空いている
     ///
-    /// `until`は次に予約が始まる時刻。対象期間の終わりまで予約がなければ`None`。
+    /// `until`は次に予約枠が始まる時刻。対象期間の終わりまで予約枠がなければ`None`。
     /// 「いつまで使えるか」は対象期間の取り方に左右されるため、期間の終端は
     /// 「まだ埋まっていない」を意味するに過ぎず、時刻としては伝えない。
     Free { until: Option<DateTime<Utc>> },
-    /// 予約で埋まっている
+    /// 予約枠で埋まっている
     Busy(&'a BusyPeriod),
 }
 
@@ -74,9 +75,9 @@ impl ResourceAvailability {
         &self.window
     }
 
-    /// 予約で埋まっている区間（開始順）
+    /// 予約枠で埋まっている区間（開始順）
     ///
-    /// 予約ごとに分かれている。同じリソースを続けて押さえる別々の予約は、
+    /// 予約枠ごとに分かれている。同じリソースを続けて押さえる別々の予約枠は、
     /// 時間的に隣り合っていても1件にはまとめない（予約者が異なりうるため）。
     pub fn busy_periods(&self) -> &[BusyPeriod] {
         &self.busy_periods
@@ -101,7 +102,7 @@ impl ResourceAvailability {
 
     /// 指定時刻におけるリソースの状態
     ///
-    /// 予約の終了時刻ちょうどは空きとして扱う（区間は終端を含まない）。
+    /// 予約枠の終了時刻ちょうどは空きとして扱う（区間は終端を含まない）。
     pub fn state_at(&self, instant: DateTime<Utc>) -> AvailabilityState<'_> {
         let occupying = self
             .busy_periods
@@ -139,7 +140,7 @@ impl ResourceAvailability {
 /// # 引数
 /// * `resources` - 対象のリソース（この並び順で返す）
 /// * `window` - 算出の対象期間
-/// * `slots` - `window`に重なる予約。呼び出し側がリポジトリから取得して渡す
+/// * `slots` - `window`に重なる予約枠。呼び出し側がリポジトリから取得して渡す
 ///
 /// # 戻り値
 /// `resources`と同じ並びの空き情報
@@ -247,8 +248,8 @@ mod tests {
         ))
     }
 
-    fn reservation(holder: &str, resources: Vec<Resource>, from: u32, to: u32) -> ReservedSlot {
-        ReservedSlot::new(
+    fn slot(holder: &str, resources: Vec<Resource>, from: u32, to: u32) -> ReservedSlot {
+        ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new(holder.to_string()).unwrap(),
             TimePeriod::new(at(from), at(to)).unwrap(),
             resources,
@@ -265,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn a_resource_with_no_reservations_is_free_for_the_whole_window() {
+    fn a_resource_with_no_slots_is_free_for_the_whole_window() {
         let availability = availability_of(&gpu(0), &[]);
 
         assert!(availability.is_entirely_free());
@@ -273,8 +274,8 @@ mod tests {
     }
 
     #[test]
-    fn a_reservation_covering_the_window_leaves_no_free_time() {
-        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 9, 21)];
+    fn a_slot_covering_the_window_leaves_no_free_time() {
+        let slots = vec![slot("holder@example.com", vec![gpu(0)], 9, 21)];
 
         let availability = availability_of(&gpu(0), &slots);
 
@@ -286,8 +287,8 @@ mod tests {
     }
 
     #[test]
-    fn the_time_before_and_after_a_reservation_is_free() {
-        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 13, 17)];
+    fn the_time_before_and_after_a_slot_is_free() {
+        let slots = vec![slot("holder@example.com", vec![gpu(0)], 13, 17)];
 
         let availability = availability_of(&gpu(0), &slots);
 
@@ -301,10 +302,10 @@ mod tests {
     }
 
     #[test]
-    fn back_to_back_reservations_do_not_leave_an_empty_gap_between_them() {
+    fn back_to_back_slots_do_not_leave_an_empty_gap_between_them() {
         let slots = vec![
-            reservation("a@example.com", vec![gpu(0)], 13, 15),
-            reservation("b@example.com", vec![gpu(0)], 15, 17),
+            slot("a@example.com", vec![gpu(0)], 13, 15),
+            slot("b@example.com", vec![gpu(0)], 15, 17),
         ];
 
         let availability = availability_of(&gpu(0), &slots);
@@ -325,11 +326,11 @@ mod tests {
     }
 
     #[test]
-    fn overlapping_reservations_do_not_confuse_the_remaining_free_time() {
-        // 既存の予約同士が重複している状況（人手でカレンダーを編集すると起こりうる）
+    fn overlapping_slots_do_not_confuse_the_remaining_free_time() {
+        // 既存の予約枠同士が重複している状況（人手でカレンダーを編集すると起こりうる）
         let slots = vec![
-            reservation("a@example.com", vec![gpu(0)], 13, 18),
-            reservation("b@example.com", vec![gpu(0)], 15, 17),
+            slot("a@example.com", vec![gpu(0)], 13, 18),
+            slot("b@example.com", vec![gpu(0)], 15, 17),
         ];
 
         let availability = availability_of(&gpu(0), &slots);
@@ -340,13 +341,13 @@ mod tests {
                 TimePeriod::new(at(9), at(13)).unwrap(),
                 TimePeriod::new(at(18), at(21)).unwrap(),
             ],
-            "内側に含まれる予約が、外側の予約の後ろに空きを作ってはいけない"
+            "内側に含まれる予約枠が、外側の予約枠の後ろに空きを作ってはいけない"
         );
     }
 
     #[test]
-    fn a_reservation_running_past_the_window_is_clipped_to_it() {
-        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 6, 12)];
+    fn a_slot_running_past_the_window_is_clipped_to_it() {
+        let slots = vec![slot("holder@example.com", vec![gpu(0)], 6, 12)];
 
         let availability = availability_of(&gpu(0), &slots);
 
@@ -358,20 +359,20 @@ mod tests {
     }
 
     #[test]
-    fn reservations_of_other_resources_are_ignored() {
-        let slots = vec![reservation("holder@example.com", vec![gpu(1)], 13, 17)];
+    fn slots_of_other_resources_are_ignored() {
+        let slots = vec![slot("holder@example.com", vec![gpu(1)], 13, 17)];
 
         let availability = availability_of(&gpu(0), &slots);
 
         assert!(
             availability.is_entirely_free(),
-            "別のGPUの予約で空きが削られてはいけない"
+            "別のGPUの予約枠で空きが削られてはいけない"
         );
     }
 
     #[test]
-    fn a_reservation_holding_several_resources_occupies_each_of_them() {
-        let slots = vec![reservation(
+    fn a_slot_holding_several_resources_occupies_each_of_them() {
+        let slots = vec![slot(
             "holder@example.com",
             vec![gpu(0), gpu(1), gpu(2)],
             13,
@@ -391,12 +392,12 @@ mod tests {
     }
 
     #[test]
-    fn the_state_during_a_reservation_names_who_holds_it() {
-        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 13, 17)];
+    fn the_state_during_a_slot_names_who_holds_it() {
+        let slots = vec![slot("holder@example.com", vec![gpu(0)], 13, 17)];
         let availability = availability_of(&gpu(0), &slots);
 
         let AvailabilityState::Busy(busy) = availability.state_at(at(14)) else {
-            panic!("予約の最中は使用中のはず");
+            panic!("予約枠の最中は使用中のはず");
         };
 
         assert_eq!(busy.holder_email().as_str(), "holder@example.com");
@@ -404,12 +405,12 @@ mod tests {
     }
 
     #[test]
-    fn the_state_when_free_tells_when_the_next_reservation_starts() {
-        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 13, 17)];
+    fn the_state_when_free_tells_when_the_next_slot_starts() {
+        let slots = vec![slot("holder@example.com", vec![gpu(0)], 13, 17)];
         let availability = availability_of(&gpu(0), &slots);
 
         let AvailabilityState::Free { until } = availability.state_at(at(10)) else {
-            panic!("予約の前は空いているはず");
+            panic!("予約枠の前は空いているはず");
         };
 
         assert_eq!(
@@ -420,21 +421,21 @@ mod tests {
     }
 
     #[test]
-    fn whether_a_resource_is_free_follows_the_reservations() {
-        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 13, 17)];
+    fn whether_a_resource_is_free_follows_the_slots() {
+        let slots = vec![slot("holder@example.com", vec![gpu(0)], 13, 17)];
         let availability = availability_of(&gpu(0), &slots);
 
-        assert!(availability.is_free_at(at(10)), "予約の前は空いている");
+        assert!(availability.is_free_at(at(10)), "予約枠の前は空いている");
         assert!(
             !availability.is_free_at(at(14)),
-            "予約の最中はふさがっている"
+            "予約枠の最中はふさがっている"
         );
-        assert!(availability.is_free_at(at(18)), "予約の後は空いている");
+        assert!(availability.is_free_at(at(18)), "予約枠の後は空いている");
     }
 
     #[test]
-    fn the_state_at_the_end_of_a_reservation_is_already_free() {
-        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 13, 17)];
+    fn the_state_at_the_end_of_a_slot_is_already_free() {
+        let slots = vec![slot("holder@example.com", vec![gpu(0)], 13, 17)];
         let availability = availability_of(&gpu(0), &slots);
 
         assert!(
@@ -453,13 +454,13 @@ mod tests {
         assert_eq!(
             availability.state_at(at(10)),
             AvailabilityState::Free { until: None },
-            "対象期間の終わりは予約の予定ではないので、期限として伝えない"
+            "対象期間の終わりは予約枠の予定ではないので、期限として伝えない"
         );
     }
 
     #[test]
     fn a_busy_resource_reports_when_it_frees_up() {
-        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 9, 17)];
+        let slots = vec![slot("holder@example.com", vec![gpu(0)], 9, 17)];
         let availability = availability_of(&gpu(0), &slots);
 
         assert_eq!(availability.next_free_at(at(10)), Some(at(17)));
@@ -477,38 +478,38 @@ mod tests {
     }
 
     #[test]
-    fn a_resource_free_between_two_reservations_is_usable_right_now() {
+    fn a_resource_free_between_two_slots_is_usable_right_now() {
         let slots = vec![
-            reservation("a@example.com", vec![gpu(0)], 13, 15),
-            reservation("b@example.com", vec![gpu(0)], 17, 19),
+            slot("a@example.com", vec![gpu(0)], 13, 15),
+            slot("b@example.com", vec![gpu(0)], 17, 19),
         ];
         let availability = availability_of(&gpu(0), &slots);
 
         assert_eq!(
             availability.next_free_at(at(10)),
             Some(at(10)),
-            "先に予約が控えていても、いま空いているなら待つ必要はない"
+            "先に予約枠が控えていても、いま空いているなら待つ必要はない"
         );
     }
 
     #[test]
     fn a_busy_resource_reports_the_first_gap_not_a_later_one() {
         let slots = vec![
-            reservation("a@example.com", vec![gpu(0)], 9, 13),
-            reservation("b@example.com", vec![gpu(0)], 15, 17),
+            slot("a@example.com", vec![gpu(0)], 9, 13),
+            slot("b@example.com", vec![gpu(0)], 15, 17),
         ];
         let availability = availability_of(&gpu(0), &slots);
 
         assert_eq!(
             availability.next_free_at(at(10)),
             Some(at(13)),
-            "予約の合間も使える時間なので、その後の空きを答えてはいけない"
+            "予約枠の合間も使える時間なので、その後の空きを答えてはいけない"
         );
     }
 
     #[test]
     fn a_resource_booked_to_the_end_of_the_window_never_frees_up() {
-        let slots = vec![reservation("holder@example.com", vec![gpu(0)], 9, 21)];
+        let slots = vec![slot("holder@example.com", vec![gpu(0)], 9, 21)];
         let availability = availability_of(&gpu(0), &slots);
 
         assert_eq!(
@@ -532,9 +533,9 @@ mod tests {
     }
 
     #[test]
-    fn a_reservation_that_ends_before_the_window_does_not_appear() {
+    fn a_slot_that_ends_before_the_window_does_not_appear() {
         let window = TimePeriod::new(at(9), at(21)).unwrap();
-        let past = ReservedSlot::new(
+        let past = ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(at(9) - Duration::hours(3), at(9)).unwrap(),
             vec![gpu(0)],
@@ -549,7 +550,7 @@ mod tests {
 
         assert!(
             availability.is_entirely_free(),
-            "対象期間の直前に終わった予約は、いまの空きに関係しない"
+            "対象期間の直前に終わった予約枠は、いまの空きに関係しない"
         );
     }
 }

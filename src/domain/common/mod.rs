@@ -4,4 +4,4 @@
 //! これらはプロジェクト全体で共通の言語（Ubiquitous Language）を形成します。
 pub mod value_objects;
 
-pub use value_objects::EmailAddress;
+pub use value_objects::{EmailAddress, TimePeriod, TimePeriodError};

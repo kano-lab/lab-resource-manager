@@ -2,11 +2,11 @@
 //!
 //! 通知メッセージのテンプレートとプレースホルダー置換を処理します。
 
-use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::aggregates::reservation::{
-    OneTimeReservation, RecurringReservation, Reservation, ReservedSlot,
+    Reservation, ReservationEvent, ReservationKind, ReservedSlot, Schedule,
 };
-use crate::domain::ports::notifier::NotificationEvent;
+use crate::domain::common::TimePeriod;
 use crate::infrastructure::config::{FormatConfig, TemplateConfig};
 use crate::infrastructure::notifier::formatter::{
     format_recurrence, format_resources_styled, format_time_styled,
@@ -55,35 +55,40 @@ pub mod defaults {
     pub const CONFLICT_ITEM: &str = "👤 {user}\n\n📅 {time}\n\n{resource_label}\n{resource}{notes}";
 }
 
-/// イベントの種類に応じたテンプレートでメッセージをレンダリング
+/// 出来事の種類に応じたテンプレートでメッセージをレンダリング
+///
+/// 単発予約の今で終了は、予約枠の時間が変わったこととして`updated`のテンプレートで、
+/// 定期予約の予約枠1つの今で終了は`slot_updated`のテンプレートで伝える。
 pub fn render_event(
     renderer: &TemplateRenderer<'_>,
-    event: &NotificationEvent,
+    event: &ReservationEvent,
     user_display: &str,
 ) -> String {
     match event {
-        NotificationEvent::ReservationCreated(Reservation::OneTime(reservation)) => {
-            renderer.render_created(reservation, user_display)
+        ReservationEvent::Reserved(reservation) => match reservation.kind() {
+            ReservationKind::OneTime => renderer.render_created(reservation, user_display),
+            ReservationKind::Recurring => {
+                renderer.render_recurring_created(reservation, user_display)
+            }
+        },
+        ReservationEvent::Changed(reservation) | ReservationEvent::EndedEarly(reservation) => {
+            match reservation.kind() {
+                ReservationKind::OneTime => renderer.render_updated(reservation, user_display),
+                ReservationKind::Recurring => {
+                    renderer.render_recurring_updated(reservation, user_display)
+                }
+            }
         }
-        NotificationEvent::ReservationUpdated(Reservation::OneTime(reservation)) => {
-            renderer.render_updated(reservation, user_display)
+        ReservationEvent::Cancelled(reservation) => match reservation.kind() {
+            ReservationKind::OneTime => renderer.render_cancelled(reservation, user_display),
+            ReservationKind::Recurring => {
+                renderer.render_recurring_cancelled(reservation, user_display)
+            }
+        },
+        ReservationEvent::SlotChanged(slot) | ReservationEvent::SlotEndedEarly(slot) => {
+            renderer.render_slot_updated(slot, user_display)
         }
-        NotificationEvent::ReservationCancelled(Reservation::OneTime(reservation)) => {
-            renderer.render_cancelled(reservation, user_display)
-        }
-        NotificationEvent::ReservationCreated(Reservation::Recurring(reservation)) => {
-            renderer.render_recurring_created(reservation, user_display)
-        }
-        NotificationEvent::ReservationUpdated(Reservation::Recurring(reservation)) => {
-            renderer.render_recurring_updated(reservation, user_display)
-        }
-        NotificationEvent::ReservationCancelled(Reservation::Recurring(reservation)) => {
-            renderer.render_recurring_cancelled(reservation, user_display)
-        }
-        NotificationEvent::SlotUpdated(slot) => renderer.render_slot_updated(slot, user_display),
-        NotificationEvent::SlotCancelled(slot) => {
-            renderer.render_slot_cancelled(slot, user_display)
-        }
+        ReservationEvent::SlotCancelled(slot) => renderer.render_slot_cancelled(slot, user_display),
     }
 }
 
@@ -109,7 +114,7 @@ impl<'a> TemplateRenderer<'a> {
     }
 
     /// 単発予約の作成メッセージをレンダリング
-    pub fn render_created(&self, reservation: &OneTimeReservation, user_display: &str) -> String {
+    pub fn render_created(&self, reservation: &Reservation, user_display: &str) -> String {
         let template = self
             .templates
             .created
@@ -119,7 +124,7 @@ impl<'a> TemplateRenderer<'a> {
     }
 
     /// 単発予約の変更メッセージをレンダリング
-    pub fn render_updated(&self, reservation: &OneTimeReservation, user_display: &str) -> String {
+    pub fn render_updated(&self, reservation: &Reservation, user_display: &str) -> String {
         let template = self
             .templates
             .updated
@@ -129,7 +134,7 @@ impl<'a> TemplateRenderer<'a> {
     }
 
     /// 単発予約の取り消しメッセージをレンダリング
-    pub fn render_cancelled(&self, reservation: &OneTimeReservation, user_display: &str) -> String {
+    pub fn render_cancelled(&self, reservation: &Reservation, user_display: &str) -> String {
         let template = self
             .templates
             .cancelled
@@ -141,13 +146,17 @@ impl<'a> TemplateRenderer<'a> {
     fn render_one_time(
         &self,
         template: &str,
-        reservation: &OneTimeReservation,
+        reservation: &Reservation,
         user_display: &str,
     ) -> String {
+        let time_period = match reservation.schedule() {
+            Schedule::OneTime(time_period) => time_period,
+            Schedule::Recurring { first_slot, .. } => first_slot,
+        };
         self.render(
             template,
             reservation.resources(),
-            reservation.time_period(),
+            time_period,
             reservation.notes().map(String::as_str),
             user_display,
             None,
@@ -188,7 +197,7 @@ impl<'a> TemplateRenderer<'a> {
     /// 定期予約作成メッセージをレンダリング
     pub fn render_recurring_created(
         &self,
-        reservation: &RecurringReservation,
+        reservation: &Reservation,
         user_display: &str,
     ) -> String {
         let template = self
@@ -202,7 +211,7 @@ impl<'a> TemplateRenderer<'a> {
     /// 定期予約変更メッセージをレンダリング
     pub fn render_recurring_updated(
         &self,
-        reservation: &RecurringReservation,
+        reservation: &Reservation,
         user_display: &str,
     ) -> String {
         let template = self
@@ -216,7 +225,7 @@ impl<'a> TemplateRenderer<'a> {
     /// 定期予約取り消しメッセージをレンダリング
     pub fn render_recurring_cancelled(
         &self,
-        reservation: &RecurringReservation,
+        reservation: &Reservation,
         user_display: &str,
     ) -> String {
         let template = self
@@ -230,15 +239,18 @@ impl<'a> TemplateRenderer<'a> {
     fn render_recurring(
         &self,
         template: &str,
-        reservation: &RecurringReservation,
+        reservation: &Reservation,
         user_display: &str,
     ) -> String {
-        let recurrence =
-            format_recurrence(reservation.rule(), self.timezone, self.format.date_format);
+        let (first_slot, rule) = match reservation.schedule() {
+            Schedule::Recurring { first_slot, rule } => (first_slot, rule.as_ref()),
+            Schedule::OneTime(time_period) => (time_period, None),
+        };
+        let recurrence = format_recurrence(rule, self.timezone, self.format.date_format);
         self.render(
             template,
             reservation.resources(),
-            reservation.first_slot_period(),
+            first_slot,
             reservation.notes().map(String::as_str),
             user_display,
             Some(&recurrence),
@@ -393,7 +405,7 @@ impl<'a> TemplateRenderer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::value_objects::{Gpu, TimePeriod};
+    use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::common::EmailAddress;
     use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
     use chrono::{TimeZone, Utc};
@@ -408,7 +420,7 @@ mod tests {
             Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string())),
         ];
 
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,
@@ -425,7 +437,7 @@ mod tests {
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
         let slot = create_test_slot();
 
-        let result = renderer.render_created(&OneTimeReservation::from_slot(&slot), "<@U12345>");
+        let result = renderer.render_created(&Reservation::from_one_time_slot(&slot), "<@U12345>");
 
         assert!(result.contains("🔔 新規予約"));
         assert!(result.contains("<@U12345>"));
@@ -453,7 +465,7 @@ mod tests {
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
         let slot = create_test_slot();
 
-        let result = renderer.render_created(&OneTimeReservation::from_slot(&slot), "田中太郎");
+        let result = renderer.render_created(&Reservation::from_one_time_slot(&slot), "田中太郎");
 
         assert!(result.contains("田中太郎が"));
         assert!(result.contains("Thalys 0,1")); // compact format
@@ -476,7 +488,7 @@ mod tests {
         let slot = create_test_slot();
 
         let result =
-            renderer.render_updated(&OneTimeReservation::from_slot(&slot), "user@example.com");
+            renderer.render_updated(&Reservation::from_one_time_slot(&slot), "user@example.com");
 
         assert!(result.contains("🔄 予約更新"));
         assert!(result.contains("Thalys")); // server only
@@ -588,7 +600,7 @@ mod tests {
             "A100".to_string(),
         ))];
 
-        let slot = ReservedSlot::new(
+        let slot = ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,
@@ -596,7 +608,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = renderer.render_created(&OneTimeReservation::from_slot(&slot), "user");
+        let result = renderer.render_created(&Reservation::from_one_time_slot(&slot), "user");
 
         assert!(!result.contains("📝 備考"));
     }
@@ -653,10 +665,10 @@ mod tests {
 
     fn create_test_recurring_reservation(
         rule: Option<crate::domain::aggregates::reservation::RecurrenceRule>,
-    ) -> RecurringReservation {
+    ) -> Reservation {
         use crate::domain::aggregates::reservation::ReservationId;
 
-        RecurringReservation::from_first_slot(
+        Reservation::recurring_from_first_slot(
             ReservationId::from_string("weekly".to_string()),
             &create_test_slot(),
             rule,
@@ -727,7 +739,7 @@ mod tests {
         let renderer = TemplateRenderer::new(&templates, &format, Some("Asia/Tokyo"));
 
         let result = renderer.render_created(
-            &OneTimeReservation::from_slot(&create_test_slot()),
+            &Reservation::from_one_time_slot(&create_test_slot()),
             "<@U12345>",
         );
 

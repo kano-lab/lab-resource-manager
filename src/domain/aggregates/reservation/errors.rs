@@ -1,3 +1,4 @@
+use crate::domain::common::{EmailAddress, TimePeriodError};
 use chrono::{DateTime, Utc};
 use std::fmt;
 
@@ -5,13 +6,8 @@ use std::fmt;
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum ReservationError {
-    /// 無効な時間枠（終了時刻が開始時刻より前）
-    InvalidTimePeriod {
-        /// 開始時刻
-        start: DateTime<Utc>,
-        /// 終了時刻
-        end: DateTime<Utc>,
-    },
+    /// 無効な期間
+    InvalidTimePeriod(TimePeriodError),
     /// リソース項目が空
     NoResourceItems,
     /// まだ始まっていない予約枠を今で終了しようとした
@@ -23,6 +19,13 @@ pub enum ReservationError {
         start: DateTime<Utc>,
         /// 今で終了しようとした時刻
         at: DateTime<Utc>,
+    },
+    /// 予約者ではない人が、予約や予約枠を変えようとした
+    ///
+    /// 予約とその予約枠を変えられるのは予約者本人だけである。
+    NotHolder {
+        /// 操作しようとした人
+        actor: EmailAddress,
     },
     /// すでに終わった予約枠を今で終了しようとした
     AlreadyEnded {
@@ -36,14 +39,7 @@ pub enum ReservationError {
 impl fmt::Display for ReservationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ReservationError::InvalidTimePeriod { start, end } => {
-                write!(
-                    f,
-                    "無効な時間枠: 終了時刻({})は開始時刻({})よりあとである必要があります。",
-                    end.format("%Y-%m-%d %H:%M:%S"),
-                    start.format("%Y-%m-%d %H:%M:%S")
-                )
-            }
+            ReservationError::InvalidTimePeriod(e) => write!(f, "{}", e),
             ReservationError::NoResourceItems => {
                 write!(f, "資源項目エラー: 少なくとも1つの資源項目が必要です")
             }
@@ -55,6 +51,11 @@ impl fmt::Display for ReservationError {
                     at.format("%Y-%m-%d %H:%M:%S")
                 )
             }
+            ReservationError::NotHolder { actor } => write!(
+                f,
+                "予約者本人だけが操作できます（操作しようとした人: {}）",
+                actor.as_str()
+            ),
             ReservationError::AlreadyEnded { end, at } => {
                 write!(
                     f,
@@ -68,5 +69,11 @@ impl fmt::Display for ReservationError {
 }
 
 impl std::error::Error for ReservationError {}
+
+impl From<TimePeriodError> for ReservationError {
+    fn from(e: TimePeriodError) -> Self {
+        ReservationError::InvalidTimePeriod(e)
+    }
+}
 
 impl crate::domain::errors::DomainError for ReservationError {}

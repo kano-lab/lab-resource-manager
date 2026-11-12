@@ -10,7 +10,7 @@
 
 use super::days::DayOption;
 use super::{context, day_actions, format_resource, section};
-use crate::domain::aggregates::reservation::value_objects::TimePeriod;
+use crate::domain::common::TimePeriod;
 use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::infrastructure::notifier::formatter::to_zoned;
 use chrono::NaiveDate;
@@ -166,7 +166,7 @@ mod tests {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
     ) -> ReservedSlot {
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("sato@example.com".to_string()).unwrap(),
             TimePeriod::new(from, to).unwrap(),
             resources,

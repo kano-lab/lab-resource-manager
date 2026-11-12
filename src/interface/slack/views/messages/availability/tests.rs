@@ -1,6 +1,7 @@
 use super::*;
 use crate::domain::aggregates::reservation::ReservedSlot;
-use crate::domain::aggregates::reservation::value_objects::{Gpu, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::Gpu;
+use crate::domain::common::TimePeriod;
 use crate::domain::services::reservation::availability::calculate;
 use chrono::TimeZone;
 
@@ -44,7 +45,7 @@ fn reservation(
     from: DateTime<Utc>,
     to: DateTime<Utc>,
 ) -> ReservedSlot {
-    ReservedSlot::new(
+    ReservedSlot::of_new_one_time_reservation(
         email(holder),
         TimePeriod::new(from, to).unwrap(),
         resources,

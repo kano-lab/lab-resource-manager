@@ -1,10 +1,12 @@
 //! `NotifyReservationChangesUseCase`のテスト
 //!
-//! 通知が予約を単位とし、定期予約が予約枠の数だけの通知にならないことを検証する。
+//! 保存先の予約枠の変化が、予約に起きた出来事として予約チャンネルへ伝わることを検証する。
+//! 出来事は予約を単位とし、定期予約が予約枠の数だけの通知にならない。
 
 use super::*;
 use crate::domain::aggregates::reservation::{
-    RecurrenceEnd, RecurrenceFrequency, RecurrenceRule,
+    RecurrenceEnd, RecurrenceFrequency, RecurrenceRule, Reservation, ReservationEvent,
+    ReservationId, ReservationKind, Schedule,
     value_objects::{Gpu, Resource},
 };
 use crate::domain::common::EmailAddress;
@@ -18,19 +20,19 @@ const WATCH_WINDOW_DAYS: i64 = 60;
 /// 受け取った通知を記録するテストダブル
 #[derive(Clone, Default)]
 struct RecordingNotifier {
-    events: Arc<Mutex<Vec<NotificationEvent>>>,
+    events: Arc<Mutex<Vec<ReservationEvent>>>,
 }
 
 impl RecordingNotifier {
     /// これまでに受け取った通知を取り出し、記録を空にする
-    fn take(&self) -> Vec<NotificationEvent> {
+    fn take(&self) -> Vec<ReservationEvent> {
         std::mem::take(&mut self.events.lock().unwrap())
     }
 }
 
 #[async_trait]
 impl Notifier for RecordingNotifier {
-    async fn notify(&self, event: NotificationEvent) -> Result<(), NotificationError> {
+    async fn notify(&self, event: ReservationEvent) -> Result<(), NotificationError> {
         self.events.lock().unwrap().push(event);
         Ok(())
     }
@@ -38,6 +40,22 @@ impl Notifier for RecordingNotifier {
 
 fn reservation_id(id: &str) -> ReservationId {
     ReservationId::from_string(id.to_string())
+}
+
+/// 定期予約の繰り返しの規則
+fn rule_of(reservation: &Reservation) -> Option<&RecurrenceRule> {
+    match reservation.schedule() {
+        Schedule::Recurring { rule, .. } => rule.as_ref(),
+        Schedule::OneTime(_) => None,
+    }
+}
+
+/// 定期予約の初回の予約枠の期間
+fn first_slot_of(reservation: &Reservation) -> &TimePeriod {
+    match reservation.schedule() {
+        Schedule::Recurring { first_slot, .. } => first_slot,
+        Schedule::OneTime(time_period) => time_period,
+    }
 }
 
 /// 単発予約の予約枠
@@ -76,9 +94,9 @@ async fn put_weekly(
         .map(|days| recurring_slot(reservation, *days))
         .collect();
     for slot in &slots {
-        repository.save_slot(slot).await.unwrap();
+        repository.put_slot(slot);
     }
-    repository.put_recurring_reservation(RecurringReservation::from_first_slot(
+    repository.put_recurring_reservation(Reservation::recurring_from_first_slot(
         reservation_id(reservation),
         &slots[0],
         Some(RecurrenceRule::new(
@@ -122,13 +140,13 @@ async fn a_new_recurring_reservation_is_announced_once_however_many_slots_are_vi
         1,
         "予約枠の数だけ通知してはいけない: {events:?}"
     );
-    let NotificationEvent::ReservationCreated(Reservation::Recurring(reservation)) = &events[0]
-    else {
+    let ReservationEvent::Reserved(reservation) = &events[0] else {
         panic!("定期予約の作成として伝えるべき: {events:?}");
     };
+    assert_eq!(reservation.kind(), ReservationKind::Recurring);
     assert_eq!(reservation.id(), &reservation_id("weekly"));
     assert_eq!(
-        reservation.rule().map(|rule| rule.frequency()),
+        rule_of(reservation).map(|rule| rule.frequency()),
         Some(RecurrenceFrequency::Weekly),
         "繰り返しの規則を添えて伝える"
     );
@@ -161,11 +179,8 @@ async fn a_slot_that_slides_into_the_watch_window_is_not_announced() {
 
     // 時間が経ち、範囲の外にあった予約枠が見えるようになったことを、前回の範囲を
     // 狭く記録し直すことで再現する
-    repository
-        .save_slot(&recurring_slot("weekly", 9))
-        .await
-        .unwrap();
-    usecase.previous_state.lock().await.window_end = Utc::now() + Duration::days(8);
+    repository.put_slot(&recurring_slot("weekly", 9));
+    usecase.previous.lock().await.window_end = Utc::now() + Duration::days(8);
     usecase.poll_once().await.unwrap();
 
     assert!(
@@ -181,7 +196,7 @@ async fn cancelling_a_recurring_reservation_is_announced_once() {
     let (usecase, notifier) = watching(&repository).await;
 
     repository
-        .delete_reservation(&reservation_id("weekly"))
+        .remove_reservation(&reservation_id("weekly"))
         .await
         .unwrap();
     usecase.poll_once().await.unwrap();
@@ -192,12 +207,12 @@ async fn cancelling_a_recurring_reservation_is_announced_once() {
         1,
         "予約枠の数だけ通知してはいけない: {events:?}"
     );
-    let NotificationEvent::ReservationCancelled(Reservation::Recurring(reservation)) = &events[0]
-    else {
+    let ReservationEvent::Cancelled(reservation) = &events[0] else {
         panic!("定期予約の取り消しとして伝えるべき: {events:?}");
     };
+    assert_eq!(reservation.kind(), ReservationKind::Recurring);
     assert_eq!(
-        reservation.rule().map(|rule| rule.frequency()),
+        rule_of(reservation).map(|rule| rule.frequency()),
         Some(RecurrenceFrequency::Weekly),
         "取り消された定期予約がどういうものだったかを伝えられる"
     );
@@ -212,14 +227,14 @@ async fn cancelling_one_slot_is_announced_as_that_slot() {
     let slots = put_weekly(&repository, "weekly", &[1, 8, 15]).await;
     let (usecase, notifier) = watching(&repository).await;
 
-    repository.delete_slot(slots[1].id()).await.unwrap();
+    repository.remove_slot(slots[1].id()).await.unwrap();
     usecase.poll_once().await.unwrap();
 
     let events = notifier.take();
     assert!(
         matches!(
             events.as_slice(),
-            [NotificationEvent::SlotCancelled(cancelled)] if cancelled.id() == slots[1].id()
+            [ReservationEvent::SlotCancelled(cancelled)] if cancelled.id() == slots[1].id()
         ),
         "定期予約は続いているので、取り消された予約枠だけを伝える: {events:?}"
     );
@@ -231,12 +246,12 @@ async fn ending_one_slot_early_is_announced_as_that_slot() {
     // 1時間前に始まった予約枠が進行中
     let running = slot("weekly-now", Utc::now() - Duration::hours(1))
         .of_recurring_reservation(reservation_id("weekly"));
-    repository.save_slot(&running).await.unwrap();
+    repository.put_slot(&running);
     put_weekly(&repository, "weekly", &[7, 14]).await;
     let (usecase, notifier) = watching(&repository).await;
 
     let mut ended = running.clone();
-    ended.end_early(Utc::now()).unwrap();
+    ended.end_early(Utc::now(), running.holder_email()).unwrap();
     repository.save_slot(&ended).await.unwrap();
     usecase.poll_once().await.unwrap();
 
@@ -244,7 +259,7 @@ async fn ending_one_slot_early_is_announced_as_that_slot() {
     assert!(
         matches!(
             events.as_slice(),
-            [NotificationEvent::SlotUpdated(updated)]
+            [ReservationEvent::SlotEndedEarly(updated)]
                 if updated.id() == running.id()
                     && updated.time_period().end() == ended.time_period().end()
         ),
@@ -260,7 +275,7 @@ async fn a_change_reaching_several_slots_is_announced_as_one_change() {
 
     // 「これ以降のすべての予定」を削除して、途中から打ち切った
     for slot in &slots[1..] {
-        repository.delete_slot(slot.id()).await.unwrap();
+        repository.remove_slot(slot.id()).await.unwrap();
     }
     usecase.poll_once().await.unwrap();
 
@@ -268,9 +283,8 @@ async fn a_change_reaching_several_slots_is_announced_as_one_change() {
     assert!(
         matches!(
             events.as_slice(),
-            [NotificationEvent::ReservationUpdated(
-                Reservation::Recurring(_)
-            )]
+            [ReservationEvent::Changed(reservation)]
+                if reservation.kind() == ReservationKind::Recurring
         ),
         "定期予約の変更として1件で伝えるべき: {events:?}"
     );
@@ -284,7 +298,7 @@ async fn rescheduling_a_recurring_reservation_is_one_change_not_a_cancellation()
 
     // 時間帯を変えると、各予約枠は別のIDを持つ予約枠に置き換わる
     for slot in &slots {
-        repository.delete_slot(slot.id()).await.unwrap();
+        repository.remove_slot(slot.id()).await.unwrap();
     }
     put_weekly(&repository, "weekly", &[2, 9, 16]).await;
     usecase.poll_once().await.unwrap();
@@ -293,9 +307,8 @@ async fn rescheduling_a_recurring_reservation_is_one_change_not_a_cancellation()
     assert!(
         matches!(
             events.as_slice(),
-            [NotificationEvent::ReservationUpdated(
-                Reservation::Recurring(_)
-            )]
+            [ReservationEvent::Changed(reservation)]
+                if reservation.kind() == ReservationKind::Recurring
         ),
         "{events:?}"
     );
@@ -309,22 +322,22 @@ async fn a_recurring_reservation_the_repository_cannot_describe_is_still_announc
     // 予約枠は見えるが、定期予約そのものは引けない
     let slots = [15, 1, 8].map(|days| recurring_slot("weekly", days));
     for slot in &slots {
-        repository.save_slot(slot).await.unwrap();
+        repository.put_slot(slot);
     }
     usecase.poll_once().await.unwrap();
 
     let events = notifier.take();
     assert_eq!(events.len(), 1, "{events:?}");
-    let NotificationEvent::ReservationCreated(Reservation::Recurring(reservation)) = &events[0]
-    else {
+    let ReservationEvent::Reserved(reservation) = &events[0] else {
         panic!("定期予約の作成として伝えるべき: {events:?}");
     };
+    assert_eq!(reservation.kind(), ReservationKind::Recurring);
     assert!(
-        reservation.rule().is_none(),
+        rule_of(reservation).is_none(),
         "繰り返しの規則は分からないまま伝える"
     );
     assert_eq!(
-        reservation.first_slot_period().start(),
+        first_slot_of(reservation).start(),
         slots[1].time_period().start(),
         "見えている最も早い予約枠が時間帯を決める"
     );
@@ -337,25 +350,25 @@ async fn one_time_reservations_are_announced_one_by_one() {
 
     let first = slot("one-time-1", Utc::now() + Duration::days(1));
     let second = slot("one-time-2", Utc::now() + Duration::days(2));
-    repository.save_slot(&first).await.unwrap();
-    repository.save_slot(&second).await.unwrap();
+    repository.put_slot(&first);
+    repository.put_slot(&second);
     usecase.poll_once().await.unwrap();
 
     let created = notifier.take();
     assert_eq!(created.len(), 2, "{created:?}");
     assert!(created.iter().all(|event| matches!(
         event,
-        NotificationEvent::ReservationCreated(Reservation::OneTime(_))
+        ReservationEvent::Reserved(reservation) if reservation.kind() == ReservationKind::OneTime
     )));
 
-    repository.delete_slot(first.id()).await.unwrap();
+    repository.remove_slot(first.id()).await.unwrap();
     usecase.poll_once().await.unwrap();
 
     let cancelled = notifier.take();
     assert!(
         matches!(
             cancelled.as_slice(),
-            [NotificationEvent::ReservationCancelled(Reservation::OneTime(reservation))]
+            [ReservationEvent::Cancelled(reservation)]
                 if reservation.id().as_str() == first.id().as_str()
         ),
         "{cancelled:?}"
@@ -366,11 +379,11 @@ async fn one_time_reservations_are_announced_one_by_one() {
 async fn ending_a_one_time_reservation_early_is_not_announced_as_a_cancellation() {
     let repository = Arc::new(MockReservationRepository::new());
     let running = slot("one-time", Utc::now() - Duration::hours(1));
-    repository.save_slot(&running).await.unwrap();
+    repository.put_slot(&running);
     let (usecase, notifier) = watching(&repository).await;
 
     let mut ended = running.clone();
-    ended.end_early(Utc::now()).unwrap();
+    ended.end_early(Utc::now(), running.holder_email()).unwrap();
     repository.save_slot(&ended).await.unwrap();
     usecase.poll_once().await.unwrap();
 
@@ -378,8 +391,8 @@ async fn ending_a_one_time_reservation_early_is_not_announced_as_a_cancellation(
     assert!(
         matches!(
             events.as_slice(),
-            [NotificationEvent::ReservationUpdated(Reservation::OneTime(reservation))]
-                if reservation.time_period().end() == ended.time_period().end()
+            [ReservationEvent::EndedEarly(reservation)]
+                if reservation.schedule() == &Schedule::OneTime(ended.time_period().clone())
         ),
         "使った分は予約枠として残っている: {events:?}"
     );
@@ -411,7 +424,7 @@ async fn a_slot_that_ran_its_course_is_not_announced() {
         None,
     )
     .unwrap();
-    repository.save_slot(&ending).await.unwrap();
+    repository.put_slot(&ending);
     let (usecase, notifier) = watching(&repository).await;
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

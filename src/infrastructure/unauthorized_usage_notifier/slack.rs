@@ -77,14 +77,15 @@ fn build_unauthorized_message(reserved_slot: &ReservedSlot) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, TimePeriod};
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
+    use crate::domain::common::TimePeriod;
     use chrono::{TimeZone, Utc};
 
     fn sample_slot() -> ReservedSlot {
         let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
         let period = TimePeriod::new(start, end).unwrap();
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("owner@example.com".to_string()).unwrap(),
             period,
             vec![Resource::Gpu(Gpu::new(

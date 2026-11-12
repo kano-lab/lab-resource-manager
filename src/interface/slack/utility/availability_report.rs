@@ -3,10 +3,12 @@
 //! `/free`コマンドと、その応答に置いたボタンの両方から使います。
 //! どちらの入口から来ても同じ見え方になるよう、調べる範囲と表示の組み立てを1箇所に置きます。
 
-use crate::domain::aggregates::reservation::value_objects::TimePeriod;
 use crate::domain::common::EmailAddress;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::{IdentityLinkRepository, ReservationRepository};
+use crate::domain::ports::repositories::{
+    IdentityLinkRepository, ReservationRepository, ReservedSlotRepository,
+};
 use crate::domain::services::reservation::availability::{AvailabilityState, ResourceAvailability};
 use crate::infrastructure::config::ResourceConfig;
 use crate::infrastructure::notifier::formatter::{start_of_day, to_zoned};
@@ -31,7 +33,7 @@ pub async fn now_view<R, N>(
     app: &SlackApp<R, N>,
 ) -> Result<SlackMessageContent, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
@@ -59,7 +61,7 @@ pub async fn day_view<R, N>(
     date: NaiveDate,
 ) -> Result<SlackMessageContent, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
@@ -85,7 +87,7 @@ pub async fn availabilities_in<R, N>(
     window: &TimePeriod,
 ) -> Result<Vec<ResourceAvailability>, Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let resources = app.resource_config().all_resources();

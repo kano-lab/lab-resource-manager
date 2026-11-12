@@ -2,14 +2,13 @@ use super::event_gateway::{CalendarEventGateway, GoogleCalendarEventGateway};
 use super::recurrence::parse_recurrence;
 use crate::domain::aggregates::identity_link::value_objects::ExternalSystem;
 use crate::domain::aggregates::reservation::{
-    OneTimeReservation, RecurringReservation, Reservation, ReservationId, ReservationKind,
-    ReservedSlot, ReservedSlotId,
-    factory::ResourceFactory,
-    value_objects::{Resource, TimePeriod},
+    BelongsTo, Reservation, ReservationId, ReservedSlot, ReservedSlotId, factory::ResourceFactory,
+    value_objects::Resource,
 };
 use crate::domain::common::EmailAddress;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::{
-    IdentityLinkRepository, RepositoryError, ReservationRepository,
+    IdentityLinkRepository, RepositoryError, ReservationRepository, ReservedSlotRepository,
 };
 use crate::infrastructure::config::{ResourceConfig, StorageConfig};
 use async_trait::async_trait;
@@ -63,7 +62,8 @@ fn event_id_for(slot_id: &ReservedSlotId) -> String {
 
 /// 予約IDからカレンダーのイベントIDを導出する
 ///
-/// 単発予約の予約IDは予約枠IDと同じなので、同じ規則で導出する。
+/// 単発予約の予約IDは予約枠IDと同じ、定期予約の予約IDは繰り返しイベントのIDなので、
+/// 予約枠と同じ規則で導出する。
 fn event_id_for_reservation(reservation_id: &ReservationId) -> String {
     reservation_id.as_str().replace('-', "")
 }
@@ -564,11 +564,11 @@ impl GoogleCalendarReservationRepository {
         )
         .map_err(RepositoryError::from)?;
 
-        Ok(match slot.reservation_kind() {
-            ReservationKind::Recurring => {
-                renamed.of_recurring_reservation(slot.reservation_id().clone())
+        Ok(match slot.belongs_to() {
+            BelongsTo::RecurringReservation(reservation_id) => {
+                renamed.of_recurring_reservation(reservation_id.clone())
             }
-            ReservationKind::OneTime => renamed,
+            BelongsTo::OneTimeReservation => renamed,
         })
     }
 
@@ -724,7 +724,7 @@ impl GoogleCalendarReservationRepository {
     /// event_idから直接イベントを削除（マッピングがない場合）
     ///
     /// 全カレンダーから該当するイベントを検索して削除します。
-    async fn delete_by_event_id(&self, event_id: &str) -> Result<(), RepositoryError> {
+    async fn remove_by_event_id(&self, event_id: &str) -> Result<(), RepositoryError> {
         // 各カレンダーでイベントの削除を試みる
         for (calendar_id, _resource_name) in self.calendars() {
             match self.gateway.delete_event(&calendar_id, event_id).await {
@@ -759,7 +759,7 @@ impl GoogleCalendarReservationRepository {
 }
 
 #[async_trait]
-impl ReservationRepository for GoogleCalendarReservationRepository {
+impl ReservedSlotRepository for GoogleCalendarReservationRepository {
     async fn find_slot(
         &self,
         id: &ReservedSlotId,
@@ -837,17 +837,39 @@ impl ReservationRepository for GoogleCalendarReservationRepository {
                     })?;
             }
         } else {
-            // 新規 → 作成
-            self.insert_event_for(slot, &new_calendar_id).await?;
+            // 予約枠は予約を加えることで現れる。無い予約枠を保存で作ることはしない
+            return Err(RepositoryError::NotFound);
         }
 
         Ok(())
     }
 
-    async fn delete_slot(&self, id: &ReservedSlotId) -> Result<(), RepositoryError> {
+    async fn remove_slot(&self, id: &ReservedSlotId) -> Result<(), RepositoryError> {
         // 予約枠IDから導出したイベントIDで全カレンダーを探して削除する。
         // 定期予約の予約枠なら、カレンダーはその回だけを消す
-        self.delete_by_event_id(&event_id_for(id)).await
+        self.remove_by_event_id(&event_id_for(id)).await
+    }
+}
+
+#[async_trait]
+impl ReservationRepository for GoogleCalendarReservationRepository {
+    /// 単発予約を、その予約枠のイベントとして作る
+    ///
+    /// イベントIDは予約IDから導出する。単発予約と予約枠は同じIDを持つため、
+    /// 予約枠IDからも同じイベントに辿り着ける。
+    async fn add_reservation(&self, reservation: &Reservation) -> Result<(), RepositoryError> {
+        let slot = reservation.one_time_slot().ok_or_else(|| {
+            RepositoryError::Unknown("単発予約以外の予約は作れません".to_string())
+        })?;
+        let calendar_id = self.get_calendar_id_for_slot(&slot)?;
+        self.insert_event_for(&slot, &calendar_id).await?;
+
+        tracing::info!(
+            reservation_id = %reservation.id().as_str(),
+            calendar_id = %calendar_id,
+            "reservation added to the calendar"
+        );
+        Ok(())
     }
 
     /// 予約を、展開前のイベントから読み取る
@@ -880,23 +902,23 @@ impl ReservationRepository for GoogleCalendarReservationRepository {
             )?;
 
             return Ok(Some(match recurrence {
-                Some(recurrence) => Reservation::Recurring(RecurringReservation::from_first_slot(
+                Some(recurrence) => Reservation::recurring_from_first_slot(
                     id.clone(),
                     &slot,
                     parse_recurrence(&recurrence),
-                )),
-                None => Reservation::OneTime(OneTimeReservation::from_slot(&slot)),
+                ),
+                None => Reservation::from_one_time_slot(&slot),
             }));
         }
 
         Ok(None)
     }
 
-    /// 予約を削除する
+    /// 取り消された予約のイベントを削除する
     ///
     /// 繰り返しイベントを削除すると、カレンダーはそのすべての回を消す。
     /// 1回分のイベントのIDは予約IDではないため、指定されても削除しない。
-    async fn delete_reservation(&self, id: &ReservationId) -> Result<(), RepositoryError> {
+    async fn remove_reservation(&self, id: &ReservationId) -> Result<(), RepositoryError> {
         let event_id = event_id_for_reservation(id);
 
         for (calendar_id, _resource_context) in self.calendars() {
@@ -912,7 +934,7 @@ impl ReservationRepository for GoogleCalendarReservationRepository {
             tracing::info!(
                 reservation_id = %id.as_str(),
                 calendar_id = %calendar_id,
-                "reservation deleted"
+                "reservation removed from the calendar"
             );
             return Ok(());
         }

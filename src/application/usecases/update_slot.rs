@@ -1,32 +1,27 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::repositories::{RepositoryError, ReservationRepository};
-use crate::domain::services::{
-    AuthorizationPolicy, ReservationAuthorizationPolicy, ResourceConflictChecker,
-};
+use crate::domain::common::TimePeriod;
+use crate::domain::ports::repositories::{RepositoryError, ReservedSlotRepository};
+use crate::domain::services::ResourceConflictChecker;
 use std::sync::Arc;
 use tracing::info;
 
 /// 予約枠を更新するユースケース
-pub struct UpdateSlotUseCase<R: ReservationRepository> {
+pub struct UpdateSlotUseCase<R: ReservedSlotRepository> {
     repository: Arc<R>,
-    authorization_policy: ReservationAuthorizationPolicy,
     conflict_checker: ResourceConflictChecker,
 }
 
-impl<R: ReservationRepository> UpdateSlotUseCase<R> {
+impl<R: ReservedSlotRepository> UpdateSlotUseCase<R> {
     /// 新しいUpdateSlotUseCaseインスタンスを作成
     ///
     /// # Arguments
-    /// * `repository` - 予約リポジトリ
+    /// * `repository` - 予約枠リポジトリ
     pub fn new(repository: Arc<R>) -> Self {
-        let authorization_policy = ReservationAuthorizationPolicy::new();
-        let conflict_checker = ResourceConflictChecker::new();
         Self {
             repository,
-            authorization_policy,
-            conflict_checker,
+            conflict_checker: ResourceConflictChecker::new(),
         }
     }
 
@@ -34,58 +29,56 @@ impl<R: ReservationRepository> UpdateSlotUseCase<R> {
     ///
     /// # Arguments
     /// * `id` - 予約枠ID
-    /// * `holder_email` - 予約者のメールアドレス（権限チェック用）
+    /// * `requested_by` - 操作者のメールアドレス（予約者本人であること）
     /// * `new_time_period` - 新しい使用期間（Noneの場合は変更なし）
     /// * `new_notes` - 新しい備考（Noneの場合は変更なし）
+    ///
+    /// 変えるものが何も指定されていなければ、何もしない。
     ///
     /// # Returns
     /// 更新成功
     ///
     /// # Errors
-    /// - 指定されたIDの予約が見つからない場合
-    /// - 予約者が一致しない場合
+    /// - 指定されたIDの予約枠が見つからない場合
+    /// - 操作者が予約者でない場合
     /// - 新しい時間枠が競合する場合
     /// - リポジトリエラー
     pub async fn execute(
         &self,
         id: &ReservedSlotId,
-        holder_email: &EmailAddress,
+        requested_by: &EmailAddress,
         new_time_period: Option<TimePeriod>,
         new_notes: Option<String>,
     ) -> Result<(), ApplicationError> {
-        // 既存の予約を取得
+        if new_time_period.is_none() && new_notes.is_none() {
+            return Ok(());
+        }
+
         let mut slot = self
             .repository
             .find_slot(id)
             .await?
             .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?;
 
-        // 認可チェック
-        self.authorization_policy
-            .authorize_update(holder_email, &slot)
-            .map_err(|e| ApplicationError::Unauthorized(e.to_string()))?;
-
-        // 時間枠の更新と競合チェック
         if let Some(new_period) = new_time_period {
-            // 競合チェック（自分自身を除外）
+            // 予約者でなければここで断る。競合の判定より先に行い、他人の予約枠の
+            // 重なり具合を予約者以外へ見せない
+            slot.reschedule(new_period, requested_by)?;
+            // 新しい期間が他の予約枠と重ならないか（自分自身は除く）
             self.conflict_checker
                 .check_conflicts(
                     self.repository.as_ref(),
-                    &new_period,
+                    slot.time_period(),
                     slot.resources(),
                     Some(slot.id()),
                 )
                 .await?;
-
-            slot.update_time_period(new_period);
         }
 
-        // 備考の更新
         if let Some(notes) = new_notes {
-            slot.update_notes(notes);
+            slot.change_notes(notes, requested_by)?;
         }
 
-        // 更新
         self.repository.save_slot(&slot).await?;
 
         info!(
@@ -93,9 +86,123 @@ impl<R: ReservationRepository> UpdateSlotUseCase<R> {
             holder = %slot.holder_email().as_str(),
             start = %slot.time_period().start(),
             end = %slot.time_period().end(),
-            "reservation updated"
+            "reserved slot updated"
         );
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::aggregates::reservation::ReservedSlot;
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
+    use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+    use chrono::{DateTime, Duration, Utc};
+
+    fn email(address: &str) -> EmailAddress {
+        EmailAddress::new(address.to_string()).unwrap()
+    }
+
+    fn slot_of(holder: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> ReservedSlot {
+        ReservedSlot::of_new_one_time_reservation(
+            email(holder),
+            TimePeriod::new(start, end).unwrap(),
+            vec![Resource::Gpu(Gpu::new(
+                "Thalys".to_string(),
+                0,
+                "A100".to_string(),
+            ))],
+            None,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn the_holder_can_move_the_slot_and_rewrite_its_notes() {
+        let start = Utc::now() + Duration::hours(1);
+        let slot = slot_of("holder@example.com", start, start + Duration::hours(1));
+        let repository = Arc::new(MockReservationRepository::new());
+        repository.put_slot(&slot);
+        let later =
+            TimePeriod::new(start + Duration::hours(2), start + Duration::hours(4)).unwrap();
+
+        UpdateSlotUseCase::new(repository.clone())
+            .execute(
+                slot.id(),
+                &email("holder@example.com"),
+                Some(later.clone()),
+                Some("学習の続き".to_string()),
+            )
+            .await
+            .unwrap();
+
+        let stored = repository.find_slot(slot.id()).await.unwrap().unwrap();
+        assert_eq!(stored.time_period(), &later);
+        assert_eq!(stored.notes().map(String::as_str), Some("学習の続き"));
+    }
+
+    #[tokio::test]
+    async fn someone_else_is_refused_before_learning_about_conflicts() {
+        let start = Utc::now() + Duration::hours(1);
+        let mine = slot_of("holder@example.com", start, start + Duration::hours(1));
+        let theirs = slot_of(
+            "other@example.com",
+            start + Duration::hours(2),
+            start + Duration::hours(3),
+        );
+        let repository = Arc::new(MockReservationRepository::new());
+        repository.put_slot(&mine);
+        repository.put_slot(&theirs);
+        let onto_theirs = theirs.time_period().clone();
+
+        let error = UpdateSlotUseCase::new(repository.clone())
+            .execute(
+                mine.id(),
+                &email("intruder@example.com"),
+                Some(onto_theirs),
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(error, ApplicationError::Unauthorized(_)),
+            "予約者でない人には、他の予約枠との重なりを答えない: {error:?}"
+        );
+        let stored = repository.find_slot(mine.id()).await.unwrap().unwrap();
+        assert_eq!(stored, mine, "断った操作は予約枠を変えない");
+    }
+
+    #[tokio::test]
+    async fn moving_onto_another_slot_is_refused_as_a_conflict() {
+        let start = Utc::now() + Duration::hours(1);
+        let mine = slot_of("holder@example.com", start, start + Duration::hours(1));
+        let theirs = slot_of(
+            "other@example.com",
+            start + Duration::hours(2),
+            start + Duration::hours(3),
+        );
+        let repository = Arc::new(MockReservationRepository::new());
+        repository.put_slot(&mine);
+        repository.put_slot(&theirs);
+
+        let error = UpdateSlotUseCase::new(repository.clone())
+            .execute(
+                mine.id(),
+                &email("holder@example.com"),
+                Some(theirs.time_period().clone()),
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(error, ApplicationError::ResourceConflict { .. }),
+            "{error:?}"
+        );
+        let stored = repository.find_slot(mine.id()).await.unwrap().unwrap();
+        assert_eq!(stored, mine);
     }
 }

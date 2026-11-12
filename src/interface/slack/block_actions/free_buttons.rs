@@ -6,9 +6,10 @@
 //! 日を切り替えたときは、新しいメッセージを積まずに元のメッセージを差し替えます。
 //! 積み上がると、どれがいまの状態なのか読み手が判断できなくなります。
 
-use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::Resource;
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
 use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::slack_client::{messages, modals};
@@ -26,7 +27,7 @@ pub async fn handle_day_change<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let Some(response_url) = &block_actions.response_url else {
@@ -87,7 +88,7 @@ pub async fn handle_reserve<R, N>(
     block_actions: &SlackInteractionBlockActionsEvent,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
@@ -199,7 +200,7 @@ mod tests {
     }
 
     fn reservation(resources: Vec<Resource>) -> ReservedSlot {
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             EmailAddress::new("sato@example.com".to_string()).unwrap(),
             TimePeriod::new(at(9), at(18)).unwrap(),
             resources,

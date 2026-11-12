@@ -30,6 +30,9 @@
 //! ### 3. 集約単位で定義
 //! Repositoryは**集約ルート**に対して1つ定義する。
 //! 集約内部の値オブジェクトには個別のRepositoryを作らない。
+//!
+//! 予約と予約枠は別々の集約なので、`ReservationRepository`と`ReservedSlotRepository`を
+//! 分けて定義する。同じ永続化層（カレンダー）を使う実装が、両方を実装してよい。
 
 /// リポジトリのエラー型
 pub mod errors;
@@ -39,8 +42,11 @@ pub mod identity_link;
 pub mod mcp_token;
 /// 予約リポジトリポート
 pub mod reservation;
+/// 予約枠リポジトリポート
+pub mod reserved_slot;
 
 pub use errors::RepositoryError;
 pub use identity_link::IdentityLinkRepository;
 pub use mcp_token::McpTokenRepository;
 pub use reservation::ReservationRepository;
+pub use reserved_slot::ReservedSlotRepository;

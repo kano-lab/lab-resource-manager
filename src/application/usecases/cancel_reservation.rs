@@ -1,8 +1,7 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::reservation::ReservationId;
+use crate::domain::aggregates::reservation::{ReservationEvent, ReservationId};
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{RepositoryError, ReservationRepository};
-use crate::domain::services::{AuthorizationPolicy, ReservationAuthorizationPolicy};
 use std::sync::Arc;
 use tracing::info;
 
@@ -12,7 +11,6 @@ use tracing::info;
 /// `CancelSlotUseCase`が担う。
 pub struct CancelReservationUseCase<R: ReservationRepository> {
     repository: Arc<R>,
-    authorization_policy: ReservationAuthorizationPolicy,
 }
 
 impl<R: ReservationRepository> CancelReservationUseCase<R> {
@@ -21,17 +19,17 @@ impl<R: ReservationRepository> CancelReservationUseCase<R> {
     /// # Arguments
     /// * `repository` - 予約リポジトリ
     pub fn new(repository: Arc<R>) -> Self {
-        Self {
-            repository,
-            authorization_policy: ReservationAuthorizationPolicy::new(),
-        }
+        Self { repository }
     }
 
     /// 予約を取り消す
     ///
     /// # Arguments
     /// * `id` - 予約ID
-    /// * `requested_by` - 操作者のメールアドレス（権限チェック用）
+    /// * `requested_by` - 操作者のメールアドレス（予約者本人であること）
+    ///
+    /// # Returns
+    /// 取り消しによって起きた出来事
     ///
     /// # Errors
     /// - 指定されたIDの予約が見つからない場合
@@ -41,28 +39,27 @@ impl<R: ReservationRepository> CancelReservationUseCase<R> {
         &self,
         id: &ReservationId,
         requested_by: &EmailAddress,
-    ) -> Result<(), ApplicationError> {
+    ) -> Result<ReservationEvent, ApplicationError> {
         let reservation = self
             .repository
             .find_reservation(id)
             .await?
             .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?;
 
-        self.authorization_policy
-            .authorize_delete(requested_by, &reservation)
-            .map_err(|e| ApplicationError::Unauthorized(e.to_string()))?;
-
-        self.repository.delete_reservation(id).await?;
+        let kind = reservation.kind();
+        let holder = reservation.holder_email().clone();
+        let event = reservation.cancel(requested_by)?;
+        self.repository.remove_reservation(id).await?;
 
         info!(
             reservation_id = %id.as_str(),
-            kind = ?reservation.kind(),
-            holder = %reservation.holder_email().as_str(),
+            kind = ?kind,
+            holder = %holder.as_str(),
             requested_by = %requested_by.as_str(),
             "reservation cancelled"
         );
 
-        Ok(())
+        Ok(event)
     }
 }
 
@@ -70,9 +67,11 @@ impl<R: ReservationRepository> CancelReservationUseCase<R> {
 mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::{
-        RecurringReservation, ReservedSlot,
-        value_objects::{Gpu, Resource, TimePeriod},
+        Reservation, ReservedSlot,
+        value_objects::{Gpu, Resource},
     };
+    use crate::domain::common::TimePeriod;
+    use crate::domain::ports::repositories::ReservedSlotRepository;
     use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
     use chrono::{Duration, Utc};
 
@@ -82,7 +81,7 @@ mod tests {
 
     fn slot_in(days_ahead: i64) -> ReservedSlot {
         let start = Utc::now() + Duration::days(days_ahead);
-        ReservedSlot::new(
+        ReservedSlot::of_new_one_time_reservation(
             email("holder@example.com"),
             TimePeriod::new(start, start + Duration::hours(2)).unwrap(),
             vec![Resource::Gpu(Gpu::new(
@@ -103,9 +102,9 @@ mod tests {
             .map(|days| slot_in(days).of_recurring_reservation(id.clone()))
             .collect();
         for slot in &slots {
-            repository.save_slot(slot).await.unwrap();
+            repository.put_slot(slot);
         }
-        repository.put_recurring_reservation(RecurringReservation::from_first_slot(
+        repository.put_recurring_reservation(Reservation::recurring_from_first_slot(
             id.clone(),
             &slots[0],
             None,
@@ -128,11 +127,15 @@ mod tests {
         let id = weekly(&repository).await;
         let usecase = CancelReservationUseCase::new(repository.clone());
 
-        usecase
+        let event = usecase
             .execute(&id, &email("holder@example.com"))
             .await
             .unwrap();
 
+        assert!(
+            matches!(&event, ReservationEvent::Cancelled(reservation) if reservation.id() == &id),
+            "{event:?}"
+        );
         assert_eq!(remaining_slots(&repository).await, 0);
         assert!(repository.find_reservation(&id).await.unwrap().is_none());
     }
@@ -141,11 +144,11 @@ mod tests {
     async fn cancelling_a_one_time_reservation_removes_its_slot() {
         let repository = Arc::new(MockReservationRepository::new());
         let slot = slot_in(1);
-        repository.save_slot(&slot).await.unwrap();
+        repository.put_slot(&slot);
         let usecase = CancelReservationUseCase::new(repository.clone());
 
         usecase
-            .execute(slot.reservation_id(), &email("holder@example.com"))
+            .execute(&slot.reservation_id(), &email("holder@example.com"))
             .await
             .unwrap();
 

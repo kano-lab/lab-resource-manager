@@ -1,4 +1,4 @@
-//! `GoogleCalendarReservationRepository`の検索系メソッドのテスト
+//! `GoogleCalendarReservationRepository`のテスト
 //!
 //! カレンダーAPIへのアクセスは`CalendarEventGateway`のテストダブルに差し替え、
 //! 「どの期間を問い合わせるか」「取得したイベントをどう解釈するか」を検証する。
@@ -7,12 +7,14 @@ use super::event_gateway::CalendarEventGateway;
 use super::repository::GoogleCalendarReservationRepository;
 use crate::domain::aggregates::identity_link::entity::IdentityLink;
 use crate::domain::aggregates::identity_link::value_objects::{ExternalIdentity, ExternalSystem};
-use crate::domain::aggregates::reservation::value_objects::{Resource, TimePeriod};
+use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::aggregates::reservation::{
     RecurrenceFrequency, Reservation, ReservationId, ReservationKind, ReservedSlot, ReservedSlotId,
+    Schedule,
 };
+use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::{
-    IdentityLinkRepository, RepositoryError, ReservationRepository,
+    IdentityLinkRepository, RepositoryError, ReservationRepository, ReservedSlotRepository,
 };
 use crate::infrastructure::config::{
     DeviceConfig, ResourceConfig, ServerConfig, StorageBackend, StorageConfig,
@@ -503,7 +505,7 @@ fn repository_with_identities(
 fn gpu_usage(holder: &str, device_number: u32) -> ReservedSlot {
     use crate::domain::aggregates::reservation::value_objects::Gpu;
     let now = Utc::now();
-    ReservedSlot::new(
+    ReservedSlot::of_new_one_time_reservation(
         crate::domain::common::EmailAddress::new(holder.to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(Gpu::new(
@@ -589,7 +591,7 @@ async fn added_metadata_lines_do_not_leak_into_notes() {
             "kkawaguchi",
         ));
     let now = Utc::now();
-    let slot = ReservedSlot::new(
+    let slot = ReservedSlot::of_new_one_time_reservation(
         crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(
@@ -682,7 +684,7 @@ async fn newly_written_description_round_trips() {
             "kkawaguchi",
         ));
     let now = Utc::now();
-    let slot = ReservedSlot::new(
+    let slot = ReservedSlot::of_new_one_time_reservation(
         crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(
@@ -735,11 +737,14 @@ async fn metadata_lines_are_not_mistaken_for_the_holder() {
 }
 
 #[tokio::test]
-async fn saving_a_new_reservation_uses_an_event_id_derived_from_the_slot_id() {
+async fn adding_a_reservation_uses_an_event_id_derived_from_its_id() {
     let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
     let slot = gpu_usage("holder@example.com", 0);
 
-    repository.save_slot(&slot).await.unwrap();
+    repository
+        .add_reservation(&Reservation::from_one_time_slot(&slot))
+        .await
+        .unwrap();
 
     let inserted = gateway.inserted();
     assert_eq!(inserted.len(), 1);
@@ -758,14 +763,17 @@ async fn saving_a_new_reservation_uses_an_event_id_derived_from_the_slot_id() {
 }
 
 #[tokio::test]
-async fn a_saved_reservation_can_be_found_by_id_without_a_mapping_file() {
+async fn the_slot_of_an_added_reservation_can_be_found_by_id_without_a_mapping_file() {
     let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
     let slot = gpu_usage("holder@example.com", 0);
 
-    repository.save_slot(&slot).await.unwrap();
+    repository
+        .add_reservation(&Reservation::from_one_time_slot(&slot))
+        .await
+        .unwrap();
     let found = repository.find_slot(slot.id()).await.unwrap();
 
-    assert!(found.is_some(), "保存した予約はIDで引けるべき");
+    assert!(found.is_some(), "加えた予約の予約枠はIDで引けるべき");
     assert_eq!(found.unwrap().id(), slot.id());
 }
 
@@ -816,12 +824,15 @@ async fn reading_the_same_event_twice_yields_a_stable_reservation_id() {
 }
 
 #[tokio::test]
-async fn updating_a_saved_reservation_updates_the_event_instead_of_inserting_again() {
+async fn saving_a_slot_updates_its_event_instead_of_inserting_again() {
     let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
     let slot = gpu_usage("holder@example.com", 0);
-    repository.save_slot(&slot).await.unwrap();
+    repository
+        .add_reservation(&Reservation::from_one_time_slot(&slot))
+        .await
+        .unwrap();
 
-    // 期間を変えて同じ予約を保存し直す
+    // 期間を変えて同じ予約枠を保存し直す
     let extended = ReservedSlot::reconstruct(
         slot.id().clone(),
         slot.holder_email().clone(),
@@ -847,6 +858,40 @@ async fn updating_a_saved_reservation_updates_the_event_instead_of_inserting_aga
         updated[0].1,
         slot.id().as_str().replace('-', ""),
         "同じイベントIDを更新するべき"
+    );
+}
+
+#[tokio::test]
+async fn saving_a_slot_that_is_not_in_the_calendar_does_not_create_it() {
+    let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
+    let slot = gpu_usage("holder@example.com", 0);
+
+    let result = repository.save_slot(&slot).await;
+
+    assert!(
+        matches!(result, Err(RepositoryError::NotFound)),
+        "{result:?}"
+    );
+    assert!(
+        gateway.inserted().is_empty(),
+        "予約枠は予約を加えることで現れる。保存で作ってはいけない"
+    );
+}
+
+#[tokio::test]
+async fn removing_a_slot_deletes_its_event() {
+    let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
+    let slot = gpu_usage("holder@example.com", 0);
+    repository
+        .add_reservation(&Reservation::from_one_time_slot(&slot))
+        .await
+        .unwrap();
+
+    repository.remove_slot(slot.id()).await.unwrap();
+
+    assert_eq!(
+        gateway.deleted(),
+        vec![(CALENDAR_ID.to_string(), slot.id().as_str().replace('-', ""))]
     );
 }
 
@@ -901,9 +946,7 @@ async fn slots_of_a_recurring_event_point_at_their_recurring_reservation() {
         .collect();
     assert_eq!(recurring.len(), 2, "展開された各予約枠は定期予約に属する");
     assert!(
-        recurring
-            .iter()
-            .all(|slot| slot.reservation_id() == &weekly),
+        recurring.iter().all(|slot| slot.reservation_id() == weekly),
         "同じ繰り返しイベントの予約枠は同じ定期予約を指す"
     );
 
@@ -943,17 +986,17 @@ async fn a_recurring_reservation_is_read_from_the_recurring_event_itself() {
         .unwrap()
         .expect("繰り返しイベントは定期予約として読める");
 
-    let Reservation::Recurring(recurring) = reservation else {
+    let Schedule::Recurring { first_slot, rule } = reservation.schedule() else {
         panic!("繰り返しの指定を持つイベントは定期予約: {reservation:?}");
     };
-    assert_eq!(recurring.holder_email().as_str(), "holder@example.com");
+    assert_eq!(reservation.holder_email().as_str(), "holder@example.com");
     assert_eq!(
-        recurring.first_slot_period().start(),
+        first_slot.start(),
         first_start,
         "初回の予約枠の時刻が時間帯を決める"
     );
     assert_eq!(
-        recurring.rule().map(|rule| rule.frequency()),
+        rule.as_ref().map(|rule| rule.frequency()),
         Some(RecurrenceFrequency::Weekly)
     );
 }
@@ -989,11 +1032,11 @@ async fn a_single_event_is_a_one_time_reservation() {
         .unwrap()
         .expect("単発のイベントは単発予約として読める");
 
-    let Reservation::OneTime(one_time) = reservation else {
+    let Schedule::OneTime(time_period) = reservation.schedule() else {
         panic!("繰り返しの指定を持たないイベントは単発予約: {reservation:?}");
     };
-    assert_eq!(one_time.id().as_str(), "single");
-    assert_eq!(one_time.time_period().start(), now);
+    assert_eq!(reservation.id().as_str(), "single");
+    assert_eq!(time_period.start(), now);
 }
 
 #[tokio::test]
@@ -1008,7 +1051,7 @@ async fn cancelling_a_one_time_reservation_deletes_its_event() {
     )]);
 
     repository
-        .delete_reservation(&ReservationId::from_string("single".to_string()))
+        .remove_reservation(&ReservationId::from_string("single".to_string()))
         .await
         .unwrap();
 
@@ -1040,7 +1083,7 @@ async fn cancelling_a_recurring_reservation_deletes_the_recurring_event_itself()
     let (repository, gateway) = repository_with(vec![weekly_series_event("weekly", Utc::now())]);
 
     repository
-        .delete_reservation(&ReservationId::from_string("weekly".to_string()))
+        .remove_reservation(&ReservationId::from_string("weekly".to_string()))
         .await
         .unwrap();
 
@@ -1058,7 +1101,7 @@ async fn cancelling_by_a_slot_id_does_not_delete_anything() {
     let (repository, gateway) = repository_with(vec![occurrence]);
 
     let error = repository
-        .delete_reservation(&ReservationId::from_string(occurrence_id))
+        .remove_reservation(&ReservationId::from_string(occurrence_id))
         .await
         .unwrap_err();
 
@@ -1081,7 +1124,8 @@ async fn ending_one_slot_early_rewrites_only_that_slot() {
     ]);
 
     let mut slot = repository.find_slot(&id).await.unwrap().unwrap();
-    slot.end_early(Utc::now()).unwrap();
+    let holder = slot.holder_email().clone();
+    slot.end_early(Utc::now(), &holder).unwrap();
     repository.save_slot(&slot).await.unwrap();
 
     assert_eq!(

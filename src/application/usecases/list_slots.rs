@@ -1,15 +1,15 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::ReservedSlot;
-use crate::domain::aggregates::reservation::value_objects::TimePeriod;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::common::TimePeriod;
+use crate::domain::ports::repositories::ReservedSlotRepository;
 use std::sync::Arc;
 
 /// 指定期間の予約枠を一覧するユースケース
-pub struct ListSlotsUseCase<R: ReservationRepository> {
+pub struct ListSlotsUseCase<R: ReservedSlotRepository> {
     repository: Arc<R>,
 }
 
-impl<R: ReservationRepository> ListSlotsUseCase<R> {
+impl<R: ReservedSlotRepository> ListSlotsUseCase<R> {
     /// 新しいListSlotsUseCaseインスタンスを作成
     ///
     /// # Arguments

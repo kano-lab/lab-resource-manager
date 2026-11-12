@@ -44,7 +44,8 @@ This guide keeps these words apart:
 | Reserved slot | A stretch of time a reservation actually holds. A one-time reservation has one; a recurring reservation has one each time it repeats |
 
 For example, a recurring reservation for "every Monday, 10:00–12:00" holds the reserved slots
-Nov 18 10:00–12:00, Nov 25 10:00–12:00, and so on. Overlap checks, unused notices, and "End now"
+Nov 18 10:00–12:00, Nov 25 10:00–12:00, and so on. A reserved slot is time you have held with a
+reservation, not an open slot waiting to be booked. Overlap checks, unused notices, and "End now"
 work on reserved slots. For a one-time reservation, the reservation and its slot are the same thing.
 
 ## Getting Started

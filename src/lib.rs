@@ -124,18 +124,18 @@ pub mod prelude {
 
     // Domain types
     pub use crate::domain::aggregates::reservation::{
-        OneTimeReservation, RecurrenceEnd, RecurrenceFrequency, RecurrenceRule,
-        RecurringReservation, Reservation, ReservationId, ReservationKind, ReservedSlot,
-        ReservedSlotId,
+        BelongsTo, RecurrenceEnd, RecurrenceFrequency, RecurrenceRule, Reservation,
+        ReservationEvent, ReservationId, ReservationKind, ReservedSlot, ReservedSlotId, Schedule,
         errors::ReservationError,
         factory::{ResourceFactory, ResourceFactoryError},
-        value_objects::{Gpu, Resource, TimePeriod},
+        value_objects::{Gpu, Resource},
     };
+    pub use crate::domain::common::TimePeriod;
 
     // Ports (traits)
     pub use crate::domain::ports::{
-        notifier::{NotificationError, NotificationEvent, Notifier},
-        repositories::{RepositoryError, ReservationRepository},
+        notifier::{NotificationError, Notifier},
+        repositories::{RepositoryError, ReservationRepository, ReservedSlotRepository},
         reservation_proposal::{ReservationProposal, ReservationProposalNotifier},
         resource_usage_observer::{ObservationError, ObservedUsage, ResourceUsageObserver},
     };
@@ -165,8 +165,8 @@ pub mod prelude {
 // Convenience re-exports at crate root
 pub use application::{error::ApplicationError, usecases::NotifyReservationChangesUseCase};
 pub use domain::ports::{
-    notifier::{NotificationError, NotificationEvent, Notifier},
-    repositories::{RepositoryError, ReservationRepository},
+    notifier::{NotificationError, Notifier},
+    repositories::{RepositoryError, ReservationRepository, ReservedSlotRepository},
 };
 pub use infrastructure::{
     config::load_config,

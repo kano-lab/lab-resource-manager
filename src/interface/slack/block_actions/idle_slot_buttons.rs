@@ -6,7 +6,7 @@
 use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::Notifier;
-use crate::domain::ports::repositories::ReservationRepository;
+use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotRepository};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::{
     ACTION_IDLE_CANCEL, ACTION_IDLE_END_EARLY, ACTION_IDLE_KEEP,
@@ -25,11 +25,11 @@ pub async fn handle<R, N>(
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let Some(slot_id_str) = &action.value else {
-        error!("idle reservation button carried no slot id");
+        error!("idle slot button carried no slot id");
         return Ok(());
     };
 
@@ -56,7 +56,7 @@ where
             }
         }
         other => {
-            error!(action_id = %other, "unknown idle reservation action");
+            error!(action_id = %other, "unknown idle slot action");
             return Ok(());
         }
     };
@@ -70,7 +70,7 @@ where
 /// 予約は使われる見込みなので、しばらくこの予約について声をかけない。
 fn keep<R, N>(app: &SlackApp<R, N>, slot_id: &ReservedSlotId) -> String
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     app.idle_notices().silence(slot_id, Utc::now());
@@ -89,14 +89,14 @@ async fn release<R, N>(
     requested_by: &EmailAddress,
 ) -> String
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     info!(
         slot_id = %slot_id.as_str(),
         requested_by = %requested_by.as_str(),
         origin = "slack",
-        "releasing an idle reservation early"
+        "ending an idle slot early"
     );
 
     match app
@@ -114,7 +114,7 @@ where
                 slot_id = %slot_id.as_str(),
                 reason = %failure,
                 origin = "slack",
-                "releasing the idle reservation was refused"
+                "ending the idle slot early was refused"
             );
             reservation_failure::end_early_message(&failure)
         }
@@ -128,14 +128,14 @@ async fn cancel<R, N>(
     requested_by: &EmailAddress,
 ) -> String
 where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     info!(
         slot_id = %slot_id.as_str(),
         requested_by = %requested_by.as_str(),
         origin = "slack",
-        "cancelling an idle reservation"
+        "cancelling an idle slot"
     );
 
     match app
@@ -144,13 +144,13 @@ where
         .execute(slot_id, requested_by)
         .await
     {
-        Ok(cancelled) => reservation_failure::cancelled_message(&cancelled),
+        Ok(event) => reservation_failure::cancelled_message(&event),
         Err(failure) => {
             warn!(
                 slot_id = %slot_id.as_str(),
                 reason = %failure,
                 origin = "slack",
-                "cancelling the idle reservation was refused"
+                "cancelling the idle slot was refused"
             );
             reservation_failure::cancel_message(&failure)
         }
@@ -166,7 +166,7 @@ async fn reply<R, N>(
     block_actions: &SlackInteractionBlockActionsEvent,
     feedback: String,
 ) where
-    R: ReservationRepository + Send + Sync + 'static,
+    R: ReservationRepository + ReservedSlotRepository + Send + Sync + 'static,
     N: Notifier + Send + Sync + 'static,
 {
     let session = app.slack_client().open_session(app.bot_token());
@@ -180,10 +180,10 @@ async fn reply<R, N>(
 
         match session.chat_update(&settled).await {
             Ok(updated) => {
-                info!(channel = %updated.channel, ts = %updated.ts, "settled the idle reservation dm");
+                info!(channel = %updated.channel, ts = %updated.ts, "settled the idle slot dm");
                 return;
             }
-            Err(e) => warn!(error = %e, "replacing the idle reservation dm failed"),
+            Err(e) => warn!(error = %e, "replacing the idle slot dm failed"),
         }
     }
 

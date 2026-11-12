@@ -4,7 +4,18 @@
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ReservationId(String);
 
+impl Default for ReservationId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ReservationId {
+    /// 新しい予約IDを生成する（UUID v4）
+    pub fn new() -> Self {
+        Self(uuid::Uuid::new_v4().to_string())
+    }
+
     /// 既存のID文字列から予約IDを再構築
     pub fn from_string(id: String) -> Self {
         Self(id)
@@ -18,23 +29,12 @@ impl ReservationId {
 
 /// 予約枠の識別子
 ///
-/// 単発予約の予約枠は、その予約と同じ識別子を持つ（予約と予約枠が1対1のため）。
-/// 定期予約の予約枠は、それぞれ別の識別子を持つ。
+/// 予約枠のIDは予約から決まる。単発予約の予約枠は、その予約と同じ識別子を持つ
+/// （予約と予約枠が1対1のため）。定期予約の予約枠は、繰り返しの1回ごとに別の識別子を持つ。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ReservedSlotId(String);
 
-impl Default for ReservedSlotId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ReservedSlotId {
-    /// 新しい予約枠IDを生成する（UUID v4）
-    pub fn new() -> Self {
-        Self(uuid::Uuid::new_v4().to_string())
-    }
-
     /// 既存のID文字列から予約枠IDを再構築
     ///
     /// # Arguments
