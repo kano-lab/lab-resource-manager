@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/kano-lab/lab-resource-manager/compare/v2.0.1...v2.0.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* read calendars shared with the service account again ([#189](https://github.com/kano-lab/lab-resource-manager/issues/189)) ([f67d8c3](https://github.com/kano-lab/lab-resource-manager/commit/f67d8c3da3b1b8405d6aaa3c86ecfd29785655f7))
+
 ## [2.0.1](https://github.com/kano-lab/lab-resource-manager/compare/v2.0.0...v2.0.1) (2026-11-12)
 
 
