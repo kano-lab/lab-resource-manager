@@ -219,4 +219,39 @@ mod tests {
             error
         );
     }
+
+    #[tokio::test]
+    async fn ending_a_running_occurrence_early_shortens_only_that_slot() {
+        use crate::application::usecases::test_support::weekly_reservation;
+        use crate::domain::aggregates::reservation::OccurrenceKey;
+        // 2回目が始まって1時間たったところ
+        let first = now() - Duration::days(7) - Duration::hours(1);
+        let repository = Arc::new(InMemoryReservationRepository::new());
+        let weekly = weekly_reservation(first);
+        repository.put_reservation(&weekly);
+        let second = OccurrenceKey::At(first + Duration::days(7));
+
+        let ended = usecase(repository.clone())
+            .execute(
+                &ReservedSlotId::new(weekly.id().clone(), second.clone()),
+                &email("holder@example.com"),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            ended.time_period(),
+            &TimePeriod::new(first + Duration::days(7), now()).unwrap()
+        );
+        let stored = repository.find(weekly.id()).await.unwrap().unwrap();
+        assert_eq!(
+            stored
+                .slot(&OccurrenceKey::At(first + Duration::days(14)))
+                .unwrap()
+                .time_period()
+                .end(),
+            first + Duration::days(14) + Duration::hours(2),
+            "次の回はそのまま"
+        );
+    }
 }

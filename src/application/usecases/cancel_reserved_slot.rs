@@ -134,4 +134,58 @@ mod tests {
             "断った取り消しで予約枠を消してはいけない"
         );
     }
+
+    #[tokio::test]
+    async fn cancelling_one_occurrence_keeps_the_reservation_and_its_other_slots() {
+        use crate::application::usecases::test_support::weekly_reservation;
+        use crate::domain::aggregates::reservation::{OccurrenceKey, ReservedSlotId};
+        let first = Utc::now() + Duration::days(1);
+        let repository = Arc::new(InMemoryReservationRepository::new());
+        let weekly = weekly_reservation(first);
+        repository.put_reservation(&weekly);
+        let second = OccurrenceKey::At(first + Duration::days(7));
+
+        let event = CancelReservedSlotUseCase::new(repository.clone())
+            .execute(
+                &ReservedSlotId::new(weekly.id().clone(), second.clone()),
+                &email("holder@example.com"),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            matches!(&event, ReservationEvent::SlotCancelled { slot, .. } if slot.key() == &second),
+            "{event:?}"
+        );
+        let stored = repository.find(weekly.id()).await.unwrap().unwrap();
+        assert!(stored.slot(&second).is_none());
+        assert!(
+            stored.slot(&OccurrenceKey::At(first)).is_some(),
+            "ほかの回は残る"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reservation_changed_after_reading_is_reported_as_a_conflict() {
+        use crate::application::usecases::test_support::ChangedAfterReading;
+        use crate::domain::ports::repositories::RepositoryError;
+        let slot = upcoming_slot();
+        let stored = InMemoryReservationRepository::new();
+        stored.put_slot(&slot);
+        let repository = Arc::new(ChangedAfterReading(stored.clone()));
+
+        let error = CancelReservedSlotUseCase::new(repository)
+            .execute(slot.id(), &email("holder@example.com"))
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                error,
+                ApplicationError::Repository(RepositoryError::Conflict)
+            ),
+            "読んだあとに変わった予約は取り消さない: {error:?}"
+        );
+        assert!(stored.find_slot(slot.id()).await.unwrap().is_some());
+    }
 }

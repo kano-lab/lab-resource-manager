@@ -262,4 +262,110 @@ mod tests {
         let stored = repository.find_slot(mine.id()).await.unwrap().unwrap();
         assert_eq!(stored.time_period(), &up_to_theirs);
     }
+
+    #[tokio::test]
+    async fn rescheduling_one_occurrence_moves_only_that_slot() {
+        use crate::application::usecases::test_support::weekly_reservation;
+        use crate::domain::aggregates::reservation::OccurrenceKey;
+        let first = Utc::now() + Duration::days(1);
+        let repository = Arc::new(InMemoryReservationRepository::new());
+        let weekly = weekly_reservation(first);
+        repository.put_reservation(&weekly);
+        let second_start = first + Duration::days(7);
+        let second = OccurrenceKey::At(second_start);
+        let later = TimePeriod::new(
+            second_start + Duration::hours(3),
+            second_start + Duration::hours(5),
+        )
+        .unwrap();
+
+        UpdateReservedSlotUseCase::new(repository.clone())
+            .execute(
+                &ReservedSlotId::new(weekly.id().clone(), second.clone()),
+                &email("holder@example.com"),
+                Some(later.clone()),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let stored = repository.find(weekly.id()).await.unwrap().unwrap();
+        assert_eq!(stored.slot(&second).unwrap().time_period(), &later);
+        assert_eq!(
+            stored
+                .slot(&OccurrenceKey::At(first))
+                .unwrap()
+                .time_period()
+                .start(),
+            first,
+            "ほかの回は動かない"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_occurrence_cannot_be_moved_onto_another_occurrence_of_the_same_reservation() {
+        use crate::application::usecases::test_support::weekly_reservation;
+        use crate::domain::aggregates::reservation::OccurrenceKey;
+        let first = Utc::now() + Duration::days(1);
+        let repository = Arc::new(InMemoryReservationRepository::new());
+        let weekly = weekly_reservation(first);
+        repository.put_reservation(&weekly);
+        let second = OccurrenceKey::At(first + Duration::days(7));
+
+        // 2回目を、1回目と同じ時間へ動かす。同じGPUを同じ時間に二重に押さえることになる
+        let error = UpdateReservedSlotUseCase::new(repository.clone())
+            .execute(
+                &ReservedSlotId::new(weekly.id().clone(), second.clone()),
+                &email("holder@example.com"),
+                Some(TimePeriod::new(first, first + Duration::hours(2)).unwrap()),
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(error, ApplicationError::ResourceConflict { .. }),
+            "{error:?}"
+        );
+        let stored = repository.find(weekly.id()).await.unwrap().unwrap();
+        assert_eq!(
+            stored.slot(&second).unwrap().time_period().start(),
+            first + Duration::days(7)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reservation_changed_after_reading_is_reported_as_a_conflict() {
+        use crate::application::usecases::test_support::ChangedAfterReading;
+        use crate::domain::ports::repositories::RepositoryError;
+        let start = Utc::now() + Duration::hours(1);
+        let mine = slot_of("holder@example.com", start, start + Duration::hours(1));
+        let stored = InMemoryReservationRepository::new();
+        stored.put_slot(&mine);
+        let repository = Arc::new(ChangedAfterReading(stored.clone()));
+
+        let error = UpdateReservedSlotUseCase::new(repository)
+            .execute(
+                mine.id(),
+                &email("holder@example.com"),
+                None,
+                Some("書き換え".to_string()),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                error,
+                ApplicationError::Repository(RepositoryError::Conflict)
+            ),
+            "{error:?}"
+        );
+        let after = stored.find_slot(mine.id()).await.unwrap().unwrap();
+        assert_eq!(
+            after.notes(),
+            None,
+            "読んだあとに変わった予約は書き戻さない"
+        );
+    }
 }

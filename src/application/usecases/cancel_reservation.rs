@@ -191,4 +191,31 @@ mod tests {
         );
         assert!(repository.find(series.id()).await.unwrap().is_some());
     }
+
+    #[tokio::test]
+    async fn a_reservation_changed_after_reading_is_reported_as_a_conflict() {
+        use crate::application::usecases::test_support::{ChangedAfterReading, weekly_reservation};
+        use crate::domain::ports::repositories::RepositoryError;
+        let stored = InMemoryReservationRepository::new();
+        let weekly = weekly_reservation(Utc::now() + Duration::days(1));
+        stored.put_reservation(&weekly);
+        let repository = Arc::new(ChangedAfterReading(stored.clone()));
+
+        let error = CancelReservationUseCase::new(repository)
+            .execute(
+                weekly.id(),
+                &EmailAddress::new("holder@example.com".to_string()).unwrap(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                error,
+                ApplicationError::Repository(RepositoryError::Conflict)
+            ),
+            "{error:?}"
+        );
+        assert!(stored.find(weekly.id()).await.unwrap().is_some());
+    }
 }
