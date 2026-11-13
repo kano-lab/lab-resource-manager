@@ -1,9 +1,20 @@
 name: Calendar Contract
 
-# Runs the contract tests against the real test Google Calendar. They need the
-# service account key, so they run on demand rather than on every pull request.
+# Runs the contract tests against the real test Google Calendar: weekly, so that
+# a change in Google's behaviour shows up even when nobody touches the adapter;
+# on pull requests that change the adapter or these tests; and on demand.
+#
+# They need the service account key. Pull requests from forks get no secrets, so
+# the job runs only for branches of this repository.
 on:
   workflow_dispatch:
+  schedule:
+    # Mondays 03:17 UTC (12:17 JST)
+    - cron: "17 3 * * 1"
+  pull_request:
+    paths:
+      - "src/infrastructure/repositories/reservation/google_calendar/**"
+      - ".github/workflows/calendar-contract.yml"
 
 # The runs share one test calendar: let only one run at a time touch it.
 concurrency:
@@ -17,6 +28,7 @@ env:
 jobs:
   contract:
     name: Google Calendar contract
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
 
     steps:

@@ -33,20 +33,27 @@ struct ListQuery {
     time_max: Option<DateTime<Utc>>,
 }
 
-/// 固定のイベント集合を返し、受け取った問い合わせを記録するテストダブル
+/// 本物のカレンダーを、テストに要る範囲だけ真似る偽のゲートウェイ
 ///
-/// `list_events`はGoogle Calendar APIの絞り込み意味論を模倣する。
-/// すなわち終了時刻が`time_min`より後、かつ（`time_max`指定時は）開始時刻が
-/// `time_max`より前のイベントだけを返す。
+/// 振る舞いは契約テスト（`contract_tests.rs`）で本物と突き合わせる。本物より寛容にはしない。
+/// 本物で確かめていない振る舞いを足すときは、契約も足す。
 ///
-/// 書き換え・削除は実APIの`If-Match`と同じく、イベントのetagが渡された版と
-/// 一致するときだけ通す。イベントは書き込むたびに新しいetagになる。
-///
-/// 繰り返しイベントは実APIと同じく展開せずに返す。回のイベントID
-/// （`繰り返しイベントのID_回の開始時刻`）は、規則どおりの回でも取得・書き換え・削除でき、
-/// 削除した回は`status: cancelled`の回のイベントとして残る。
+/// - カレンダーごとにイベントを持つ。別のカレンダーのイベントは見えない
+/// - 一覧は、終了時刻が`time_min`より後、かつ（`time_max`指定時は）開始時刻が`time_max`より前の
+///   イベントを返す。繰り返しイベントは展開せず、期間に重なる回があるときだけ返す
+/// - 繰り返しイベントの回の開始時刻は、テストが[`Self::with_occurrences`]で与えたもの。
+///   与えなければ偽物が自前で数える（[`simple_occurrences`]）。本番の繰り返し計算は使わない
+/// - 回のイベントID（`繰り返しイベントのID_回の開始時刻`）は、回がある時刻に限って、規則どおりの
+///   回でも取得・書き換え・削除できる。削除した回は、最小限の項目だけを持つ
+///   `status: cancelled`の回のイベントとして残る
+/// - 書き換え・削除は、イベントのetagが渡された版と一致するときだけ通す（If-Match）。
+///   書き込むたびに新しいetagになり、回を変えると繰り返しイベントそのもののetagも変わる
+/// - 作るときに、使ったことのあるIDは断る（消したイベントのIDも）
 pub(super) struct FakeCalendarEventGateway {
-    events: Vec<Event>,
+    /// （カレンダーID, イベントID）→ イベントの今の姿（消したものは`None`）
+    store: Mutex<HashMap<(String, String), Option<Event>>>,
+    /// テストが与えた、繰り返しイベントの回の開始時刻（繰り返しイベントのID → 開始時刻）
+    occurrences: HashMap<String, Vec<DateTime<Utc>>>,
     queries: Mutex<Vec<ListQuery>>,
     /// insert_eventで受け取ったイベント（calendar_id, event）
     inserted: Mutex<Vec<(String, Event)>>,
@@ -54,23 +61,46 @@ pub(super) struct FakeCalendarEventGateway {
     updated: Mutex<Vec<(String, String)>>,
     /// delete_eventで受け取った対象（calendar_id, event_id）
     deleted: Mutex<Vec<(String, String)>>,
-    /// 書き込んだあとのイベントの今の姿（イベントID → イベント。消えたものは`None`）
-    current: Mutex<HashMap<String, Option<Event>>>,
     /// 最後に採番したetag
     last_etag: Mutex<u64>,
+    /// 最後に採番したイベントID
+    last_generated_id: Mutex<u64>,
 }
 
 impl FakeCalendarEventGateway {
+    /// テスト用カレンダー（`CALENDAR_ID`）に`events`がある状態
     pub(super) fn new(events: Vec<Event>) -> Self {
         Self {
-            events,
+            store: Mutex::new(HashMap::new()),
+            occurrences: HashMap::new(),
             queries: Mutex::new(Vec::new()),
             inserted: Mutex::new(Vec::new()),
             updated: Mutex::new(Vec::new()),
             deleted: Mutex::new(Vec::new()),
-            current: Mutex::new(HashMap::new()),
             last_etag: Mutex::new(0),
+            last_generated_id: Mutex::new(0),
         }
+        .with_events(CALENDAR_ID, events)
+    }
+
+    /// `calendar_id`のカレンダーに`events`を足す
+    pub(super) fn with_events(self, calendar_id: &str, events: Vec<Event>) -> Self {
+        {
+            let mut store = self.store.lock().unwrap();
+            for event in events {
+                let id = event.id.clone().expect("テストイベントにはIDが要る");
+                store.insert((calendar_id.to_string(), id), Some(event));
+            }
+        }
+        self
+    }
+
+    /// 繰り返しイベント`series_id`の回の開始時刻を与える
+    ///
+    /// 偽物が自前で数えられない規則（[`simple_occurrences`]を参照）を使うときに与える。
+    pub(super) fn with_occurrences(mut self, series_id: &str, starts: Vec<DateTime<Utc>>) -> Self {
+        self.occurrences.insert(series_id.to_string(), starts);
+        self
     }
 
     fn new_etag(&self) -> String {
@@ -79,27 +109,50 @@ impl FakeCalendarEventGateway {
         format!("\"{}\"", last)
     }
 
-    /// イベントの今の姿
-    fn stored(&self, event_id: &str) -> Option<Event> {
-        if let Some(state) = self.current.lock().unwrap().get(event_id) {
-            return state.clone();
-        }
-        self.events
-            .iter()
-            .find(|event| event.id.as_deref() == Some(event_id))
-            .cloned()
-            .or_else(|| self.regular_instance(event_id))
+    fn new_event_id(&self) -> String {
+        let mut last = self.last_generated_id.lock().unwrap();
+        *last += 1;
+        format!("generated{last}")
     }
 
-    /// まだ規則どおりの回のイベント（実APIは回のイベントIDでも取得できる）
-    fn regular_instance(&self, event_id: &str) -> Option<Event> {
+    fn key(calendar_id: &str, event_id: &str) -> (String, String) {
+        (calendar_id.to_string(), event_id.to_string())
+    }
+
+    /// イベントの今の姿
+    fn stored(&self, calendar_id: &str, event_id: &str) -> Option<Event> {
+        let state = self
+            .store
+            .lock()
+            .unwrap()
+            .get(&Self::key(calendar_id, event_id))
+            .cloned();
+        match state {
+            Some(state) => state,
+            None => self.regular_instance(calendar_id, event_id),
+        }
+    }
+
+    fn put(&self, calendar_id: &str, event_id: &str, event: Option<Event>) {
+        self.store
+            .lock()
+            .unwrap()
+            .insert(Self::key(calendar_id, event_id), event);
+    }
+
+    /// まだ規則どおりの回のイベント（本物は回のイベントIDでも取得できる）。回がある時刻に限る
+    fn regular_instance(&self, calendar_id: &str, event_id: &str) -> Option<Event> {
         let (series_id, start) = event_id.rsplit_once('_')?;
         let start = chrono::NaiveDateTime::parse_from_str(start, "%Y%m%dT%H%M%SZ")
             .ok()?
             .and_utc();
-        let series = self.stored(series_id)?;
+        let series = self.stored(calendar_id, series_id)?;
         series.recurrence.as_ref()?;
-        let length = event_end(&series) - event_start(&series);
+        if !self.occurrence_starts(&series).contains(&start) {
+            return None;
+        }
+        let (first_start, first_end) = event_period(&series)?;
+        let length = first_end - first_start;
         Some(Event {
             id: Some(event_id.to_string()),
             recurrence: None,
@@ -110,33 +163,63 @@ impl FakeCalendarEventGateway {
             }),
             start: Some(EventDateTime {
                 date_time: Some(start),
-                ..Default::default()
+                ..series.start.clone().unwrap_or_default()
             }),
             end: Some(EventDateTime {
                 date_time: Some(start + length),
-                ..Default::default()
+                ..series.end.clone().unwrap_or_default()
             }),
             etag: Some(format!("\"regular-{event_id}\"")),
             ..series
         })
     }
 
-    /// 書き込みを反映した、今あるすべてのイベント
-    fn all_events(&self) -> Vec<Event> {
-        let current = self.current.lock().unwrap().clone();
-        let mut all: Vec<Event> = self
-            .events
+    /// 繰り返しイベントの回の開始時刻
+    fn occurrence_starts(&self, series: &Event) -> Vec<DateTime<Utc>> {
+        match self
+            .occurrences
+            .get(series.id.as_deref().unwrap_or_default())
+        {
+            Some(starts) => starts.clone(),
+            None => simple_occurrences(series),
+        }
+    }
+
+    /// 繰り返しイベントに、期間に重なる回があるか
+    fn occurs_within(
+        &self,
+        series: &Event,
+        time_min: DateTime<Utc>,
+        time_max: Option<DateTime<Utc>>,
+    ) -> bool {
+        let Some((first_start, first_end)) = event_period(series) else {
+            return false;
+        };
+        let length = first_end - first_start;
+        self.occurrence_starts(series)
+            .into_iter()
+            .any(|start| start + length > time_min && time_max.is_none_or(|max| start < max))
+    }
+
+    /// カレンダーにある、消えていないすべてのイベント
+    fn all_events(&self, calendar_id: &str) -> Vec<Event> {
+        self.store
+            .lock()
+            .unwrap()
             .iter()
-            .filter(|event| !current.contains_key(event.id.as_deref().unwrap_or_default()))
-            .cloned()
-            .collect();
-        all.extend(current.into_values().flatten());
-        all
+            .filter(|((calendar, _), _)| calendar == calendar_id)
+            .filter_map(|(_, event)| event.clone())
+            .collect()
     }
 
     /// 版が今のetagと一致すれば、今のイベントを返す
-    fn check_version(&self, event_id: &str, version: &str) -> Result<Event, RepositoryError> {
-        match self.stored(event_id) {
+    fn check_version(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+        version: &str,
+    ) -> Result<Event, RepositoryError> {
+        match self.stored(calendar_id, event_id) {
             Some(event) if event.etag.as_deref() == Some(version) => Ok(event),
             _ => Err(RepositoryError::Conflict),
         }
@@ -144,37 +227,30 @@ impl FakeCalendarEventGateway {
 
     /// カレンダー上で直接書き換えられたことにする（etagが変わる）
     fn edit_in_calendar(&self, event_id: &str) {
-        let mut event = self.stored(event_id).expect("書き換えるイベントが無い");
+        let mut event = self
+            .stored(CALENDAR_ID, event_id)
+            .expect("書き換えるイベントが無い");
         event.etag = Some(self.new_etag());
-        self.touch_series_of(&event);
-        self.current
-            .lock()
-            .unwrap()
-            .insert(event_id.to_string(), Some(event));
+        self.touch_series_of(CALENDAR_ID, &event);
+        self.put(CALENDAR_ID, event_id, Some(event));
     }
 
     /// 回を変えたときの、繰り返しイベントそのものの版の変化
     ///
-    /// 実APIは、回を書き換えたり削除したりすると、繰り返しイベントそのもののetagも変える。
-    fn touch_series_of(&self, instance: &Event) {
+    /// 本物は、回を書き換えたり削除したりすると、繰り返しイベントそのもののetagも変える。
+    fn touch_series_of(&self, calendar_id: &str, instance: &Event) {
         let Some(series_id) = instance.recurring_event_id.as_deref() else {
             return;
         };
-        if let Some(mut series) = self.stored(series_id) {
+        if let Some(mut series) = self.stored(calendar_id, series_id) {
             series.etag = Some(self.new_etag());
-            self.current
-                .lock()
-                .unwrap()
-                .insert(series_id.to_string(), Some(series));
+            self.put(calendar_id, series_id, Some(series));
         }
     }
 
     /// カレンダー上で直接消されたことにする
     fn delete_in_calendar(&self, event_id: &str) {
-        self.current
-            .lock()
-            .unwrap()
-            .insert(event_id.to_string(), None);
+        self.put(CALENDAR_ID, event_id, None);
     }
 
     fn queries(&self) -> Vec<ListQuery> {
@@ -194,44 +270,84 @@ impl FakeCalendarEventGateway {
     }
 }
 
-fn event_start(event: &Event) -> DateTime<Utc> {
-    event
-        .start
-        .as_ref()
-        .and_then(|s| s.date_time)
-        .expect("テストイベントには開始時刻が必要")
-}
-
-fn event_end(event: &Event) -> DateTime<Utc> {
-    event
-        .end
-        .as_ref()
-        .and_then(|e| e.date_time)
-        .expect("テストイベントには終了時刻が必要")
-}
-
-/// 繰り返しイベントに、期間に重なる回があるか
-fn occurs_within(event: &Event, time_min: DateTime<Utc>, time_max: Option<DateTime<Utc>>) -> bool {
-    use crate::domain::aggregates::reservation::RecurrenceRule;
-    let Some(rule) = event
-        .recurrence
-        .clone()
-        .and_then(|lines| RecurrenceRule::parse(lines).ok())
-    else {
-        return false;
+/// イベントの開始時刻と終了時刻（終日のイベントは、その日のUTCの0時。時刻の無いイベントは`None`）
+fn event_period(event: &Event) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+    let time = |at: &EventDateTime| {
+        at.date_time.or_else(|| {
+            at.date
+                .map(|date| date.and_time(chrono::NaiveTime::MIN).and_utc())
+        })
     };
-    let time_zone = event
+    Some((time(event.start.as_ref()?)?, time(event.end.as_ref()?)?))
+}
+
+/// 偽物が自前で数える、繰り返しイベントの回の開始時刻
+///
+/// 本番の繰り返し計算（`RecurrenceRule`）とは別に、テストで使う単純な規則だけを、現地時刻で
+/// 日を足して数える。本番の計算に誤りがあっても、偽物が同じ誤りをしないようにするため。
+///
+/// 数えられるのは、`FREQ=DAILY`か`FREQ=WEEKLY`に、`INTERVAL`・`COUNT`・`UNTIL`と、最初の回と
+/// 同じ曜日だけの`BYDAY`を付けた規則。終わりの無い規則は10年分まで数える。それ以外の規則
+/// （EXDATEの行を含む）を使うテストは、[`FakeCalendarEventGateway::with_occurrences`]で回を与える。
+fn simple_occurrences(series: &Event) -> Vec<DateTime<Utc>> {
+    use chrono::{Datelike, TimeZone};
+    let lines = series.recurrence.clone().unwrap_or_default();
+    let [line] = lines.as_slice() else {
+        panic!("偽物は1行のRRULEしか数えない。with_occurrencesで回を与える: {lines:?}");
+    };
+    let rule = line
+        .strip_prefix("RRULE:")
+        .unwrap_or_else(|| panic!("RRULEの行ではない: {line}"));
+    let (first_start, _) = event_period(series).expect("繰り返しイベントには時刻が要る");
+    let time_zone: chrono_tz::Tz = series
         .start
         .as_ref()
         .and_then(|start| start.time_zone.as_deref())
-        .and_then(|name| name.parse::<chrono_tz::Tz>().ok())
-        .unwrap_or(chrono_tz::UTC);
-    let first = event_start(event);
-    let length = event_end(event) - first;
-    let until = time_max.unwrap_or(time_min + Duration::days(3650));
-    rule.occurrence_starts(first, time_zone, time_min - length, until)
-        .into_iter()
-        .any(|start| start + length > time_min && start < until)
+        .map_or(chrono_tz::UTC, |name| name.parse().expect("時間帯の名前"));
+    let first_local = first_start.with_timezone(&time_zone).naive_local();
+
+    let (mut days_per_step, mut interval, mut count, mut until) = (None, 1, None, None);
+    for part in rule.split(';') {
+        let (name, value) = part.split_once('=').expect("NAME=VALUE");
+        match name {
+            "FREQ" => {
+                days_per_step = Some(match value {
+                    "DAILY" => 1,
+                    "WEEKLY" => 7,
+                    other => panic!("偽物はFREQ={other}を数えない。with_occurrencesで回を与える"),
+                })
+            }
+            "INTERVAL" => interval = value.parse::<i64>().expect("INTERVAL"),
+            "COUNT" => count = Some(value.parse::<usize>().expect("COUNT")),
+            "UNTIL" => {
+                until = Some(
+                    chrono::NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")
+                        .expect("UNTIL")
+                        .and_utc(),
+                )
+            }
+            "BYDAY" => assert_eq!(
+                value,
+                ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+                    [first_local.weekday().num_days_from_monday() as usize],
+                "偽物は最初の回と同じ曜日のBYDAYしか数えない"
+            ),
+            other => panic!("偽物は{other}を数えない。with_occurrencesで回を与える"),
+        }
+    }
+    let days_per_step = days_per_step.expect("FREQ") * interval;
+
+    (0..count.unwrap_or(522) as i64)
+        .map(|n| first_local + Duration::days(days_per_step * n))
+        .map(|local| {
+            time_zone
+                .from_local_datetime(&local)
+                .single()
+                .expect("偽物は夏時間の切り替えで重なる・抜ける時刻を数えない")
+                .with_timezone(&Utc)
+        })
+        .take_while(|start| until.is_none_or(|until| *start <= until))
+        .collect()
 }
 
 #[async_trait]
@@ -249,27 +365,26 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         });
 
         Ok(self
-            .all_events()
+            .all_events(calendar_id)
             .into_iter()
             .filter(|event| match &event.recurrence {
-                // 実APIは、繰り返しイベントを、期間に重なる回があるときだけ返す
+                // 本物は、繰り返しイベントを、期間に重なる回があるときだけ返す
                 // （回と回の合間の期間には現れない）
-                Some(_) => occurs_within(event, time_min, time_max),
-                None => {
-                    event_end(event) > time_min
-                        && time_max.is_none_or(|max| event_start(event) < max)
-                }
+                Some(_) => self.occurs_within(event, time_min, time_max),
+                None => event_period(event).is_some_and(|(start, end)| {
+                    end > time_min && time_max.is_none_or(|max| start < max)
+                }),
             })
             .collect())
     }
 
     async fn list_series(
         &self,
-        _calendar_id: &str,
+        calendar_id: &str,
         ical_uid: &str,
     ) -> Result<Vec<Event>, RepositoryError> {
         Ok(self
-            .all_events()
+            .all_events(calendar_id)
             .into_iter()
             .filter(|event| event.i_cal_uid.as_deref() == Some(ical_uid))
             .collect())
@@ -277,10 +392,10 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
 
     async fn get_event(
         &self,
-        _calendar_id: &str,
+        calendar_id: &str,
         event_id: &str,
     ) -> Result<Option<Event>, RepositoryError> {
-        Ok(self.stored(event_id))
+        Ok(self.stored(calendar_id, event_id))
     }
 
     async fn insert_event(
@@ -289,26 +404,34 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         event: Event,
     ) -> Result<Event, RepositoryError> {
         let mut created = event;
-        // 実APIはIDを指定しなければ自前で採番し、作成者を書き込んだアカウントで埋める
-        if created.id.is_none() {
-            created.id = Some("generated-by-google".to_string());
+        // 本物はIDを指定しなければ自前で採番し、作成者を書き込んだアカウントで埋める
+        let id = match created.id.clone() {
+            Some(id) => id,
+            None => self.new_event_id(),
+        };
+        if self
+            .store
+            .lock()
+            .unwrap()
+            .contains_key(&Self::key(calendar_id, &id))
+        {
+            // 本物は、使ったことのあるIDでは作らない（409）
+            return Err(RepositoryError::Conflict);
         }
+        created.id = Some(id.clone());
         if created.creator.is_none() {
             created.creator = Some(EventCreator {
                 email: Some(SERVICE_ACCOUNT_EMAIL.to_string()),
                 ..Default::default()
             });
         }
-        // 実APIは作ったイベントにiCalUIDと作成時刻を付ける
+        // 本物は作ったイベントにiCalUIDと作成時刻を付ける
         if created.i_cal_uid.is_none() {
-            created.i_cal_uid = created.id.as_ref().map(|id| format!("{id}@google.com"));
+            created.i_cal_uid = Some(format!("{id}@google.com"));
         }
         created.created = Some(Utc::now());
         created.etag = Some(self.new_etag());
-        self.current
-            .lock()
-            .unwrap()
-            .insert(created.id.clone().unwrap(), Some(created.clone()));
+        self.put(calendar_id, &id, Some(created.clone()));
         self.inserted
             .lock()
             .unwrap()
@@ -323,19 +446,18 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         event: Event,
         version: &str,
     ) -> Result<Event, RepositoryError> {
-        let before = self.check_version(event_id, version)?;
+        let before = self.check_version(calendar_id, event_id, version)?;
         let mut updated = event;
-        // 実APIは作成者や、繰り返しのどの回かを書き換えない
+        // 本物は作成者や、繰り返しのどの回かを書き換えない
+        updated.id = before.id;
         updated.creator = before.creator;
+        updated.created = before.created;
         updated.i_cal_uid = before.i_cal_uid;
         updated.recurring_event_id = before.recurring_event_id;
         updated.original_start_time = before.original_start_time;
         updated.etag = Some(self.new_etag());
-        self.touch_series_of(&updated);
-        self.current
-            .lock()
-            .unwrap()
-            .insert(event_id.to_string(), Some(updated.clone()));
+        self.touch_series_of(calendar_id, &updated);
+        self.put(calendar_id, event_id, Some(updated.clone()));
         self.updated
             .lock()
             .unwrap()
@@ -349,21 +471,22 @@ impl CalendarEventGateway for FakeCalendarEventGateway {
         event_id: &str,
         version: &str,
     ) -> Result<(), RepositoryError> {
-        let before = self.check_version(event_id, version)?;
-        self.touch_series_of(&before);
+        let before = self.check_version(calendar_id, event_id, version)?;
+        self.touch_series_of(calendar_id, &before);
         if before.recurring_event_id.is_some() {
-            // 実APIは、削除した回を`status: cancelled`の回のイベントとして残す
+            // 本物は、削除した回を、どの回だったかだけを持つ`status: cancelled`の回のイベントとして残す
             let cancelled = Event {
+                id: before.id,
                 status: Some("cancelled".to_string()),
                 etag: Some(self.new_etag()),
-                ..before
+                recurring_event_id: before.recurring_event_id,
+                original_start_time: before.original_start_time,
+                i_cal_uid: before.i_cal_uid,
+                ..Default::default()
             };
-            self.current
-                .lock()
-                .unwrap()
-                .insert(event_id.to_string(), Some(cancelled));
+            self.put(calendar_id, event_id, Some(cancelled));
         } else {
-            self.delete_in_calendar(event_id);
+            self.put(calendar_id, event_id, None);
         }
         self.deleted
             .lock()
@@ -434,13 +557,28 @@ fn reservation_event(
     }
 }
 
+/// 空の偽のカレンダー1つ（サーバー1台分）を使うリポジトリ（リポジトリの契約テスト用）
+pub(in crate::infrastructure::repositories::reservation) fn repository_on_an_empty_fake_calendar()
+-> GoogleCalendarReservationRepository {
+    repository_with(vec![]).0
+}
+
 fn repository_with(
     events: Vec<Event>,
 ) -> (
     GoogleCalendarReservationRepository,
     Arc<FakeCalendarEventGateway>,
 ) {
-    let gateway = Arc::new(FakeCalendarEventGateway::new(events));
+    repository_on(FakeCalendarEventGateway::new(events))
+}
+
+fn repository_on(
+    gateway: FakeCalendarEventGateway,
+) -> (
+    GoogleCalendarReservationRepository,
+    Arc<FakeCalendarEventGateway>,
+) {
+    let gateway = Arc::new(gateway);
     let repository = GoogleCalendarReservationRepository::with_gateway(
         gateway.clone(),
         test_config(),
@@ -487,21 +625,19 @@ async fn find_overlapping_queries_exactly_the_requested_period() {
     repository.find_slots_overlapping(&period).await.unwrap();
 
     let queries = gateway.queries();
-    assert_eq!(
-        queries.len(),
-        1,
-        "サーバーカレンダー1件分の問い合わせが行われる"
-    );
-    assert_eq!(
-        queries[0].time_min,
-        period.start(),
-        "問い合わせの下限は対象期間の開始時刻であるべき"
-    );
-    assert_eq!(
-        queries[0].time_max,
-        Some(period.end()),
-        "問い合わせの上限は対象期間の終了時刻であるべき"
-    );
+    assert!(!queries.is_empty(), "カレンダーに問い合わせる");
+    for query in queries {
+        assert_eq!(
+            query.time_min,
+            period.start(),
+            "問い合わせの下限は対象期間の開始時刻であるべき"
+        );
+        assert_eq!(
+            query.time_max,
+            Some(period.end()),
+            "問い合わせの上限は対象期間の終了時刻であるべき"
+        );
+    }
 }
 
 #[tokio::test]
@@ -559,6 +695,45 @@ async fn find_overlapping_skips_unparsable_events_but_keeps_the_rest() {
 }
 
 #[tokio::test]
+async fn find_overlapping_skips_all_day_events_but_keeps_the_rest() {
+    let now = Utc::now();
+    let mut all_day = reservation_event(
+        "all-day",
+        "0",
+        "holder@example.com",
+        now - Duration::hours(1),
+        now + Duration::hours(1),
+    );
+    let today = now.date_naive();
+    all_day.start = Some(EventDateTime {
+        date: Some(today),
+        ..Default::default()
+    });
+    all_day.end = Some(EventDateTime {
+        date: Some(today.succ_opt().unwrap()),
+        ..Default::default()
+    });
+    let timed = reservation_event(
+        "timed",
+        "1",
+        "holder@example.com",
+        now - Duration::hours(1),
+        now + Duration::hours(1),
+    );
+    let (repository, _gateway) = repository_with(vec![all_day, timed]);
+    let period = TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap();
+
+    let reservations = repository.find_overlapping(&period).await.unwrap();
+
+    let ids: Vec<&str> = reservations.iter().map(|r| r.id().as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["timed"],
+        "時刻の無い終日の予定は予約として読まない"
+    );
+}
+
+#[tokio::test]
 async fn a_window_starting_now_excludes_reservations_that_already_ended() {
     let now = Utc::now();
     let ended = reservation_event(
@@ -598,23 +773,30 @@ async fn a_window_starting_now_keeps_an_ongoing_reservation() {
     );
 }
 
+// 同じイベントの解釈失敗を毎回警告すると、ポーリングのたびにログが積み上がる。
+// 報告するかの判断だけを確かめる（ログそのものは見ない）
+
 #[tokio::test]
-async fn parse_failures_are_reported_once_per_event() {
+async fn a_parse_failure_is_reported_the_first_time() {
     let (repository, _gateway) = repository_with(vec![]);
 
-    // 同じイベントの解釈失敗を毎回警告すると、ポーリングのたびにログが積み上がる
-    assert!(
-        repository.should_report_parse_failure("event-a"),
-        "初回は報告する"
-    );
-    assert!(
-        !repository.should_report_parse_failure("event-a"),
-        "2回目以降は報告しない"
-    );
-    assert!(
-        repository.should_report_parse_failure("event-b"),
-        "別のイベントは報告する"
-    );
+    assert!(repository.should_report_parse_failure("event-a"));
+}
+
+#[tokio::test]
+async fn the_same_parse_failure_is_not_reported_again() {
+    let (repository, _gateway) = repository_with(vec![]);
+    repository.should_report_parse_failure("event-a");
+
+    assert!(!repository.should_report_parse_failure("event-a"));
+}
+
+#[tokio::test]
+async fn a_parse_failure_of_another_event_is_reported() {
+    let (repository, _gateway) = repository_with(vec![]);
+    repository.should_report_parse_failure("event-a");
+
+    assert!(repository.should_report_parse_failure("event-b"));
 }
 
 /// メールアドレスからOSユーザー名を引けるテスト用のIdentityLinkリポジトリ
@@ -708,17 +890,31 @@ fn gpu_usage(holder: &str, device_number: u32) -> Reservation {
     .unwrap()
 }
 
+/// 予約を保存し、カレンダーに書いたイベントの説明欄を返す
+async fn written_description(
+    repository: &GoogleCalendarReservationRepository,
+    gateway: &FakeCalendarEventGateway,
+    reservation: &mut Reservation,
+) -> String {
+    repository.save(reservation).await.unwrap();
+    gateway
+        .inserted()
+        .last()
+        .and_then(|(_, event)| event.description.clone())
+        .expect("説明欄を書く")
+}
+
 #[tokio::test]
 async fn description_includes_the_os_user_name_for_the_reserved_server() {
-    let (repository, _gateway) =
+    let (repository, gateway) =
         repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
             "holder@example.com",
             "Thalys",
             "kkawaguchi",
         ));
-    let reservation = gpu_usage("holder@example.com", 0);
+    let mut reservation = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&reservation).await;
+    let description = written_description(&repository, &gateway, &mut reservation).await;
 
     assert!(
         description.contains("OS: kkawaguchi"),
@@ -728,10 +924,10 @@ async fn description_includes_the_os_user_name_for_the_reserved_server() {
 
 #[tokio::test]
 async fn description_includes_the_reservation_id() {
-    let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let reservation = gpu_usage("holder@example.com", 0);
+    let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
+    let mut reservation = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&reservation).await;
+    let description = written_description(&repository, &gateway, &mut reservation).await;
 
     assert!(
         description.contains(reservation.id().as_str()),
@@ -741,10 +937,10 @@ async fn description_includes_the_reservation_id() {
 
 #[tokio::test]
 async fn description_omits_the_os_line_when_no_link_exists() {
-    let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let reservation = gpu_usage("unlinked@example.com", 0);
+    let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
+    let mut reservation = gpu_usage("unlinked@example.com", 0);
 
-    let description = repository.build_description(&reservation).await;
+    let description = written_description(&repository, &gateway, &mut reservation).await;
 
     assert!(
         !description.contains("OS:"),
@@ -759,21 +955,23 @@ async fn description_omits_the_os_line_when_no_link_exists() {
 #[tokio::test]
 async fn description_uses_the_os_name_of_the_server_being_reserved() {
     // 同じ利用者がサーバーごとに別のOSユーザー名を持つ場合、予約したサーバーの名前を使う
-    let (repository, _gateway) = repository_with_identities(
+    let (repository, gateway) = repository_with_identities(
         StubIdentityLinkRepository::default()
             .with_os_user("holder@example.com", "Thalys", "kkawaguchi")
             .with_os_user("holder@example.com", "Freccia", "kinji"),
     );
-    let reservation = gpu_usage("holder@example.com", 0);
+    let mut reservation = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&reservation).await;
+    let description = written_description(&repository, &gateway, &mut reservation).await;
 
     assert!(description.contains("OS: kkawaguchi"), "{description}");
     assert!(!description.contains("kinji"), "{description}");
 }
 
 #[tokio::test]
-async fn added_metadata_lines_do_not_leak_into_notes() {
+async fn the_holder_and_notes_read_back_as_saved_despite_the_added_lines() {
+    // 説明欄には、予約者のほかにOSユーザー名や予約IDの行も入る。読み戻すとき、それらが
+    // 予約者や備考に紛れ込まない
     let (repository, _gateway) =
         repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
             "holder@example.com",
@@ -781,7 +979,7 @@ async fn added_metadata_lines_do_not_leak_into_notes() {
             "kkawaguchi",
         ));
     let now = Utc::now();
-    let reservation = Reservation::one_time(
+    let mut reservation = Reservation::one_time(
         crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(
@@ -795,11 +993,14 @@ async fn added_metadata_lines_do_not_leak_into_notes() {
     )
     .unwrap();
 
-    // 生成したdescriptionを読み戻したとき、管理セクションの行が備考に混ざらないこと
-    let description = repository.build_description(&reservation).await;
-    let notes = GoogleCalendarReservationRepository::extract_notes(&description);
+    repository.save(&mut reservation).await.unwrap();
+    let found = repository.find(reservation.id()).await.unwrap().unwrap();
 
-    assert_eq!(notes.as_deref(), Some("killしても大丈夫です"));
+    assert_eq!(found.holder_email().as_str(), "holder@example.com");
+    assert_eq!(
+        found.notes().map(String::as_str),
+        Some("killしても大丈夫です")
+    );
 }
 
 /// 旧バージョンが書いたdescription（管理セクション内は予約者行のみ）
@@ -866,67 +1067,6 @@ async fn reads_reservations_written_before_markers_existed() {
 }
 
 #[tokio::test]
-async fn newly_written_description_round_trips() {
-    let (repository, _gateway) =
-        repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
-            "holder@example.com",
-            "Thalys",
-            "kkawaguchi",
-        ));
-    let now = Utc::now();
-    let reservation = Reservation::one_time(
-        crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
-        TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
-        vec![Resource::Gpu(
-            crate::domain::aggregates::reservation::value_objects::Gpu::new(
-                "Thalys".to_string(),
-                0,
-                "A100 80GB PCIe".to_string(),
-            ),
-        )],
-        Some("実験中".to_string()),
-    )
-    .unwrap();
-
-    // 新形式で書いたdescriptionから、予約者と備考が元の値として読み戻せること
-    let description = repository.build_description(&reservation).await;
-
-    let holder = description
-        .lines()
-        .find_map(|line| line.strip_prefix("予約者: "))
-        .expect("予約者行が読めるべき");
-    assert_eq!(holder, "holder@example.com");
-    assert_eq!(
-        GoogleCalendarReservationRepository::extract_notes(&description).as_deref(),
-        Some("実験中")
-    );
-}
-
-#[tokio::test]
-async fn metadata_lines_are_not_mistaken_for_the_holder() {
-    // OS行や予約ID行が予約者として誤読されないこと（行の走査順に依存しない）
-    let (repository, _gateway) =
-        repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
-            "holder@example.com",
-            "Thalys",
-            "kkawaguchi",
-        ));
-    let reservation = gpu_usage("holder@example.com", 0);
-
-    let description = repository.build_description(&reservation).await;
-    let holder_lines: Vec<&str> = description
-        .lines()
-        .filter_map(|line| line.strip_prefix("予約者: "))
-        .collect();
-
-    assert_eq!(
-        holder_lines,
-        vec!["holder@example.com"],
-        "予約者行はちょうど1行であるべき: {description}"
-    );
-}
-
-#[tokio::test]
 async fn adding_a_reservation_uses_an_event_id_derived_from_its_id() {
     let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
     let mut reservation = gpu_usage("holder@example.com", 0);
@@ -942,9 +1082,7 @@ async fn adding_a_reservation_uses_an_event_id_derived_from_its_id() {
         "イベントIDは予約IDから導出されるべき"
     );
     assert!(
-        event_id
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
+        event_id.chars().all(|c| matches!(c, '0'..='9' | 'a'..='v')),
         "イベントIDに使える文字はbase32hexに限られる: {event_id}"
     );
     assert_eq!(
@@ -1196,11 +1334,21 @@ mod recurring {
     }
 
     /// 繰り返しイベントの、本来`original`に始まる回を削除したイベント
+    ///
+    /// 本物と同じく、どの回だったかを示す項目だけを持つ。
     fn cancelled_occurrence(original: DateTime<Utc>) -> Event {
-        let mut event = moved_occurrence(original, original);
-        event.status = Some("cancelled".to_string());
-        event.etag = Some("\"cancelled\"".to_string());
-        event
+        Event {
+            id: Some(format!("{SERIES_ID}_{}", original.format("%Y%m%dT%H%M%SZ"))),
+            status: Some("cancelled".to_string()),
+            etag: Some("\"cancelled\"".to_string()),
+            recurring_event_id: Some(SERIES_ID.to_string()),
+            original_start_time: Some(EventDateTime {
+                date_time: Some(original),
+                ..Default::default()
+            }),
+            i_cal_uid: Some(format!("{SERIES_ID}@google.com")),
+            ..Default::default()
+        }
     }
 
     fn holder() -> crate::domain::common::EmailAddress {
@@ -1258,7 +1406,7 @@ mod recurring {
     }
 
     #[tokio::test]
-    async fn the_slots_of_a_recurring_reservation_are_queried_per_occurrence() {
+    async fn each_slot_of_a_recurring_reservation_has_the_id_of_its_occurrence() {
         let (repository, _gateway) = repository_with(vec![weekly_event()]);
 
         let slots = repository
@@ -1295,11 +1443,16 @@ mod recurring {
     async fn an_unreadable_rule_is_not_a_reservation() {
         let mut event = weekly_event();
         event.recurrence = Some(vec!["RRULE:FREQ=SOMETIMES".to_string()]);
-        let (repository, _gateway) = repository_with(vec![event]);
+        // カレンダーは12月の期間に回があるとして一覧に返す。読めないのはアダプタの側
+        let (repository, gateway) = repository_on(
+            FakeCalendarEventGateway::new(vec![event])
+                .with_occurrences(SERIES_ID, vec![jst(11, 23, 10)]),
+        );
 
         let reservations = repository.find_overlapping(&december()).await.unwrap();
 
-        assert!(reservations.is_empty());
+        assert_eq!(gateway.queries().len(), 1, "一覧は引いた");
+        assert!(reservations.is_empty(), "{reservations:?}");
     }
 
     #[tokio::test]
@@ -1420,6 +1573,60 @@ mod recurring {
     }
 
     #[tokio::test]
+    async fn changing_two_occurrences_at_once_writes_both() {
+        let (repository, gateway) = repository_with(vec![weekly_event()]);
+        let mut reservation = repository.find(&series_id()).await.unwrap().unwrap();
+        let later = TimePeriod::new(jst(11, 23, 14), jst(11, 23, 16)).unwrap();
+
+        reservation
+            .reschedule_slot(&at(11, 23), later.clone(), &holder())
+            .unwrap();
+        reservation.cancel_slot(&at(11, 30), &holder()).unwrap();
+        repository.save(&mut reservation).await.unwrap();
+
+        assert_eq!(
+            gateway.updated(),
+            vec![(
+                CALENDAR_ID.to_string(),
+                "weeklyseries1_20261123T010000Z".to_string()
+            )]
+        );
+        assert_eq!(
+            gateway.deleted(),
+            vec![(
+                CALENDAR_ID.to_string(),
+                "weeklyseries1_20261130T010000Z".to_string()
+            )]
+        );
+        let stored = repository.find(&series_id()).await.unwrap().unwrap();
+        assert_eq!(stored.slot(&at(11, 23)).unwrap().time_period(), &later);
+        assert!(stored.slot(&at(11, 30)).is_none());
+        assert_eq!(
+            stored.version(),
+            reservation.version(),
+            "2つの回を書いたあとの、繰り返しイベントの版を持つ"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_series_whose_count_ran_out_before_the_period_is_not_read() {
+        let mut event = weekly_event();
+        // 11月16日と23日の2回で終わる
+        event.recurrence = Some(vec!["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2".to_string()]);
+        let (repository, _gateway) = repository_with(vec![event]);
+        let after_it_ended = TimePeriod::new(jst(11, 28, 0), jst(12, 10, 0)).unwrap();
+
+        let reservations = repository.find_overlapping(&after_it_ended).await.unwrap();
+        let slots = repository
+            .find_slots_overlapping(&after_it_ended)
+            .await
+            .unwrap();
+
+        assert!(reservations.is_empty(), "{reservations:?}");
+        assert!(slots.is_empty(), "{slots:?}");
+    }
+
+    #[tokio::test]
     async fn cancelling_a_recurring_reservation_deletes_the_recurring_event() {
         let (repository, gateway) = repository_with(vec![weekly_event()]);
         let mut reservation = repository.find(&series_id()).await.unwrap().unwrap();
@@ -1432,5 +1639,139 @@ mod recurring {
             vec![(CALENDAR_ID.to_string(), SERIES_ID.to_string())]
         );
         assert!(repository.find(&series_id()).await.unwrap().is_none());
+    }
+}
+
+mod rooms {
+    use super::*;
+    use crate::infrastructure::config::RoomConfig;
+
+    const ROOM: &str = "Meeting Room A";
+    const ROOM_CALENDAR_ID: &str = "room-calendar-id";
+
+    /// サーバーのカレンダーと部屋のカレンダーを、別々に持つリポジトリ
+    fn repository_with_a_room(
+        gateway: FakeCalendarEventGateway,
+    ) -> (
+        GoogleCalendarReservationRepository,
+        Arc<FakeCalendarEventGateway>,
+    ) {
+        let gateway = Arc::new(gateway);
+        let mut config = test_config();
+        config.rooms = vec![RoomConfig {
+            name: ROOM.to_string(),
+            notifications: vec![],
+        }];
+        let mut calendars = HashMap::new();
+        calendars.insert("Thalys".to_string(), CALENDAR_ID.to_string());
+        calendars.insert(ROOM.to_string(), ROOM_CALENDAR_ID.to_string());
+        let repository = GoogleCalendarReservationRepository::with_gateway(
+            gateway.clone(),
+            config,
+            SERVICE_ACCOUNT_EMAIL.to_string(),
+            Arc::new(StubIdentityLinkRepository::default()),
+            StorageConfig {
+                backend: StorageBackend::GoogleCalendar { calendars },
+            },
+        )
+        .expect("テスト用リポジトリの構築に失敗");
+        (repository, gateway)
+    }
+
+    fn room_reservation(start: DateTime<Utc>) -> Reservation {
+        Reservation::one_time(
+            crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
+            TimePeriod::new(start, start + Duration::hours(1)).unwrap(),
+            vec![Resource::Room {
+                name: ROOM.to_string(),
+            }],
+            Some("ゼミ".to_string()),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_room_reservation_is_written_to_and_read_from_the_room_calendar() {
+        let (repository, gateway) = repository_with_a_room(FakeCalendarEventGateway::new(vec![]));
+        let start = Utc::now() + Duration::days(1);
+        let mut reservation = room_reservation(start);
+
+        repository.save(&mut reservation).await.unwrap();
+
+        let calendars: Vec<String> = gateway
+            .inserted()
+            .into_iter()
+            .map(|(calendar, _)| calendar)
+            .collect();
+        assert_eq!(calendars, vec![ROOM_CALENDAR_ID.to_string()]);
+        let found = repository
+            .find(reservation.id())
+            .await
+            .unwrap()
+            .expect("部屋のカレンダーから読める");
+        assert!(
+            found.has_same_content_as(&reservation),
+            "保存: {reservation:?}\n読んだ: {found:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn reservations_are_read_from_every_calendar() {
+        let start = Utc::now() + Duration::days(1);
+        let server_event = reservation_event(
+            "on-the-server",
+            "0",
+            "holder@example.com",
+            start,
+            start + Duration::hours(1),
+        );
+        let mut room_event = reservation_event(
+            "in-the-room",
+            ROOM,
+            "holder@example.com",
+            start,
+            start + Duration::hours(1),
+        );
+        room_event.summary = Some(ROOM.to_string());
+        let (repository, _gateway) = repository_with_a_room(
+            FakeCalendarEventGateway::new(vec![server_event])
+                .with_events(ROOM_CALENDAR_ID, vec![room_event]),
+        );
+        let period = TimePeriod::new(start, start + Duration::hours(1)).unwrap();
+
+        let mut ids: Vec<String> = repository
+            .find_overlapping(&period)
+            .await
+            .unwrap()
+            .iter()
+            .map(|r| r.id().as_str().to_string())
+            .collect();
+        ids.sort();
+
+        assert_eq!(ids, vec!["in-the-room", "on-the-server"]);
+    }
+
+    #[tokio::test]
+    async fn an_event_in_another_calendar_is_not_the_reservation_of_this_one() {
+        // 同じIDのイベントが、どのリソースにも割り当てていないカレンダーにある
+        let start = Utc::now() + Duration::days(1);
+        let elsewhere = reservation_event(
+            "elsewhere",
+            "0",
+            "holder@example.com",
+            start,
+            start + Duration::hours(1),
+        );
+        let (repository, _gateway) = repository_with_a_room(
+            FakeCalendarEventGateway::new(vec![])
+                .with_events("unrelated-calendar", vec![elsewhere]),
+        );
+
+        let found = repository
+            .find(&ReservationId::from_string("elsewhere".to_string()))
+            .await
+            .unwrap();
+
+        assert!(found.is_none(), "{found:?}");
     }
 }

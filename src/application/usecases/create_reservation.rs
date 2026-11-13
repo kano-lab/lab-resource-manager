@@ -74,7 +74,7 @@ mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::ReservedSlotId;
     use crate::domain::aggregates::reservation::value_objects::Gpu;
-    use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
     use chrono::{Duration, Utc};
 
     fn email(address: &str) -> EmailAddress {
@@ -87,7 +87,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_new_one_time_reservation_shows_up_as_one_slot_with_the_same_id() {
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         let start = Utc::now() + Duration::hours(1);
         let period = TimePeriod::new(start, start + Duration::hours(2)).unwrap();
 
@@ -112,7 +112,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_reservation_that_overlaps_an_existing_slot_is_refused() {
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         let usecase = CreateReservationUseCase::new(repository.clone());
         let start = Utc::now() + Duration::hours(1);
         let period = TimePeriod::new(start, start + Duration::hours(2)).unwrap();
@@ -148,5 +148,49 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn a_reservation_may_start_exactly_when_another_ends_but_not_a_moment_earlier() {
+        let repository = Arc::new(InMemoryReservationRepository::new());
+        let usecase = CreateReservationUseCase::new(repository.clone());
+        let ten = Utc::now() + Duration::hours(1);
+        let twelve = ten + Duration::hours(2);
+        let fourteen = ten + Duration::hours(4);
+        usecase
+            .execute(
+                email("first@example.com"),
+                TimePeriod::new(ten, twelve).unwrap(),
+                vec![gpu()],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let a_minute_early = usecase
+            .execute(
+                email("second@example.com"),
+                TimePeriod::new(twelve - Duration::minutes(1), fourteen).unwrap(),
+                vec![gpu()],
+                None,
+            )
+            .await;
+        let right_after = usecase
+            .execute(
+                email("second@example.com"),
+                TimePeriod::new(twelve, fourteen).unwrap(),
+                vec![gpu()],
+                None,
+            )
+            .await;
+
+        assert!(
+            matches!(
+                a_minute_early,
+                Err(ApplicationError::ResourceConflict { .. })
+            ),
+            "{a_minute_early:?}"
+        );
+        assert!(right_after.is_ok(), "続けて予約できる: {right_after:?}");
     }
 }

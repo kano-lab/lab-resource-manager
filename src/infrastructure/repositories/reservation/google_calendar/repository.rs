@@ -142,18 +142,11 @@ impl GoogleCalendarReservationRepository {
         })
     }
 
-    /// イベントのdescriptionを組み立てる
+    /// 備考を指定してイベントのdescriptionを組み立てる（定期予約の回は回ごとの備考を持つ）
     ///
     /// アプリが管理する行はマーカーで囲む。カレンダーを開いた人が状況を把握できるよう、
     /// 予約者のメールアドレスに加えて、分かる範囲の情報（OSユーザー名・予約ID）を並べる。
     /// 備考はマーカーの外に置き、利用者が自由に編集できる領域として残す。
-    #[cfg(test)]
-    pub(super) async fn build_description(&self, reservation: &Reservation) -> String {
-        self.build_description_with_notes(reservation, reservation.notes())
-            .await
-    }
-
-    /// 備考を指定してイベントのdescriptionを組み立てる（定期予約の回は回ごとの備考を持つ）
     async fn build_description_with_notes(
         &self,
         reservation: &Reservation,
@@ -523,7 +516,7 @@ impl GoogleCalendarReservationRepository {
     /// 旧形式（"予約者: xxx"の1行目のみでマーカー無し）は先頭行のみ除外し、
     /// Googleカレンダー上で直接作成されたイベント（マーカーも予約者行も無し）は
     /// description全体をそのまま備考として扱う。
-    pub(super) fn extract_notes(description: &str) -> Option<String> {
+    fn extract_notes(description: &str) -> Option<String> {
         let body: String = if let Some((before_begin, after_begin)) =
             description.split_once(MANAGED_SECTION_BEGIN)
         {

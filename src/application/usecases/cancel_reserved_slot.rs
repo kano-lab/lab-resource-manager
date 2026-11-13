@@ -74,7 +74,7 @@ mod tests {
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::TimePeriod;
     use crate::domain::read_models::ReservedSlotView;
-    use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
     use chrono::{Duration, Utc};
 
     fn email(address: &str) -> EmailAddress {
@@ -99,7 +99,7 @@ mod tests {
     #[tokio::test]
     async fn cancelling_the_slot_of_a_one_time_reservation_cancels_the_reservation() {
         let slot = upcoming_slot();
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(&slot);
 
         let event = CancelReservedSlotUseCase::new(repository.clone())
@@ -117,7 +117,7 @@ mod tests {
     #[tokio::test]
     async fn someone_else_cannot_cancel_the_slot() {
         let slot = upcoming_slot();
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(&slot);
 
         let error = CancelReservedSlotUseCase::new(repository.clone())
@@ -133,5 +133,59 @@ mod tests {
             repository.find_slot(slot.id()).await.unwrap().is_some(),
             "断った取り消しで予約枠を消してはいけない"
         );
+    }
+
+    #[tokio::test]
+    async fn cancelling_one_occurrence_keeps_the_reservation_and_its_other_slots() {
+        use crate::application::usecases::test_support::weekly_reservation;
+        use crate::domain::aggregates::reservation::{OccurrenceKey, ReservedSlotId};
+        let first = Utc::now() + Duration::days(1);
+        let repository = Arc::new(InMemoryReservationRepository::new());
+        let weekly = weekly_reservation(first);
+        repository.put_reservation(&weekly);
+        let second = OccurrenceKey::At(first + Duration::days(7));
+
+        let event = CancelReservedSlotUseCase::new(repository.clone())
+            .execute(
+                &ReservedSlotId::new(weekly.id().clone(), second.clone()),
+                &email("holder@example.com"),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            matches!(&event, ReservationEvent::SlotCancelled { slot, .. } if slot.key() == &second),
+            "{event:?}"
+        );
+        let stored = repository.find(weekly.id()).await.unwrap().unwrap();
+        assert!(stored.slot(&second).is_none());
+        assert!(
+            stored.slot(&OccurrenceKey::At(first)).is_some(),
+            "ほかの回は残る"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reservation_changed_after_reading_is_reported_as_a_conflict() {
+        use crate::application::usecases::test_support::ChangedAfterReading;
+        use crate::domain::ports::repositories::RepositoryError;
+        let slot = upcoming_slot();
+        let stored = InMemoryReservationRepository::new();
+        stored.put_slot(&slot);
+        let repository = Arc::new(ChangedAfterReading(stored.clone()));
+
+        let error = CancelReservedSlotUseCase::new(repository)
+            .execute(slot.id(), &email("holder@example.com"))
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                error,
+                ApplicationError::Repository(RepositoryError::Conflict)
+            ),
+            "読んだあとに変わった予約は取り消さない: {error:?}"
+        );
+        assert!(stored.find_slot(slot.id()).await.unwrap().is_some());
     }
 }

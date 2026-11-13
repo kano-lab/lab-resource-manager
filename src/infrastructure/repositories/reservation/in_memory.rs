@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 ///
 /// 予約を版つきで持つ。版は保存のたびに1ずつ進む。
 #[derive(Clone, Default)]
-pub struct MockReservationRepository {
+pub struct InMemoryReservationRepository {
     state: Arc<Mutex<State>>,
 }
 
@@ -38,8 +38,8 @@ impl State {
     }
 }
 
-impl MockReservationRepository {
-    /// 新しいモックリポジトリを作成
+impl InMemoryReservationRepository {
+    /// 新しいインメモリリポジトリを作成
     pub fn new() -> Self {
         Self::default()
     }
@@ -107,7 +107,7 @@ impl MockReservationRepository {
 }
 
 #[async_trait]
-impl ReservationRepository for MockReservationRepository {
+impl ReservationRepository for InMemoryReservationRepository {
     async fn find(&self, id: &ReservationId) -> Result<Option<Reservation>, RepositoryError> {
         Ok(self
             .state
@@ -169,7 +169,7 @@ impl ReservationRepository for MockReservationRepository {
 }
 
 #[async_trait]
-impl ReservedSlotQuery for MockReservationRepository {
+impl ReservedSlotQuery for InMemoryReservationRepository {
     async fn find_slots_overlapping(
         &self,
         time_period: &TimePeriod,
@@ -190,98 +190,4 @@ impl ReservedSlotQuery for MockReservationRepository {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::domain::aggregates::reservation::OccurrenceKey;
-    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
-
-    const ONLY: OccurrenceKey = OccurrenceKey::Only;
-    use chrono::{Duration, Utc};
-
-    fn holder() -> EmailAddress {
-        EmailAddress::new("holder@example.com".to_string()).unwrap()
-    }
-
-    fn new_reservation() -> Reservation {
-        let start = Utc::now() + Duration::hours(1);
-        Reservation::one_time(
-            holder(),
-            TimePeriod::new(start, start + Duration::hours(1)).unwrap(),
-            vec![Resource::Gpu(Gpu::new(
-                "Thalys".to_string(),
-                0,
-                "A100".to_string(),
-            ))],
-            None,
-        )
-        .unwrap()
-    }
-
-    #[tokio::test]
-    async fn saving_a_new_reservation_creates_it_and_records_its_version() {
-        let repository = MockReservationRepository::new();
-        let mut reservation = new_reservation();
-
-        repository.save(&mut reservation).await.unwrap();
-
-        assert!(reservation.version().is_some());
-        let stored = repository.find(reservation.id()).await.unwrap().unwrap();
-        assert_eq!(stored.version(), reservation.version());
-    }
-
-    #[tokio::test]
-    async fn saving_over_a_newer_version_is_refused() {
-        let repository = MockReservationRepository::new();
-        let mut reservation = new_reservation();
-        repository.save(&mut reservation).await.unwrap();
-        let mut stale = repository.find(reservation.id()).await.unwrap().unwrap();
-        let mut fresh = stale.clone();
-        fresh
-            .change_slot_notes(&ONLY, "先に変えた".to_string(), &holder())
-            .unwrap();
-        repository.save(&mut fresh).await.unwrap();
-
-        stale
-            .change_slot_notes(&ONLY, "後から変えた".to_string(), &holder())
-            .unwrap();
-        let result = repository.save(&mut stale).await;
-
-        assert!(
-            matches!(result, Err(RepositoryError::Conflict)),
-            "{result:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn saving_a_reservation_that_was_deleted_meanwhile_does_not_recreate_it() {
-        let repository = MockReservationRepository::new();
-        let mut reservation = new_reservation();
-        repository.save(&mut reservation).await.unwrap();
-        let mut loaded = repository.find(reservation.id()).await.unwrap().unwrap();
-        repository.delete_reservation(reservation.id());
-
-        loaded
-            .change_slot_notes(&ONLY, "編集".to_string(), &holder())
-            .unwrap();
-        let result = repository.save(&mut loaded).await;
-
-        assert!(
-            matches!(result, Err(RepositoryError::Conflict)),
-            "{result:?}"
-        );
-        assert!(repository.find(reservation.id()).await.unwrap().is_none());
-    }
-
-    #[tokio::test]
-    async fn saving_a_cancelled_reservation_removes_it() {
-        let repository = MockReservationRepository::new();
-        let mut reservation = new_reservation();
-        repository.save(&mut reservation).await.unwrap();
-
-        reservation.cancel(&holder()).unwrap();
-        repository.save(&mut reservation).await.unwrap();
-
-        assert!(repository.find(reservation.id()).await.unwrap().is_none());
-    }
-}
+// 振る舞いは、Google カレンダーの実装と同じ契約テスト（`super::contract_tests`）で確かめる

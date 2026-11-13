@@ -1,5 +1,6 @@
 use crate::application::error::ApplicationError;
 use crate::application::idle_notice_log::IdleNoticeLog;
+use crate::application::{Clock, SystemClock};
 use crate::domain::aggregates::reservation::value_objects::{ReservedSlotId, Resource};
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::notifier::NotificationError;
@@ -134,6 +135,7 @@ where
     notices: Arc<IdleNoticeLog>,
     /// 予約枠ごとの「使われていないと確かめられた最初の時刻」と、そのときの様子
     idle_spells: Mutex<HashMap<String, IdleSpell>>,
+    clock: Arc<dyn Clock>,
 }
 
 impl<R, O, N> DetectIdleReservedSlotsUseCase<R, O, N>
@@ -161,7 +163,13 @@ where
             criteria,
             notices,
             idle_spells: Mutex::new(HashMap::new()),
+            clock: Arc::new(SystemClock),
         }
+    }
+
+    /// 今の時刻を`clock`から読むようにする
+    pub fn with_clock(self, clock: Arc<dyn Clock>) -> Self {
+        Self { clock, ..self }
     }
 
     /// 一度だけポーリングを実行し、使われていない予約枠を知らせる
@@ -169,8 +177,8 @@ where
     /// # Errors
     /// 観測・リポジトリアクセスに失敗した場合（個別の通知失敗は記録して続行する）
     pub async fn poll_once(&self) -> Result<(), ApplicationError> {
-        let started_at = Utc::now();
-        let now = started_at;
+        let started = std::time::Instant::now();
+        let now = self.clock.now();
         // 対象は「今この瞬間に進行中の予約枠」だけなので、現在時刻を含む最小の期間を問う
         let in_progress = TimePeriod::new(now, now + Duration::seconds(1))?;
         let slots = self.repository.find_slots_overlapping(&in_progress).await?;
@@ -232,7 +240,7 @@ where
             withheld,
             unreachable,
             failures,
-            elapsed_ms = (Utc::now() - started_at).num_milliseconds(),
+            elapsed_ms = started.elapsed().as_millis(),
             "idle reserved slot pass finished"
         );
 

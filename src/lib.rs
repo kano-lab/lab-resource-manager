@@ -140,6 +140,9 @@ pub mod prelude {
     };
 
     // Infrastructure implementations
+    /// `InMemoryReservationRepository`の旧名
+    #[allow(deprecated)]
+    pub use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
     pub use crate::infrastructure::{
         config::{DeviceConfig, ResourceConfig, RoomConfig, ServerConfig, load_config},
         notifier::{
@@ -150,7 +153,7 @@ pub mod prelude {
             identity_link::JsonFileIdentityLinkRepository,
             reservation::{
                 google_calendar::GoogleCalendarReservationRepository,
-                mock::MockReservationRepository,
+                in_memory::InMemoryReservationRepository,
             },
         },
         reservation_proposal::MockReservationProposalNotifier,
@@ -167,6 +170,9 @@ pub use domain::ports::{
     notifier::{NotificationError, Notifier},
     repositories::{RepositoryError, ReservationRepository, ReservedSlotQuery},
 };
+/// `InMemoryReservationRepository`の旧名
+#[allow(deprecated)]
+pub use infrastructure::repositories::reservation::mock::MockReservationRepository;
 pub use infrastructure::{
     config::load_config,
     notifier::{
@@ -176,7 +182,8 @@ pub use infrastructure::{
     repositories::{
         identity_link::JsonFileIdentityLinkRepository,
         reservation::{
-            google_calendar::GoogleCalendarReservationRepository, mock::MockReservationRepository,
+            google_calendar::GoogleCalendarReservationRepository,
+            in_memory::InMemoryReservationRepository,
         },
     },
 };

@@ -12,11 +12,14 @@
 //! Application層はDomain層にのみ依存する。
 //! Infrastructure層への直接の依存は禁止。
 
+/// 今の時刻
+pub mod clock;
 /// Application層で発生するエラーの定義
 pub mod error;
 /// 使われていない予約を繰り返し知らせないための記録
 pub mod idle_notice_log;
 pub mod usecases;
 
+pub use clock::{Clock, SystemClock};
 pub use error::ApplicationError;
 pub use idle_notice_log::IdleNoticeLog;

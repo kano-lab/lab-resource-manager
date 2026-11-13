@@ -233,10 +233,10 @@ mod tests {
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::{EmailAddress, TimePeriod};
     use async_trait::async_trait;
-    use chrono::Duration;
+    use chrono::{Duration, TimeZone};
 
     /// 見えなくなった予約を確かめるときに、保存先に残っている予約だけを返すスタブ
-    struct Stored(Vec<Reservation>);
+    pub(super) struct Stored(pub(super) Vec<Reservation>);
 
     #[async_trait]
     impl ReservationRepository for Stored {
@@ -256,19 +256,45 @@ mod tests {
         }
     }
 
-    fn holder() -> EmailAddress {
+    /// 見えなくなった予約を確かめようとすると、つながらないスタブ
+    struct Unreachable;
+
+    #[async_trait]
+    impl ReservationRepository for Unreachable {
+        async fn find(&self, _id: &ReservationId) -> Result<Option<Reservation>, RepositoryError> {
+            Err(RepositoryError::ConnectionError("timeout".to_string()))
+        }
+
+        async fn find_overlapping(
+            &self,
+            _time_period: &TimePeriod,
+        ) -> Result<Vec<Reservation>, RepositoryError> {
+            unimplemented!("このテストでは使用しない")
+        }
+
+        async fn save(&self, _reservation: &mut Reservation) -> Result<(), RepositoryError> {
+            unimplemented!("このテストでは使用しない")
+        }
+    }
+
+    /// テストの「今」
+    pub(super) fn now() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 11, 16, 1, 0, 0).unwrap()
+    }
+
+    pub(super) fn holder() -> EmailAddress {
         EmailAddress::new("holder@example.com".to_string()).unwrap()
+    }
+
+    pub(super) fn gpu() -> Resource {
+        Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()))
     }
 
     fn reservation(id: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> Reservation {
         Reservation::reconstruct(
             ReservationId::from_string(id.to_string()),
             holder(),
-            vec![Resource::Gpu(Gpu::new(
-                "Thalys".to_string(),
-                0,
-                "A100".to_string(),
-            ))],
+            vec![gpu()],
             None,
             Schedule::OneTime(TimePeriod::new(start, end).unwrap()),
             None,
@@ -283,7 +309,7 @@ mod tests {
             .collect()
     }
 
-    async fn interpret(
+    pub(super) async fn interpret(
         stored: Vec<Reservation>,
         previous: &[&Reservation],
         current: &[&Reservation],
@@ -297,7 +323,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_reservation_that_appears_was_reserved() {
-        let now = Utc::now();
+        let now = now();
         let new = reservation("new", now + Duration::hours(1), now + Duration::hours(2));
 
         let changes = interpret(vec![], &[], &[&new], now).await;
@@ -308,7 +334,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_reservation_whose_contents_differ_has_changed() {
-        let now = Utc::now();
+        let now = now();
         let before = reservation("r", now + Duration::hours(1), now + Duration::hours(2));
         let after = reservation("r", now + Duration::hours(1), now + Duration::hours(3));
 
@@ -319,7 +345,7 @@ mod tests {
 
     #[tokio::test]
     async fn only_a_new_version_is_not_an_event() {
-        let now = Utc::now();
+        let now = now();
         let before = reservation("r", now + Duration::hours(1), now + Duration::hours(2));
         let mut after = before.clone();
         after.record_version(Some(crate::domain::aggregates::reservation::Version::new(
@@ -333,7 +359,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_reservation_that_left_the_window_with_an_earlier_end_ended_early() {
-        let now = Utc::now();
+        let now = now();
         let running = reservation("r", now - Duration::hours(1), now + Duration::hours(2));
         let ended = reservation("r", now - Duration::hours(1), now - Duration::minutes(1));
 
@@ -349,7 +375,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_reservation_that_is_no_longer_stored_was_cancelled() {
-        let now = Utc::now();
+        let now = now();
         let upcoming = reservation("r", now + Duration::hours(1), now + Duration::hours(2));
 
         let changes = interpret(vec![], &[&upcoming], &[], now).await;
@@ -359,7 +385,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_reservation_moved_beyond_the_window_has_changed() {
-        let now = Utc::now();
+        let now = now();
         let soon = reservation("r", now + Duration::hours(1), now + Duration::hours(2));
         let much_later = reservation(
             "r",
@@ -374,65 +400,156 @@ mod tests {
 
     #[tokio::test]
     async fn a_reservation_that_ran_its_course_is_not_an_event() {
-        let now = Utc::now();
+        let now = now();
         let finished = reservation("r", now - Duration::hours(2), now - Duration::minutes(1));
 
         let changes = interpret(vec![finished.clone()], &[&finished], &[], now).await;
 
         assert_eq!(changes, InterpretedChanges::default());
     }
+
+    #[tokio::test]
+    async fn a_reservation_that_ends_exactly_now_ran_its_course() {
+        let now = now();
+        let finished = reservation("r", now - Duration::hours(2), now);
+
+        // 保存先にはもう無い（予定どおり終わった予約を消す運用もある）
+        let changes = interpret(vec![], &[&finished], &[], now).await;
+
+        assert_eq!(
+            changes,
+            InterpretedChanges::default(),
+            "終わる時刻ちょうどに見えなくなっても、取り消しではない"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reservation_shortened_to_end_exactly_now_ended_early() {
+        let now = now();
+        let running = reservation("r", now - Duration::hours(1), now + Duration::hours(2));
+        let ended = reservation("r", now - Duration::hours(1), now);
+
+        let changes = interpret(vec![ended.clone()], &[&running], &[], now).await;
+
+        assert_eq!(changes.events, vec![ReservationEvent::EndedEarly(ended)]);
+    }
+
+    #[tokio::test]
+    async fn shortening_an_end_that_is_still_ahead_is_a_change_not_an_early_end() {
+        let now = now();
+        let running = reservation("r", now - Duration::hours(1), now + Duration::hours(3));
+        let shorter = reservation("r", now - Duration::hours(1), now + Duration::hours(1));
+
+        let changes = interpret(vec![], &[&running], &[&shorter], now).await;
+
+        assert_eq!(
+            changes.events,
+            vec![ReservationEvent::Changed(shorter)],
+            "まだ使える時間が残っているなら、今で終了したのではない"
+        );
+    }
+
+    #[tokio::test]
+    async fn moving_the_start_while_ending_in_the_past_is_a_change() {
+        let now = now();
+        let running = reservation("r", now - Duration::hours(2), now + Duration::hours(2));
+        let moved = reservation("r", now - Duration::hours(1), now - Duration::minutes(1));
+
+        let changes = interpret(vec![moved.clone()], &[&running], &[], now).await;
+
+        assert_eq!(changes.events, vec![ReservationEvent::Changed(moved)]);
+    }
+
+    #[tokio::test]
+    async fn several_reservations_changing_at_once_are_each_reported() {
+        let now = now();
+        let changed_before = reservation(
+            "changed",
+            now + Duration::hours(1),
+            now + Duration::hours(2),
+        );
+        let changed_after = reservation(
+            "changed",
+            now + Duration::hours(1),
+            now + Duration::hours(3),
+        );
+        let cancelled = reservation(
+            "cancelled",
+            now + Duration::hours(4),
+            now + Duration::hours(5),
+        );
+        let new = reservation("new", now + Duration::hours(6), now + Duration::hours(7));
+
+        let changes = interpret(
+            vec![],
+            &[&changed_before, &cancelled],
+            &[&changed_after, &new],
+            now,
+        )
+        .await;
+
+        // 出来事の順序は決めていない（予約IDの集合の反復順）。集合として比べる
+        let mut events: Vec<String> = changes.events.iter().map(|e| format!("{e:?}")).collect();
+        events.sort();
+        let mut expected: Vec<String> = [
+            ReservationEvent::Changed(changed_after),
+            ReservationEvent::Cancelled(cancelled),
+            ReservationEvent::Reserved(new),
+        ]
+        .iter()
+        .map(|e| format!("{e:?}"))
+        .collect();
+        expected.sort();
+        assert_eq!(events, expected);
+        assert_eq!((changes.appeared, changes.disappeared), (1, 1));
+    }
+
+    #[tokio::test]
+    async fn a_failure_to_check_a_vanished_reservation_is_reported() {
+        let now = now();
+        let upcoming = reservation("r", now + Duration::hours(1), now + Duration::hours(2));
+
+        let result = ReservationChangeInterpreter::new()
+            .interpret(&Unreachable, &seen(&[&upcoming]), &HashMap::new(), now)
+            .await;
+
+        assert!(
+            matches!(result, Err(RepositoryError::ConnectionError(_))),
+            "確かめられないまま取り消しと伝えてはいけない: {result:?}"
+        );
+    }
 }
 
 #[cfg(test)]
 mod recurring_tests {
+    use super::tests::{gpu, holder, interpret, now};
     use super::*;
-    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
-    use crate::domain::aggregates::reservation::{RecurrenceRule, RecurringSchedule};
-    use crate::domain::common::EmailAddress;
-    use async_trait::async_trait;
+    use crate::domain::aggregates::reservation::{
+        ExceptionChange, RecurrenceRule, RecurringSchedule,
+    };
     use chrono::Duration;
     use std::collections::BTreeMap;
 
-    struct Stored(Vec<Reservation>);
-
-    #[async_trait]
-    impl ReservationRepository for Stored {
-        async fn find(&self, id: &ReservationId) -> Result<Option<Reservation>, RepositoryError> {
-            Ok(self.0.iter().find(|r| r.id() == id).cloned())
-        }
-
-        async fn find_overlapping(
-            &self,
-            _time_period: &TimePeriod,
-        ) -> Result<Vec<Reservation>, RepositoryError> {
-            unimplemented!("このテストでは使用しない")
-        }
-
-        async fn save(&self, _reservation: &mut Reservation) -> Result<(), RepositoryError> {
-            unimplemented!("このテストでは使用しない")
-        }
-    }
-
-    fn holder() -> EmailAddress {
-        EmailAddress::new("holder@example.com".to_string()).unwrap()
-    }
-
     /// 毎日、`first_start`から2時間の定期予約
     fn daily(rule: &str, first_start: DateTime<Utc>) -> Reservation {
+        daily_with(rule, first_start, BTreeMap::new())
+    }
+
+    fn daily_with(
+        rule: &str,
+        first_start: DateTime<Utc>,
+        exceptions: BTreeMap<DateTime<Utc>, Exception>,
+    ) -> Reservation {
         Reservation::reconstruct(
             ReservationId::from_string("series".to_string()),
             holder(),
-            vec![Resource::Gpu(Gpu::new(
-                "Thalys".to_string(),
-                0,
-                "A100".to_string(),
-            ))],
+            vec![gpu()],
             None,
             Schedule::Recurring(RecurringSchedule::new(
                 TimePeriod::new(first_start, first_start + Duration::hours(2)).unwrap(),
                 RecurrenceRule::parse(vec![rule.to_string()]).unwrap(),
                 chrono_tz::UTC,
-                BTreeMap::new(),
+                exceptions,
             )),
             None,
         )
@@ -444,28 +561,9 @@ mod recurring_tests {
         daily("RRULE:FREQ=DAILY", now - Duration::hours(1))
     }
 
-    fn seen(reservations: &[&Reservation]) -> HashMap<ReservationId, Reservation> {
-        reservations
-            .iter()
-            .map(|r| (r.id().clone(), (*r).clone()))
-            .collect()
-    }
-
-    async fn interpret(
-        stored: Vec<Reservation>,
-        previous: &[&Reservation],
-        current: &[&Reservation],
-        now: DateTime<Utc>,
-    ) -> InterpretedChanges {
-        ReservationChangeInterpreter::new()
-            .interpret(&Stored(stored), &seen(previous), &seen(current), now)
-            .await
-            .unwrap()
-    }
-
     #[tokio::test]
     async fn a_new_recurring_reservation_is_one_event_not_one_per_slot() {
-        let now = Utc::now();
+        let now = now();
         let series = running_daily(now);
 
         let changes = interpret(vec![], &[], &[&series], now).await;
@@ -475,7 +573,7 @@ mod recurring_tests {
 
     #[tokio::test]
     async fn changing_one_occurrence_is_an_event_about_that_slot() {
-        let now = Utc::now();
+        let now = now();
         let before = running_daily(now);
         let tomorrow = OccurrenceKey::At(now - Duration::hours(1) + Duration::days(1));
         let mut after = before.clone();
@@ -496,7 +594,7 @@ mod recurring_tests {
 
     #[tokio::test]
     async fn cancelling_one_occurrence_is_reported_with_the_slot_that_went() {
-        let now = Utc::now();
+        let now = now();
         let before = running_daily(now);
         let tomorrow = OccurrenceKey::At(now - Duration::hours(1) + Duration::days(1));
         let mut after = before.clone();
@@ -515,7 +613,7 @@ mod recurring_tests {
 
     #[tokio::test]
     async fn ending_the_running_occurrence_early_is_not_a_cancellation() {
-        let now = Utc::now();
+        let now = now();
         let before = running_daily(now);
         let today = OccurrenceKey::At(now - Duration::hours(1));
         let mut after = before.clone();
@@ -537,7 +635,7 @@ mod recurring_tests {
 
     #[tokio::test]
     async fn changing_the_rule_is_a_change_of_the_whole_reservation() {
-        let now = Utc::now();
+        let now = now();
         let before = running_daily(now);
         let after = daily("RRULE:FREQ=DAILY;INTERVAL=2", now - Duration::hours(1));
 
@@ -548,7 +646,7 @@ mod recurring_tests {
 
     #[tokio::test]
     async fn a_recurring_reservation_that_only_left_the_window_is_not_an_event() {
-        let now = Utc::now();
+        let now = now();
         let series = running_daily(now);
 
         let changes = interpret(vec![series.clone()], &[&series], &[], now).await;
@@ -563,7 +661,7 @@ mod recurring_tests {
 
     #[tokio::test]
     async fn a_carried_over_reservation_coming_back_into_the_window_is_not_new() {
-        let now = Utc::now();
+        let now = now();
         let series = running_daily(now);
         // 前回の読み取りで、監視している期間から外れて持ち越された
         let left = interpret(vec![series.clone()], &[&series], &[], now).await;
@@ -581,7 +679,7 @@ mod recurring_tests {
 
     #[tokio::test]
     async fn a_deleted_recurring_reservation_is_cancelled_once() {
-        let now = Utc::now();
+        let now = now();
         let series = running_daily(now);
 
         let changes = interpret(vec![], &[&series], &[], now).await;
@@ -591,11 +689,67 @@ mod recurring_tests {
 
     #[tokio::test]
     async fn a_recurring_reservation_whose_last_slot_ended_ran_its_course() {
-        let now = Utc::now();
+        let now = now();
         let finished = daily("RRULE:FREQ=DAILY;COUNT=2", now - Duration::days(3));
 
         let changes = interpret(vec![], &[&finished], &[], now).await;
 
         assert_eq!(changes, InterpretedChanges::default());
+    }
+
+    #[tokio::test]
+    async fn undoing_the_change_to_one_occurrence_is_an_event_about_that_slot() {
+        // カレンダーで、その回だけの変更を元に戻した
+        let now = now();
+        let tomorrow_start = now - Duration::hours(1) + Duration::days(1);
+        let tomorrow = OccurrenceKey::At(tomorrow_start);
+        let changed_then = BTreeMap::from([(
+            tomorrow_start,
+            Exception::new(
+                ExceptionChange::Changed {
+                    time_period: TimePeriod::new(
+                        tomorrow_start + Duration::hours(3),
+                        tomorrow_start + Duration::hours(5),
+                    )
+                    .unwrap(),
+                    notes: None,
+                },
+                None,
+            ),
+        )]);
+        let before = daily_with("RRULE:FREQ=DAILY", now - Duration::hours(1), changed_then);
+        let after = running_daily(now);
+
+        let changes = interpret(vec![], &[&before], &[&after], now).await;
+
+        assert_eq!(
+            changes.events,
+            vec![ReservationEvent::SlotChanged {
+                reservation: after.clone(),
+                slot: after.slot(&tomorrow).unwrap(),
+            }],
+            "規則どおりの時刻に戻った予約枠として伝える"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_vanished_recurring_reservation_read_again_reports_its_changed_occurrences() {
+        let now = now();
+        let before = running_daily(now);
+        let tomorrow = OccurrenceKey::At(now - Duration::hours(1) + Duration::days(1));
+        let mut after = before.clone();
+        after.cancel_slot(&tomorrow, &holder()).unwrap();
+
+        // 監視している期間からは見えなくなったが、保存先には残っていて、1回だけ取り消されていた
+        let changes = interpret(vec![after.clone()], &[&before], &[], now).await;
+
+        assert_eq!(
+            changes.events,
+            vec![ReservationEvent::SlotCancelled {
+                reservation: after.clone(),
+                slot: before.slot(&tomorrow).unwrap(),
+            }]
+        );
+        assert_eq!(changes.carried_over, vec![after], "読み直した姿で持ち越す");
     }
 }

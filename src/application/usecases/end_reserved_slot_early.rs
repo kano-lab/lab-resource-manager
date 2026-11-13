@@ -1,9 +1,9 @@
 use crate::application::error::ApplicationError;
+use crate::application::{Clock, SystemClock};
 use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{RepositoryError, ReservationRepository};
 use crate::domain::read_models::ReservedSlotView;
-use chrono::Utc;
 use std::sync::Arc;
 use tracing::info;
 
@@ -16,6 +16,7 @@ use tracing::info;
 /// `UpdateReservedSlotUseCase`が担う。
 pub struct EndReservedSlotEarlyUseCase<R: ReservationRepository> {
     repository: Arc<R>,
+    clock: Arc<dyn Clock>,
 }
 
 impl<R: ReservationRepository> EndReservedSlotEarlyUseCase<R> {
@@ -24,7 +25,15 @@ impl<R: ReservationRepository> EndReservedSlotEarlyUseCase<R> {
     /// # Arguments
     /// * `repository` - 予約リポジトリ
     pub fn new(repository: Arc<R>) -> Self {
-        Self { repository }
+        Self {
+            repository,
+            clock: Arc::new(SystemClock),
+        }
+    }
+
+    /// 今の時刻を`clock`から読むようにする
+    pub fn with_clock(self, clock: Arc<dyn Clock>) -> Self {
+        Self { clock, ..self }
     }
 
     /// 予約枠を今の時点で締める
@@ -54,7 +63,7 @@ impl<R: ReservationRepository> EndReservedSlotEarlyUseCase<R> {
             .ok_or(ApplicationError::Repository(RepositoryError::NotFound))?;
 
         // 期間を縮める操作のため、新たに占有する時間はなく競合は起こりえない
-        reservation.end_slot_early(id.key(), Utc::now(), requested_by)?;
+        reservation.end_slot_early(id.key(), self.clock.now(), requested_by)?;
 
         self.repository.save(&mut reservation).await?;
         let slot = ReservedSlotView::of(
@@ -80,10 +89,22 @@ impl<R: ReservationRepository> EndReservedSlotEarlyUseCase<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::clock::FixedClock;
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::TimePeriod;
-    use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
-    use chrono::{DateTime, Duration};
+    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
+    use chrono::{DateTime, Duration, TimeZone, Utc};
+
+    /// テストの「今」
+    fn now() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 11, 16, 2, 0, 0).unwrap()
+    }
+
+    fn usecase(
+        repository: Arc<InMemoryReservationRepository>,
+    ) -> EndReservedSlotEarlyUseCase<InMemoryReservationRepository> {
+        EndReservedSlotEarlyUseCase::new(repository).with_clock(Arc::new(FixedClock::at(now())))
+    }
 
     fn email(address: &str) -> EmailAddress {
         EmailAddress::new(address.to_string()).unwrap()
@@ -103,18 +124,18 @@ mod tests {
         .unwrap()
     }
 
-    async fn repository_with(slot: &ReservedSlotView) -> Arc<MockReservationRepository> {
-        let repository = Arc::new(MockReservationRepository::new());
+    async fn repository_with(slot: &ReservedSlotView) -> Arc<InMemoryReservationRepository> {
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(slot);
         repository
     }
 
     #[tokio::test]
     async fn the_slot_ends_now_and_stays_in_the_repository() {
-        let start = Utc::now() - Duration::hours(1);
+        let start = now() - Duration::hours(1);
         let slot = slot_of("holder@example.com", start, start + Duration::hours(4));
         let repository = repository_with(&slot).await;
-        let usecase = EndReservedSlotEarlyUseCase::new(repository.clone());
+        let usecase = usecase(repository.clone());
 
         let released = usecase
             .execute(slot.id(), &email("holder@example.com"))
@@ -122,7 +143,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(released.time_period().start(), start);
-        assert!(released.time_period().end() < start + Duration::hours(4));
+        assert_eq!(released.time_period().end(), now(), "今の時刻で終わる");
 
         let stored = repository.find_slot(slot.id()).await.unwrap();
         assert_eq!(
@@ -134,10 +155,10 @@ mod tests {
 
     #[tokio::test]
     async fn someone_else_cannot_end_a_slot_early() {
-        let start = Utc::now() - Duration::hours(1);
+        let start = now() - Duration::hours(1);
         let slot = slot_of("holder@example.com", start, start + Duration::hours(4));
         let repository = repository_with(&slot).await;
-        let usecase = EndReservedSlotEarlyUseCase::new(repository.clone());
+        let usecase = usecase(repository.clone());
 
         let error = usecase
             .execute(slot.id(), &email("someone@example.com"))
@@ -159,10 +180,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_slot_that_has_not_started_is_rejected() {
-        let start = Utc::now() + Duration::hours(1);
+        let start = now() + Duration::hours(1);
         let slot = slot_of("holder@example.com", start, start + Duration::hours(2));
         let repository = repository_with(&slot).await;
-        let usecase = EndReservedSlotEarlyUseCase::new(repository.clone());
+        let usecase = usecase(repository.clone());
 
         let error = usecase
             .execute(slot.id(), &email("holder@example.com"))
@@ -178,8 +199,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_missing_slot_is_reported_as_not_found() {
-        let repository = Arc::new(MockReservationRepository::new());
-        let usecase = EndReservedSlotEarlyUseCase::new(repository);
+        let repository = Arc::new(InMemoryReservationRepository::new());
+        let usecase = usecase(repository);
 
         let error = usecase
             .execute(
@@ -196,6 +217,41 @@ mod tests {
             ),
             "存在しない予約: {:?}",
             error
+        );
+    }
+
+    #[tokio::test]
+    async fn ending_a_running_occurrence_early_shortens_only_that_slot() {
+        use crate::application::usecases::test_support::weekly_reservation;
+        use crate::domain::aggregates::reservation::OccurrenceKey;
+        // 2回目が始まって1時間たったところ
+        let first = now() - Duration::days(7) - Duration::hours(1);
+        let repository = Arc::new(InMemoryReservationRepository::new());
+        let weekly = weekly_reservation(first);
+        repository.put_reservation(&weekly);
+        let second = OccurrenceKey::At(first + Duration::days(7));
+
+        let ended = usecase(repository.clone())
+            .execute(
+                &ReservedSlotId::new(weekly.id().clone(), second.clone()),
+                &email("holder@example.com"),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            ended.time_period(),
+            &TimePeriod::new(first + Duration::days(7), now()).unwrap()
+        );
+        let stored = repository.find(weekly.id()).await.unwrap().unwrap();
+        assert_eq!(
+            stored
+                .slot(&OccurrenceKey::At(first + Duration::days(14)))
+                .unwrap()
+                .time_period()
+                .end(),
+            first + Duration::days(14) + Duration::hours(2),
+            "次の回はそのまま"
         );
     }
 }

@@ -72,7 +72,8 @@ cargo clippy
 ### Google Calendar Contract Tests
 
 The Google Calendar adapter's assumptions about the API are checked by contract tests. They
-run against an in-memory fake with `cargo test`, and against a real test calendar on demand.
+run against an in-memory fake with `cargo test`, and against a real test calendar weekly, on
+pull requests that change the adapter, and on demand.
 For the real calendar, use a calendar that holds nothing else and a service account that can
 make changes to its events. Copy `.env.contract.example` to `.env.contract`, fill in the
 calendar ID and the key file's path (a key under `secrets/` stays out of git), and run:
@@ -84,9 +85,10 @@ cargo test --all-features contract_tests -- --ignored
 `LRM_CONTRACT_CALENDAR_ID` and `LRM_CONTRACT_SERVICE_ACCOUNT_KEY` set in the environment take
 precedence over the file.
 
-The `Calendar Contract` workflow runs the same tests from GitHub Actions. It reads the
-`LRM_CONTRACT_CALENDAR_ID` and `LRM_CONTRACT_SERVICE_ACCOUNT_KEY` (the key file's contents)
-repository secrets, and runs one at a time.
+The `Calendar Contract` workflow runs the same tests from GitHub Actions: every Monday, on
+pull requests from this repository that change the adapter, and when started by hand. It
+reads the `LRM_CONTRACT_CALENDAR_ID` and `LRM_CONTRACT_SERVICE_ACCOUNT_KEY` (the key file's
+contents) repository secrets, and runs one at a time.
 
 ## Roadmap
 

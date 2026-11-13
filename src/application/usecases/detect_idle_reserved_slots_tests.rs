@@ -2,6 +2,7 @@
 //!
 //! 使われていない予約の見分け方と、知らせる/知らせない条件を検証する。
 
+use crate::application::clock::FixedClock;
 use crate::application::idle_notice_log::IdleNoticeLog;
 use crate::application::usecases::detect_idle_reserved_slots::{
     DetectIdleReservedSlotsUseCase, IdleCriteria, NoticePolicy,
@@ -16,9 +17,9 @@ use crate::domain::ports::{
 };
 use crate::domain::read_models::ReservedSlotView;
 use crate::infrastructure::idle_reserved_slot_notifier::MockIdleReservedSlotNotifier;
-use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
 use crate::infrastructure::resource_usage_observer::MockResourceUsageObserver;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -27,14 +28,20 @@ const SERVER: &str = "Thalys";
 const COMPUTING: u32 = 5;
 
 type TestUseCase = DetectIdleReservedSlotsUseCase<
-    MockReservationRepository,
+    InMemoryReservationRepository,
     MockResourceUsageObserver,
     MockIdleReservedSlotNotifier,
 >;
 
+/// テストの「今」。時計はここから始まる
+fn now() -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 11, 16, 1, 0, 0).unwrap()
+}
+
 struct Fixture {
     usecase: TestUseCase,
-    repository: Arc<MockReservationRepository>,
+    clock: Arc<FixedClock>,
+    repository: Arc<InMemoryReservationRepository>,
     observer: Arc<MockResourceUsageObserver>,
     notifier: MockIdleReservedSlotNotifier,
     notices: Arc<IdleNoticeLog>,
@@ -57,10 +64,11 @@ fn criteria(threshold_minutes: i64) -> IdleCriteria {
 }
 
 fn fixture_with(criteria: IdleCriteria) -> Fixture {
-    let repository = Arc::new(MockReservationRepository::new());
+    let repository = Arc::new(InMemoryReservationRepository::new());
     let observer = Arc::new(MockResourceUsageObserver::new());
     let notifier = MockIdleReservedSlotNotifier::new();
     let notices = Arc::new(IdleNoticeLog::new(Duration::hours(4)));
+    let clock = Arc::new(FixedClock::at(now()));
 
     let usecase = DetectIdleReservedSlotsUseCase::new(
         repository.clone(),
@@ -68,10 +76,12 @@ fn fixture_with(criteria: IdleCriteria) -> Fixture {
         notifier.clone(),
         criteria,
         notices.clone(),
-    );
+    )
+    .with_clock(clock.clone());
 
     Fixture {
         usecase,
+        clock,
         repository,
         observer,
         notifier,
@@ -94,10 +104,9 @@ fn gpu(device_number: u32) -> Resource {
 }
 
 fn reservation_of(holder: &str, resources: Vec<Resource>, ends_in: Duration) -> ReservedSlotView {
-    let now = Utc::now();
     ReservedSlotView::of_new_one_time_reservation(
         EmailAddress::new(holder.to_string()).unwrap(),
-        TimePeriod::new(now - Duration::hours(1), now + ends_in).unwrap(),
+        TimePeriod::new(now() - Duration::hours(1), now() + ends_in).unwrap(),
         resources,
         None,
     )
@@ -119,7 +128,7 @@ fn nobody_is_working() -> ObservationSnapshot {
         HashMap::from([(
             SERVER.to_string(),
             ServerObservation::Observed {
-                generated_at: Utc::now(),
+                generated_at: now(),
             },
         )]),
     )
@@ -135,12 +144,8 @@ fn working_on(user_id: &str, devices: Vec<(u32, u32)>) -> ObservationSnapshot {
     let usages = devices
         .iter()
         .map(|(device_number, _)| {
-            observed_by(
-                user_id,
-                gpu(*device_number),
-                Utc::now() - Duration::hours(1),
-            )
-            .with_used_memory(38_000)
+            observed_by(user_id, gpu(*device_number), now() - Duration::hours(1))
+                .with_used_memory(38_000)
         })
         .collect();
 
@@ -149,7 +154,7 @@ fn working_on(user_id: &str, devices: Vec<(u32, u32)>) -> ObservationSnapshot {
         HashMap::from([(
             SERVER.to_string(),
             ServerObservation::Observed {
-                generated_at: Utc::now(),
+                generated_at: now(),
             },
         )]),
     )
@@ -167,7 +172,7 @@ fn working_on(user_id: &str, devices: Vec<(u32, u32)>) -> ObservationSnapshot {
 fn unattributed_working_at(peak_utilization_percent: u32) -> ObservationSnapshot {
     nobody_is_working()
         .with_unattributed_usages(vec![
-            UnattributedUsage::new(gpu(0), 100_000, Utc::now() - Duration::hours(1))
+            UnattributedUsage::new(gpu(0), 100_000, now() - Duration::hours(1))
                 .with_used_memory(38_000),
         ])
         .with_gpu_activities(HashMap::from([(
@@ -185,7 +190,7 @@ async fn a_reservation_its_holder_is_using_is_left_alone() {
     f.observer.set_active_usages(vec![observed_by(
         "holder-os",
         gpu(0),
-        Utc::now() - Duration::hours(1),
+        now() - Duration::hours(1),
     )]);
 
     f.usecase.poll_once().await.unwrap();
@@ -205,6 +210,81 @@ async fn an_unused_reservation_is_reported_once_the_threshold_passes() {
     let notices = f.notifier.sent_notices();
     assert_eq!(notices.len(), 1);
     assert_eq!(notices[0].slot().id(), reservation.id());
+}
+
+/// 時計を`minutes`分進めて、もう一度見回る
+async fn poll_after(f: &Fixture, minutes: i64) {
+    f.clock.advance(Duration::minutes(minutes));
+    f.usecase.poll_once().await.unwrap();
+}
+
+#[tokio::test]
+async fn an_unused_reservation_is_reported_exactly_when_the_threshold_passes() {
+    let f = fixture(30);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.put_slot(&reservation);
+    f.observer.set_snapshot(nobody_is_working());
+
+    // 5分ごとに見回る。使われていないと最初に分かったのは今
+    f.usecase.poll_once().await.unwrap();
+    for _ in 0..5 {
+        poll_after(&f, 5).await;
+    }
+    assert!(
+        f.notifier.sent_notices().is_empty(),
+        "25分ではまだ知らせない"
+    );
+
+    poll_after(&f, 5).await;
+
+    assert_eq!(f.notifier.sent_notices().len(), 1, "30分ちょうどで知らせる");
+}
+
+#[tokio::test]
+async fn a_reservation_about_to_end_is_not_reported() {
+    let f = fixture(30);
+    // 使われていないまま30分たつと、残りは29分しかない
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::minutes(59));
+    f.repository.put_slot(&reservation);
+    f.observer.set_snapshot(nobody_is_working());
+
+    f.usecase.poll_once().await.unwrap();
+    for _ in 0..6 {
+        poll_after(&f, 5).await;
+    }
+
+    assert!(
+        f.notifier.sent_notices().is_empty(),
+        "まもなく終わる予約枠を急かしても、開けられる時間はほとんど無い"
+    );
+}
+
+#[tokio::test]
+async fn a_gap_in_observation_restarts_the_count() {
+    let f = fixture(30);
+    let reservation = reservation_of("holder@example.com", vec![gpu(0)], Duration::hours(4));
+    f.repository.put_slot(&reservation);
+    f.observer.set_snapshot(nobody_is_working());
+
+    f.usecase.poll_once().await.unwrap();
+    for _ in 0..5 {
+        poll_after(&f, 5).await;
+    }
+    // 見回りが10分途切れた（許すのは5分まで）。見ていなかった間に使われていたかもしれない
+    poll_after(&f, 10).await;
+    assert!(
+        f.notifier.sent_notices().is_empty(),
+        "途切れる前の沈黙は数えない"
+    );
+
+    for _ in 0..6 {
+        poll_after(&f, 5).await;
+    }
+    assert_eq!(
+        f.notifier.sent_notices().len(),
+        1,
+        "途切れたあとから30分で知らせる"
+    );
 }
 
 #[tokio::test]
@@ -366,7 +446,7 @@ async fn a_reservation_that_is_used_again_can_be_reported_again() {
     f.observer.set_active_usages(vec![observed_by(
         "holder-os",
         gpu(0),
-        Utc::now() - Duration::minutes(5),
+        now() - Duration::minutes(5),
     )]);
     f.usecase.poll_once().await.unwrap();
 
@@ -434,7 +514,7 @@ async fn a_silenced_reservation_stays_quiet() {
     f.observer.set_snapshot(nobody_is_working());
 
     // 予約者が「まだ使う」と答えた状況
-    f.notices.silence(reservation.id(), Utc::now());
+    f.notices.silence(reservation.id(), now());
 
     f.usecase.poll_once().await.unwrap();
 

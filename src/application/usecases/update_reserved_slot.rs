@@ -104,7 +104,7 @@ mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::read_models::ReservedSlotView;
-    use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
     use chrono::{DateTime, Duration, Utc};
 
     fn email(address: &str) -> EmailAddress {
@@ -129,7 +129,7 @@ mod tests {
     async fn the_holder_can_move_the_slot_and_rewrite_its_notes() {
         let start = Utc::now() + Duration::hours(1);
         let slot = slot_of("holder@example.com", start, start + Duration::hours(1));
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(&slot);
         let later =
             TimePeriod::new(start + Duration::hours(2), start + Duration::hours(4)).unwrap();
@@ -158,7 +158,7 @@ mod tests {
             start + Duration::hours(2),
             start + Duration::hours(3),
         );
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(&mine);
         repository.put_slot(&theirs);
         let onto_theirs = theirs.time_period().clone();
@@ -190,7 +190,7 @@ mod tests {
             start + Duration::hours(2),
             start + Duration::hours(3),
         );
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(&mine);
         repository.put_slot(&theirs);
 
@@ -210,5 +210,162 @@ mod tests {
         );
         let stored = repository.find_slot(mine.id()).await.unwrap().unwrap();
         assert_eq!(stored, mine);
+    }
+
+    #[tokio::test]
+    async fn the_holder_can_extend_the_slot_over_its_own_time() {
+        // 10–11時を10–12時へ延ばす。延ばした先は元の自分と重なるが、競合ではない
+        let start = Utc::now() + Duration::hours(1);
+        let mine = slot_of("holder@example.com", start, start + Duration::hours(1));
+        let repository = Arc::new(InMemoryReservationRepository::new());
+        repository.put_slot(&mine);
+        let extended = TimePeriod::new(start, start + Duration::hours(2)).unwrap();
+
+        UpdateReservedSlotUseCase::new(repository.clone())
+            .execute(
+                mine.id(),
+                &email("holder@example.com"),
+                Some(extended.clone()),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let stored = repository.find_slot(mine.id()).await.unwrap().unwrap();
+        assert_eq!(stored.time_period(), &extended);
+    }
+
+    #[tokio::test]
+    async fn the_slot_can_end_exactly_when_another_begins() {
+        let start = Utc::now() + Duration::hours(1);
+        let mine = slot_of("holder@example.com", start, start + Duration::hours(1));
+        let theirs = slot_of(
+            "other@example.com",
+            start + Duration::hours(2),
+            start + Duration::hours(3),
+        );
+        let repository = Arc::new(InMemoryReservationRepository::new());
+        repository.put_slot(&mine);
+        repository.put_slot(&theirs);
+        let up_to_theirs = TimePeriod::new(start, theirs.time_period().start()).unwrap();
+
+        UpdateReservedSlotUseCase::new(repository.clone())
+            .execute(
+                mine.id(),
+                &email("holder@example.com"),
+                Some(up_to_theirs.clone()),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let stored = repository.find_slot(mine.id()).await.unwrap().unwrap();
+        assert_eq!(stored.time_period(), &up_to_theirs);
+    }
+
+    #[tokio::test]
+    async fn rescheduling_one_occurrence_moves_only_that_slot() {
+        use crate::application::usecases::test_support::weekly_reservation;
+        use crate::domain::aggregates::reservation::OccurrenceKey;
+        let first = Utc::now() + Duration::days(1);
+        let repository = Arc::new(InMemoryReservationRepository::new());
+        let weekly = weekly_reservation(first);
+        repository.put_reservation(&weekly);
+        let second_start = first + Duration::days(7);
+        let second = OccurrenceKey::At(second_start);
+        let later = TimePeriod::new(
+            second_start + Duration::hours(3),
+            second_start + Duration::hours(5),
+        )
+        .unwrap();
+
+        UpdateReservedSlotUseCase::new(repository.clone())
+            .execute(
+                &ReservedSlotId::new(weekly.id().clone(), second.clone()),
+                &email("holder@example.com"),
+                Some(later.clone()),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let stored = repository.find(weekly.id()).await.unwrap().unwrap();
+        assert_eq!(stored.slot(&second).unwrap().time_period(), &later);
+        assert_eq!(
+            stored
+                .slot(&OccurrenceKey::At(first))
+                .unwrap()
+                .time_period()
+                .start(),
+            first,
+            "ほかの回は動かない"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_occurrence_cannot_be_moved_onto_another_occurrence_of_the_same_reservation() {
+        use crate::application::usecases::test_support::weekly_reservation;
+        use crate::domain::aggregates::reservation::OccurrenceKey;
+        let first = Utc::now() + Duration::days(1);
+        let repository = Arc::new(InMemoryReservationRepository::new());
+        let weekly = weekly_reservation(first);
+        repository.put_reservation(&weekly);
+        let second = OccurrenceKey::At(first + Duration::days(7));
+
+        // 2回目を、1回目と同じ時間へ動かす。同じGPUを同じ時間に二重に押さえることになる
+        let error = UpdateReservedSlotUseCase::new(repository.clone())
+            .execute(
+                &ReservedSlotId::new(weekly.id().clone(), second.clone()),
+                &email("holder@example.com"),
+                Some(TimePeriod::new(first, first + Duration::hours(2)).unwrap()),
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(error, ApplicationError::ResourceConflict { .. }),
+            "{error:?}"
+        );
+        let stored = repository.find(weekly.id()).await.unwrap().unwrap();
+        assert_eq!(
+            stored.slot(&second).unwrap().time_period().start(),
+            first + Duration::days(7)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reservation_changed_after_reading_is_reported_as_a_conflict() {
+        use crate::application::usecases::test_support::ChangedAfterReading;
+        use crate::domain::ports::repositories::RepositoryError;
+        let start = Utc::now() + Duration::hours(1);
+        let mine = slot_of("holder@example.com", start, start + Duration::hours(1));
+        let stored = InMemoryReservationRepository::new();
+        stored.put_slot(&mine);
+        let repository = Arc::new(ChangedAfterReading(stored.clone()));
+
+        let error = UpdateReservedSlotUseCase::new(repository)
+            .execute(
+                mine.id(),
+                &email("holder@example.com"),
+                None,
+                Some("書き換え".to_string()),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                error,
+                ApplicationError::Repository(RepositoryError::Conflict)
+            ),
+            "{error:?}"
+        );
+        let after = stored.find_slot(mine.id()).await.unwrap().unwrap();
+        assert_eq!(
+            after.notes(),
+            None,
+            "読んだあとに変わった予約は書き戻さない"
+        );
     }
 }

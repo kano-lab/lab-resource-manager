@@ -11,6 +11,9 @@ use std::fmt;
 #[async_trait]
 pub trait Notifier: Send + Sync {
     /// 出来事を知らせる
+    ///
+    /// 知らせきれなかったときはエラーを返す。呼び出し側は、あとで同じ出来事をもう一度渡して
+    /// 送り直す。実装は、同じ出来事をすでに届けた送り先へ重ねて届けない。
     async fn notify(&self, event: ReservationEvent) -> Result<(), NotificationError>;
 }
 

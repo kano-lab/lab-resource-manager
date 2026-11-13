@@ -1,13 +1,13 @@
-use crate::application::ApplicationError;
+use crate::application::{ApplicationError, Clock, SystemClock};
 use crate::domain::aggregates::reservation::{Reservation, ReservationId};
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::Notifier;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::domain::services::ReservationChangeInterpreter;
-use chrono::{Duration, Utc};
-use std::collections::HashMap;
+use chrono::{DateTime, Duration, Utc};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tracing::info;
+use tracing::{error, info};
 
 /// 予約の変化を監視し、通知するユースケース
 ///
@@ -35,6 +35,7 @@ where
     /// 範囲外に出た予約が取り消しとして扱われる。用途に見合う長さを与える必要がある。
     watch_window: Duration,
     previous_reservations: tokio::sync::Mutex<HashMap<ReservationId, Reservation>>,
+    clock: Arc<dyn Clock>,
 }
 
 impl<R, N> NotifyReservationChangesUseCase<R, N>
@@ -58,24 +59,44 @@ where
         notifier: N,
         watch_window: Duration,
     ) -> Result<Self, ApplicationError> {
-        let reservations = Self::fetch_current_reservations(&repository, watch_window).await?;
+        Self::with_clock(repository, notifier, watch_window, Arc::new(SystemClock)).await
+    }
+
+    /// 今の時刻を`clock`から読むインスタンスを作成し、初期状態を取得する
+    ///
+    /// # Errors
+    /// リポジトリから初期状態の取得に失敗した場合
+    pub async fn with_clock(
+        repository: Arc<R>,
+        notifier: N,
+        watch_window: Duration,
+        clock: Arc<dyn Clock>,
+    ) -> Result<Self, ApplicationError> {
+        let reservations =
+            Self::fetch_current_reservations(&repository, watch_window, clock.now()).await?;
         Ok(Self {
             repository,
             notifier,
             interpreter: ReservationChangeInterpreter::new(),
             watch_window,
             previous_reservations: tokio::sync::Mutex::new(reservations),
+            clock,
         })
     }
 
     /// 一度だけポーリングを実行し、変化を検知して通知する
     ///
+    /// 出来事はすべて送ろうとする。送れなかった出来事の予約は前回の姿のまま覚えておき、
+    /// 次のポーリングで同じ変化として読み直して送り直す。読み直した出来事のうち、
+    /// すでに届いた送り先へ重ねて届けないのは通知側（`Notifier`の実装）の役目である。
+    ///
     /// # Errors
-    /// リポジトリアクセスまたは通知送信に失敗した場合
+    /// リポジトリアクセスに失敗した場合、または送れなかった出来事があった場合（最初の失敗）
     pub async fn poll_once(&self) -> Result<(), ApplicationError> {
-        let started_at = Utc::now();
+        let started = std::time::Instant::now();
+        let now = self.clock.now();
         let current_reservations =
-            Self::fetch_current_reservations(&self.repository, self.watch_window).await?;
+            Self::fetch_current_reservations(&self.repository, self.watch_window, now).await?;
         let mut previous_reservations = self.previous_reservations.lock().await;
 
         let changes = self
@@ -84,13 +105,24 @@ where
                 self.repository.as_ref(),
                 &previous_reservations,
                 &current_reservations,
-                started_at,
+                now,
             )
             .await?;
 
         let notifications = changes.events.len();
+        let mut unsent: HashSet<ReservationId> = HashSet::new();
+        let mut first_failure = None;
         for event in changes.events {
-            self.notifier.notify(event).await?;
+            let reservation_id = event.reservation().id().clone();
+            if let Err(e) = self.notifier.notify(event).await {
+                error!(
+                    reservation_id = %reservation_id.as_str(),
+                    error = %e,
+                    "announcing a reservation change failed; it is sent again on the next pass"
+                );
+                unsent.insert(reservation_id);
+                first_failure.get_or_insert(e);
+            }
         }
 
         // 1周の要約。件数の推移から、取得範囲や取りこぼしの異常に気づける
@@ -99,7 +131,7 @@ where
             appeared = changes.appeared,
             disappeared = changes.disappeared,
             notifications,
-            elapsed_ms = (Utc::now() - started_at).num_milliseconds(),
+            elapsed_ms = started.elapsed().as_millis(),
             "change detection pass finished"
         );
 
@@ -109,18 +141,28 @@ where
         for reservation in changes.carried_over {
             known.insert(reservation.id().clone(), reservation);
         }
+        // 送れなかった変化は、前回の姿に戻しておくと次回また同じ変化として読める
+        for id in unsent {
+            match previous_reservations.get(&id) {
+                Some(before) => known.insert(id, before.clone()),
+                None => known.remove(&id),
+            };
+        }
         *previous_reservations = known;
 
-        Ok(())
+        match first_failure {
+            Some(e) => Err(e.into()),
+            None => Ok(()),
+        }
     }
 
     /// 監視範囲の予約を取得する
     async fn fetch_current_reservations(
         repository: &R,
         watch_window: Duration,
+        now: DateTime<Utc>,
     ) -> Result<HashMap<ReservationId, Reservation>, ApplicationError> {
         // 監視する期間は現在時刻を起点に取り直す。ポーリングごとに窓が前へ進む
-        let now = Utc::now();
         let window = TimePeriod::new(now, now + watch_window)?;
         let reservations = repository.find_overlapping(&window).await?;
         Ok(reservations
