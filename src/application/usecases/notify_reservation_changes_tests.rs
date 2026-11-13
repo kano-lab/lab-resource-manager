@@ -190,6 +190,47 @@ async fn a_slot_that_ran_its_course_is_not_announced() {
 }
 
 #[tokio::test]
+async fn an_announcement_that_failed_is_sent_on_the_next_pass_and_the_others_are_not_repeated() {
+    let repository = Arc::new(MockReservationRepository::new());
+    let (usecase, notifier, _clock) = watching(&repository).await;
+    let first = slot("first", now() + Duration::days(1));
+    let second = slot("second", now() + Duration::days(2));
+    let third = slot("third", now() + Duration::days(3));
+    for each in [&first, &second, &third] {
+        repository.put_slot(each);
+    }
+    *notifier.fail_once_for.lock().unwrap() = Some("second".to_string());
+
+    let failed = usecase.poll_once().await;
+    let sent_first: Vec<String> = notifier
+        .take()
+        .iter()
+        .map(|event| event.reservation().id().as_str().to_string())
+        .collect();
+    usecase.poll_once().await.unwrap();
+    let sent_next = notifier.take();
+
+    assert!(
+        matches!(failed, Err(ApplicationError::Notification(_))),
+        "{failed:?}"
+    );
+    let mut sent_first = sent_first;
+    sent_first.sort();
+    assert_eq!(
+        sent_first,
+        vec!["first", "third"],
+        "送れなかった1件のほかは送る"
+    );
+    assert!(
+        matches!(
+            sent_next.as_slice(),
+            [ReservationEvent::Reserved(reservation)] if reservation.id().as_str() == "second"
+        ),
+        "次の回で、送れなかった1件だけを送り直す: {sent_next:?}"
+    );
+}
+
+#[tokio::test]
 async fn cancelling_one_occurrence_of_a_recurring_reservation_is_announced_as_that_slot() {
     let repository = Arc::new(MockReservationRepository::new());
     let first_start = now() + Duration::days(1);

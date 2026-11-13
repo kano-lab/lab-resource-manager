@@ -5,9 +5,9 @@ use crate::domain::ports::Notifier;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::domain::services::ReservationChangeInterpreter;
 use chrono::{DateTime, Duration, Utc};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tracing::info;
+use tracing::{error, info};
 
 /// 予約の変化を監視し、通知するユースケース
 ///
@@ -86,8 +86,11 @@ where
 
     /// 一度だけポーリングを実行し、変化を検知して通知する
     ///
+    /// 出来事はすべて送ろうとする。送れなかった出来事の予約は前回の姿のまま覚えておき、
+    /// 次のポーリングで同じ変化として読み直して送り直す。送れた出来事は送り直さない。
+    ///
     /// # Errors
-    /// リポジトリアクセスまたは通知送信に失敗した場合
+    /// リポジトリアクセスに失敗した場合、または送れなかった出来事があった場合（最初の失敗）
     pub async fn poll_once(&self) -> Result<(), ApplicationError> {
         let started = std::time::Instant::now();
         let now = self.clock.now();
@@ -106,8 +109,19 @@ where
             .await?;
 
         let notifications = changes.events.len();
+        let mut unsent: HashSet<ReservationId> = HashSet::new();
+        let mut first_failure = None;
         for event in changes.events {
-            self.notifier.notify(event).await?;
+            let reservation_id = event.reservation().id().clone();
+            if let Err(e) = self.notifier.notify(event).await {
+                error!(
+                    reservation_id = %reservation_id.as_str(),
+                    error = %e,
+                    "announcing a reservation change failed; it is sent again on the next pass"
+                );
+                unsent.insert(reservation_id);
+                first_failure.get_or_insert(e);
+            }
         }
 
         // 1周の要約。件数の推移から、取得範囲や取りこぼしの異常に気づける
@@ -126,9 +140,19 @@ where
         for reservation in changes.carried_over {
             known.insert(reservation.id().clone(), reservation);
         }
+        // 送れなかった変化は、前回の姿に戻しておくと次回また同じ変化として読める
+        for id in unsent {
+            match previous_reservations.get(&id) {
+                Some(before) => known.insert(id, before.clone()),
+                None => known.remove(&id),
+            };
+        }
         *previous_reservations = known;
 
-        Ok(())
+        match first_failure {
+            Some(e) => Err(e.into()),
+            None => Ok(()),
+        }
     }
 
     /// 監視範囲の予約を取得する
