@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.0.0](https://github.com/kano-lab/lab-resource-manager/compare/v2.0.1...v3.0.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* MCP tools, log fields and the library API now speak of reservations and reserved slots ([#173](https://github.com/kano-lab/lab-resource-manager/issues/173), [#174](https://github.com/kano-lab/lab-resource-manager/issues/174)). See the [migration guide](https://github.com/kano-lab/lab-resource-manager/blob/main/docs/MIGRATION.md).
+    - MCP tools that act on one reserved slot are renamed: `list_all_reservations` → `list_reserved_slots`, `list_my_reservations` → `list_my_reserved_slots`, `get_reservation` → `get_reserved_slot`, `update_reservation` → `update_reserved_slot`, `release_reservation_early` → `end_reserved_slot_early`, `cancel_reservation` → `cancel_reserved_slot`. In their output, `owner_email` is now `holder_email`.
+    - MCP `get_reservation` and `cancel_reservation` now act on a whole reservation and take its ID: `cancel_reservation` on a recurring reservation cancels every slot.
+    - Log fields: `usage_id` → `reserved_slot_id` or `reservation_id`, `owner` → `holder`, `reservations_in_progress` → `reserved_slots_in_progress`, `matched_to_a_reservation` → `matched_to_a_reserved_slot`, and the line `idle reservation pass finished` → `idle reserved slot pass finished`.
+    - Library API: rebuilt around reservations and reserved slots; `ResourceUsage` and the use cases built on it are gone.
+
+### Features
+
+* a recurring reservation made in the calendar is announced once when it is created, changed or cancelled, instead of once for every slot, and a change to one of its slots is announced on its own ([#174](https://github.com/kano-lab/lab-resource-manager/issues/174)) ([37cffdc](https://github.com/kano-lab/lab-resource-manager/commit/37cffdcf986715c67afb2a8ff0ae961956418a7d))
+* MCP `get_reservation` and `cancel_reservation` act on a whole reservation, and reserved slots say which reservation they belong to and whether it is recurring ([#174](https://github.com/kano-lab/lab-resource-manager/issues/174)) ([37cffdc](https://github.com/kano-lab/lab-resource-manager/commit/37cffdcf986715c67afb2a8ff0ae961956418a7d))
+* MCP clients can list what can be reserved (`list_resources`) and see when it is free (`check_availability`) ([#170](https://github.com/kano-lab/lab-resource-manager/issues/170)) ([a24d11c](https://github.com/kano-lab/lab-resource-manager/commit/a24d11c042292b1094681ba510958ac30b4578ac))
+
+
+### Bug Fixes
+
+* a reservation moved more than 60 days ahead is no longer announced as cancelled, nor as new when it comes back ([#173](https://github.com/kano-lab/lab-resource-manager/issues/173), [#190](https://github.com/kano-lab/lab-resource-manager/issues/190)) ([e2e1e29](https://github.com/kano-lab/lab-resource-manager/commit/e2e1e298e7f63fd3a3771a040d337eef7a6877aa))
+* an edit made in the calendar after the app read a reservation is no longer overwritten, and a reservation deleted in the meantime is not recreated ([#173](https://github.com/kano-lab/lab-resource-manager/issues/173)) ([7a15365](https://github.com/kano-lab/lab-resource-manager/commit/7a15365d7f3d7298e0a6da95c83192da329b9d74))
+* read calendars shared with the service account again (broken in 2.0.1; the same fix is in 2.0.2) ([#188](https://github.com/kano-lab/lab-resource-manager/issues/188)) ([a58517d](https://github.com/kano-lab/lab-resource-manager/commit/a58517d8631e1aee9f068f4865ea15bae59b401c))
+
 ## [2.0.1](https://github.com/kano-lab/lab-resource-manager/compare/v2.0.0...v2.0.1) (2026-11-12)
 
 
