@@ -197,14 +197,14 @@ mod tests {
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 
     const ONLY: OccurrenceKey = OccurrenceKey::Only;
-    use chrono::{Duration, Utc};
+    use chrono::{Duration, TimeZone, Utc};
 
     fn holder() -> EmailAddress {
         EmailAddress::new("holder@example.com".to_string()).unwrap()
     }
 
     fn new_reservation() -> Reservation {
-        let start = Utc::now() + Duration::hours(1);
+        let start = Utc.with_ymd_and_hms(2026, 11, 16, 2, 0, 0).unwrap();
         Reservation::one_time(
             holder(),
             TimePeriod::new(start, start + Duration::hours(1)).unwrap(),

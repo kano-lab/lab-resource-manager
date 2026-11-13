@@ -6,7 +6,7 @@ use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::aggregates::reservation::{RecurrenceEnd, RecurrenceFrequency, RecurrenceRule};
 use crate::domain::common::TimePeriod;
 use crate::infrastructure::config::{DateFormat, ResourceStyle, TimeStyle};
-use chrono::{Local, Utc, Weekday};
+use chrono::{DateTime, Local, Utc, Weekday};
 use chrono_tz::Tz;
 use std::collections::BTreeMap;
 
@@ -157,7 +157,7 @@ pub fn format_time_styled(
     match style {
         TimeStyle::Full => format_time_full(period, timezone_str),
         TimeStyle::Smart => format_time_smart(period, timezone_str, date_format),
-        TimeStyle::Relative => format_time_relative(period, timezone_str, date_format),
+        TimeStyle::Relative => format_time_relative(period, timezone_str, date_format, Utc::now()),
     }
 }
 
@@ -217,13 +217,15 @@ fn format_time_smart(
 }
 
 /// 相対形式: "今日 19:00 - 21:00", "明日 10:00 - 12:00"
+///
+/// 今日・明日は、`now`の日付（通知の時間帯で数える）からの日数で決める。
 fn format_time_relative(
     period: &TimePeriod,
     timezone_str: Option<&str>,
     date_format: DateFormat,
+    now: DateTime<Utc>,
 ) -> String {
     let (start, end) = convert_to_timezone(period, timezone_str);
-    let now = Utc::now();
 
     // 現在時刻を同じタイムゾーンで取得
     let now_date = if let Some(tz_str) = timezone_str {
@@ -500,20 +502,36 @@ mod tests {
         assert_eq!(result, "2024-01-15 19:00 - 21:00");
     }
 
-    #[test]
-    fn test_format_time_relative_today() {
-        // Create a period for "today" by using a fixed reference point
-        // UTC 10:00-12:00 = JST 19:00-21:00
-        let period = create_test_period(10, 12);
+    /// 1月`day`日の10時（UTC。東京では19時）から2時間
+    fn evening_of(day: u32) -> TimePeriod {
+        let start = Utc.with_ymd_and_hms(2024, 1, day, 10, 0, 0).unwrap();
+        TimePeriod::new(start, start + chrono::Duration::hours(2)).unwrap()
+    }
 
-        let result = format_time_relative(&period, Some("Asia/Tokyo"), DateFormat::Md);
-        // The relative format includes spaces around the hyphen
-        assert!(
-            result.contains(" - "),
-            "Expected ' - ' in relative time format, got: {}",
-            result
+    #[test]
+    fn relative_time_names_the_days_around_today() {
+        // 今は1月15日の正午（東京）
+        let now = Utc.with_ymd_and_hms(2024, 1, 15, 3, 0, 0).unwrap();
+        let relative = |day: u32| {
+            format_time_relative(&evening_of(day), Some("Asia/Tokyo"), DateFormat::Md, now)
+        };
+
+        assert_eq!(relative(14), "昨日 19:00 - 21:00");
+        assert_eq!(relative(15), "今日 19:00 - 21:00");
+        assert_eq!(relative(16), "明日 19:00 - 21:00");
+        assert_eq!(relative(17), "明後日 19:00 - 21:00");
+        assert_eq!(relative(18), "1/18 19:00 - 21:00");
+    }
+
+    #[test]
+    fn today_is_the_date_in_the_notification_timezone() {
+        // UTCではまだ1月15日だが、東京ではもう16日の1時
+        let now = Utc.with_ymd_and_hms(2024, 1, 15, 16, 0, 0).unwrap();
+
+        assert_eq!(
+            format_time_relative(&evening_of(16), Some("Asia/Tokyo"), DateFormat::Md, now),
+            "今日 19:00 - 21:00"
         );
-        assert!(result.contains("19:00") && result.contains("21:00"));
     }
 
     #[test]

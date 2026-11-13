@@ -1,10 +1,10 @@
-use crate::application::ApplicationError;
+use crate::application::{ApplicationError, Clock, SystemClock};
 use crate::domain::aggregates::reservation::{Reservation, ReservationId};
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::Notifier;
 use crate::domain::ports::repositories::ReservationRepository;
 use crate::domain::services::ReservationChangeInterpreter;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
@@ -35,6 +35,7 @@ where
     /// 範囲外に出た予約が取り消しとして扱われる。用途に見合う長さを与える必要がある。
     watch_window: Duration,
     previous_reservations: tokio::sync::Mutex<HashMap<ReservationId, Reservation>>,
+    clock: Arc<dyn Clock>,
 }
 
 impl<R, N> NotifyReservationChangesUseCase<R, N>
@@ -58,13 +59,28 @@ where
         notifier: N,
         watch_window: Duration,
     ) -> Result<Self, ApplicationError> {
-        let reservations = Self::fetch_current_reservations(&repository, watch_window).await?;
+        Self::with_clock(repository, notifier, watch_window, Arc::new(SystemClock)).await
+    }
+
+    /// 今の時刻を`clock`から読むインスタンスを作成し、初期状態を取得する
+    ///
+    /// # Errors
+    /// リポジトリから初期状態の取得に失敗した場合
+    pub async fn with_clock(
+        repository: Arc<R>,
+        notifier: N,
+        watch_window: Duration,
+        clock: Arc<dyn Clock>,
+    ) -> Result<Self, ApplicationError> {
+        let reservations =
+            Self::fetch_current_reservations(&repository, watch_window, clock.now()).await?;
         Ok(Self {
             repository,
             notifier,
             interpreter: ReservationChangeInterpreter::new(),
             watch_window,
             previous_reservations: tokio::sync::Mutex::new(reservations),
+            clock,
         })
     }
 
@@ -73,9 +89,10 @@ where
     /// # Errors
     /// リポジトリアクセスまたは通知送信に失敗した場合
     pub async fn poll_once(&self) -> Result<(), ApplicationError> {
-        let started_at = Utc::now();
+        let started = std::time::Instant::now();
+        let now = self.clock.now();
         let current_reservations =
-            Self::fetch_current_reservations(&self.repository, self.watch_window).await?;
+            Self::fetch_current_reservations(&self.repository, self.watch_window, now).await?;
         let mut previous_reservations = self.previous_reservations.lock().await;
 
         let changes = self
@@ -84,7 +101,7 @@ where
                 self.repository.as_ref(),
                 &previous_reservations,
                 &current_reservations,
-                started_at,
+                now,
             )
             .await?;
 
@@ -99,7 +116,7 @@ where
             appeared = changes.appeared,
             disappeared = changes.disappeared,
             notifications,
-            elapsed_ms = (Utc::now() - started_at).num_milliseconds(),
+            elapsed_ms = started.elapsed().as_millis(),
             "change detection pass finished"
         );
 
@@ -118,9 +135,9 @@ where
     async fn fetch_current_reservations(
         repository: &R,
         watch_window: Duration,
+        now: DateTime<Utc>,
     ) -> Result<HashMap<ReservationId, Reservation>, ApplicationError> {
         // 監視する期間は現在時刻を起点に取り直す。ポーリングごとに窓が前へ進む
-        let now = Utc::now();
         let window = TimePeriod::new(now, now + watch_window)?;
         let reservations = repository.find_overlapping(&window).await?;
         Ok(reservations
