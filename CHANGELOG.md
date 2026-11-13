@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.1.0](https://github.com/kano-lab/lab-resource-manager/compare/v3.0.0...v3.1.0) (2026-11-13)
+
+
+### Features
+
+* apply minor and patch releases automatically with a systemd timer ([#194](https://github.com/kano-lab/lab-resource-manager/issues/194)) ([14ea2f0](https://github.com/kano-lab/lab-resource-manager/commit/14ea2f0360ca1889d5cc331fd3ffb738837e3b6f))
+
+
+### Bug Fixes
+
+* a reservation announcement that did not reach a destination (for example when Slack fails) is sent again to that destination on the next pass, for up to an hour, without repeating it to the others ([#193](https://github.com/kano-lab/lab-resource-manager/issues/193)) ([d3fa2be](https://github.com/kano-lab/lab-resource-manager/commit/d3fa2be78f50c429658fb510beea24443c4b2449))
+* an event ID that is already taken is reported as a conflict, as the in-memory repository does, instead of as a connection error ([#193](https://github.com/kano-lab/lab-resource-manager/issues/193)) ([d3fa2be](https://github.com/kano-lab/lab-resource-manager/commit/d3fa2be78f50c429658fb510beea24443c4b2449))
+* two reservations of the same GPU conflict even when the GPU's model is written differently ([#193](https://github.com/kano-lab/lab-resource-manager/issues/193)) ([d3fa2be](https://github.com/kano-lab/lab-resource-manager/commit/d3fa2be78f50c429658fb510beea24443c4b2449))
+
 ## [3.0.0](https://github.com/kano-lab/lab-resource-manager/compare/v2.0.1...v3.0.0) (2026-11-13)
 
 
