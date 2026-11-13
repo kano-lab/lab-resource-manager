@@ -557,6 +557,12 @@ fn reservation_event(
     }
 }
 
+/// 空の偽のカレンダー1つ（サーバー1台分）を使うリポジトリ（リポジトリの契約テスト用）
+pub(in crate::infrastructure::repositories::reservation) fn repository_on_an_empty_fake_calendar()
+-> GoogleCalendarReservationRepository {
+    repository_with(vec![]).0
+}
+
 fn repository_with(
     events: Vec<Event>,
 ) -> (
