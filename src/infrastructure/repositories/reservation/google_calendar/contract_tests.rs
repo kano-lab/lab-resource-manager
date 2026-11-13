@@ -20,13 +20,15 @@
 //! # 並列に流しても互いに触れない
 //!
 //! - イベント・予約のIDは毎回ランダムに作る
-//! - 期間で引くテストは、テストごとにランダムに選んだ、1か月〜1年先の日を使う。
-//!   カレンダーは遠い未来の繰り返しを回に展開しない（2100年代では最初の回しか作らない）ので、
-//!   何十年も先の日は使えない
+//! - 期間で引くテストは、テストごとにランダムに選んだ、1か月〜1年先の日を使う（選んだ日は
+//!   標準エラーに出す）。カレンダーは遠い未来の繰り返しを回に展開しない（2100年代では最初の
+//!   回しか作らない）ので、何十年も先の日は使えない。偽物では毎回同じ日を使う
 //! - 「ちょうどN件」ではなく「自分の作ったものが期待どおりに含まれる」を確かめる
-//! - 作ったイベントは自分で消す。途中で失敗して残ったものは、説明欄の印（[`CONTRACT_MARKER`]）
-//!   で見分け、作られて1日以上たったものを次の実行の始めに消す
-//! - カレンダーは書いた直後の一覧に現れないことがあるため、一覧で確かめるところは待って再試行する
+//! - 作ったイベントは、テストが失敗しても最後に消す。それでも残ったもの（実行が途中で
+//!   止められた場合など）は、説明欄の印（[`CONTRACT_MARKER`]）で見分け、作られて1日以上
+//!   たったものを次の実行の始めに消す
+//! - カレンダーは書いた直後の一覧に現れないことがあり、一時的なエラー（429・5xx）も返すため、
+//!   読んで確かめるところは待って再試行する
 
 use super::event_gateway::{CalendarEventGateway, GoogleCalendarEventGateway};
 use super::repository::GoogleCalendarReservationRepository;
@@ -40,12 +42,15 @@ use crate::domain::ports::repositories::{RepositoryError, ReservationRepository}
 use crate::infrastructure::config::{
     DeviceConfig, ResourceConfig, ServerConfig, StorageBackend, StorageConfig,
 };
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use async_trait::async_trait;
+use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
+use chrono_tz::Tz;
 use google_calendar3::api::{Event, EventDateTime};
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 /// 契約テストが作ったイベントの説明欄に入れる印
 const CONTRACT_MARKER: &str = "[lrm-contract-test]";
@@ -59,9 +64,87 @@ const HOLDER: &str = "contract-test@example.com";
 /// 繰り返しを数える時間帯
 const TIME_ZONE: &str = "Asia/Tokyo";
 
+/// 前の実行の残りを、この実行ですでに掃除したか
+static SWEPT: AtomicBool = AtomicBool::new(false);
+
+/// 作ったイベントを覚えておくゲートウェイ（後片付けのため）
+struct Recording {
+    inner: Arc<dyn CalendarEventGateway>,
+    /// 作ったイベント（カレンダーID, イベントID）
+    created: Mutex<Vec<(String, String)>>,
+}
+
+#[async_trait]
+impl CalendarEventGateway for Recording {
+    async fn list_events(
+        &self,
+        calendar_id: &str,
+        time_min: DateTime<Utc>,
+        time_max: Option<DateTime<Utc>>,
+    ) -> Result<Vec<Event>, RepositoryError> {
+        self.inner
+            .list_events(calendar_id, time_min, time_max)
+            .await
+    }
+
+    async fn list_series(
+        &self,
+        calendar_id: &str,
+        ical_uid: &str,
+    ) -> Result<Vec<Event>, RepositoryError> {
+        self.inner.list_series(calendar_id, ical_uid).await
+    }
+
+    async fn get_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+    ) -> Result<Option<Event>, RepositoryError> {
+        self.inner.get_event(calendar_id, event_id).await
+    }
+
+    async fn insert_event(
+        &self,
+        calendar_id: &str,
+        event: Event,
+    ) -> Result<Event, RepositoryError> {
+        let created = self.inner.insert_event(calendar_id, event).await?;
+        if let Some(id) = created.id.clone() {
+            self.created
+                .lock()
+                .unwrap()
+                .push((calendar_id.to_string(), id));
+        }
+        Ok(created)
+    }
+
+    async fn update_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+        event: Event,
+        version: &str,
+    ) -> Result<Event, RepositoryError> {
+        self.inner
+            .update_event(calendar_id, event_id, event, version)
+            .await
+    }
+
+    async fn delete_event(
+        &self,
+        calendar_id: &str,
+        event_id: &str,
+        version: &str,
+    ) -> Result<(), RepositoryError> {
+        self.inner
+            .delete_event(calendar_id, event_id, version)
+            .await
+    }
+}
+
 /// 契約テストの相手（偽のゲートウェイか、本物のテスト用カレンダー）
 struct Calendar {
-    gateway: Arc<dyn CalendarEventGateway>,
+    gateway: Arc<Recording>,
     calendar_id: String,
     service_account_email: String,
     /// 本物のカレンダーか。本物は書いた直後の一覧に現れないことがあるので待つ
@@ -69,13 +152,30 @@ struct Calendar {
 }
 
 impl Calendar {
-    fn fake() -> Self {
+    fn on(
+        gateway: Arc<dyn CalendarEventGateway>,
+        calendar_id: String,
+        service_account_email: String,
+        real: bool,
+    ) -> Self {
         Self {
-            gateway: Arc::new(FakeCalendarEventGateway::new(Vec::new())),
-            calendar_id: "contract-test-calendar".to_string(),
-            service_account_email: SERVICE_ACCOUNT_EMAIL.to_string(),
-            real: false,
+            gateway: Arc::new(Recording {
+                inner: gateway,
+                created: Mutex::new(Vec::new()),
+            }),
+            calendar_id,
+            service_account_email,
+            real,
         }
+    }
+
+    fn fake() -> Self {
+        Self::on(
+            Arc::new(FakeCalendarEventGateway::new(Vec::new())),
+            "contract-test-calendar".to_string(),
+            SERVICE_ACCOUNT_EMAIL.to_string(),
+            false,
+        )
     }
 
     async fn real() -> Self {
@@ -96,13 +196,11 @@ impl Calendar {
         let (gateway, service_account_email) = GoogleCalendarEventGateway::connect(&key)
             .await
             .expect("サービスアカウントでGoogle Calendar APIにつなげません");
-        let calendar = Self {
-            gateway: Arc::new(gateway),
-            calendar_id,
-            service_account_email,
-            real: true,
-        };
-        calendar.sweep_leftovers().await;
+        let calendar = Self::on(Arc::new(gateway), calendar_id, service_account_email, true);
+        // 並列に走るテストのうち、最初の1つだけが掃除する
+        if !SWEPT.swap(true, Ordering::SeqCst) {
+            calendar.sweep_leftovers().await;
+        }
         calendar
     }
 
@@ -132,38 +230,89 @@ impl Calendar {
         .expect("リポジトリを組み立てられません")
     }
 
+    /// テストで使う日の、東京の10時
+    ///
+    /// 本物では、1か月〜1年先からテストごとにランダムに選ぶ。偽物では毎回同じ日（月曜）。
+    fn some_day(&self) -> DateTime<Utc> {
+        let date = if self.real {
+            let days = 30 + (uuid::Uuid::new_v4().as_u128() % 335) as i64;
+            (Utc::now() + Duration::days(days))
+                .with_timezone(&chrono_tz::Asia::Tokyo)
+                .date_naive()
+        } else {
+            NaiveDate::from_ymd_opt(2027, 6, 7).unwrap()
+        };
+        let day = local_time(chrono_tz::Asia::Tokyo, date, 10);
+        if self.real {
+            eprintln!("契約テストの日: {day}");
+        }
+        day
+    }
+
+    /// 夏時間の切り替えをまたぐ1週間の始まりの日（ニューヨーク）
+    ///
+    /// 本物では、1か月より先で最初の切り替えの3日前。偽物では毎回同じ日（2027年11月7日の
+    /// 夏時間の終わりの3日前）。
+    fn a_date_before_a_dst_change(&self) -> NaiveDate {
+        let new_york = chrono_tz::America::New_York;
+        let date = if self.real {
+            let mut date = (Utc::now() + Duration::days(30)).date_naive();
+            while local_time(new_york, date, 12)
+                - local_time(new_york, date.pred_opt().unwrap(), 12)
+                == Duration::days(1)
+            {
+                date = date.succ_opt().unwrap();
+            }
+            date - Duration::days(3)
+        } else {
+            NaiveDate::from_ymd_opt(2027, 11, 4).unwrap()
+        };
+        if self.real {
+            eprintln!("契約テストの夏時間をまたぐ週: {date}から");
+        }
+        date
+    }
+
     /// `attempt`が値を返すまで待って再試行する（偽物は待たない）
+    ///
+    /// 本物は書いた直後の一覧に現れないことがあり、一時的なエラーも返すので、どちらも待つ。
     async fn eventually<T, F, Fut>(&self, what: &str, mut attempt: F) -> T
     where
         F: FnMut() -> Fut,
-        Fut: Future<Output = Option<T>>,
+        Fut: Future<Output = Result<Option<T>, RepositoryError>>,
     {
         let tries = if self.real { 8 } else { 1 };
+        let mut last_error = None;
         for i in 0..tries {
-            if let Some(found) = attempt().await {
-                return found;
+            match attempt().await {
+                Ok(Some(found)) => return found,
+                Ok(None) => {}
+                Err(error) => last_error = Some(error),
             }
             if self.real {
                 tokio::time::sleep(std::time::Duration::from_secs(1 << i.min(4))).await;
             }
         }
-        panic!("{what}: 待っても確かめられませんでした");
+        panic!("{what}: 待っても確かめられませんでした（最後のエラー: {last_error:?}）");
     }
 
-    /// 作ったイベントを、今の版で消す（後片付け。失敗しても次の実行の掃除で消える）
-    async fn remove(&self, event_id: &str) {
-        if let Ok(Some(event)) = self.gateway.get_event(&self.calendar_id, event_id).await
-            && event.status.as_deref() != Some("cancelled")
-            && let Some(etag) = event.etag
-        {
-            let _ = self
-                .gateway
-                .delete_event(&self.calendar_id, event_id, &etag)
-                .await;
+    /// このテストが作ったイベントを、今の版で消す（繰り返しイベントを消せば回も消える）
+    async fn remove_everything_created(&self) {
+        let created = self.gateway.created.lock().unwrap().clone();
+        for (calendar_id, event_id) in created {
+            if let Ok(Some(event)) = self.gateway.get_event(&calendar_id, &event_id).await
+                && event.status.as_deref() != Some("cancelled")
+                && let Some(etag) = event.etag
+            {
+                let _ = self
+                    .gateway
+                    .delete_event(&calendar_id, &event_id, &etag)
+                    .await;
+            }
         }
     }
 
-    /// 前の実行が途中で失敗して残したテスト用イベントを消す
+    /// 前の実行が途中で止まって残したテスト用イベントを消す
     async fn sweep_leftovers(&self) {
         let Ok(events) = self
             .gateway
@@ -190,6 +339,32 @@ impl Calendar {
             }
         }
     }
+}
+
+/// 契約のシナリオを流し、成否にかかわらず作ったイベントを消す
+async fn run<F, Fut>(calendar: Calendar, scenario: F)
+where
+    F: FnOnce(Arc<Calendar>) -> Fut,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    let calendar = Arc::new(calendar);
+    let outcome = tokio::spawn(scenario(calendar.clone())).await;
+    calendar.remove_everything_created().await;
+    if let Err(error) = outcome {
+        match error.try_into_panic() {
+            Ok(panic) => std::panic::resume_unwind(panic),
+            Err(error) => panic!("{error}"),
+        }
+    }
+}
+
+/// `time_zone`での`date`の`hour`時（UTC）
+fn local_time(time_zone: Tz, date: NaiveDate, hour: u32) -> DateTime<Utc> {
+    time_zone
+        .from_local_datetime(&date.and_hms_opt(hour, 0, 0).unwrap())
+        .single()
+        .expect("その時刻はひとつに決まる")
+        .with_timezone(&Utc)
 }
 
 /// 設定を、環境変数から、無ければリポジトリ直下の`.env.contract`から読む
@@ -223,18 +398,6 @@ fn gpu() -> Resource {
 /// 新しいイベントID（base32hexに収まる、ハイフン無しのUUID）
 fn new_event_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()
-}
-
-/// テストごとにランダムに選ぶ、1か月〜1年先の日の、東京の10時
-fn somewhere_ahead() -> DateTime<Utc> {
-    let days = 30 + (uuid::Uuid::new_v4().as_u128() % 335) as i64;
-    let date = (Utc::now() + Duration::days(days))
-        .with_timezone(&chrono_tz::Asia::Tokyo)
-        .date_naive();
-    chrono_tz::Asia::Tokyo
-        .from_local_datetime(&date.and_hms_opt(10, 0, 0).unwrap())
-        .unwrap()
-        .with_timezone(&Utc)
 }
 
 /// 繰り返しイベントの、本来`start`に始まる回のイベントID
@@ -289,7 +452,7 @@ async fn conditional_writes(calendar: &Calendar) {
     let gateway = &calendar.gateway;
     let calendar_id = calendar.calendar_id.as_str();
     let id = new_event_id();
-    let start = somewhere_ahead();
+    let start = calendar.some_day();
 
     let created = gateway
         .insert_event(
@@ -347,7 +510,7 @@ async fn a_recurring_event_is_listed_only_around_its_occurrences(calendar: &Cale
     let gateway = &calendar.gateway;
     let calendar_id = calendar.calendar_id.as_str();
     let id = new_event_id();
-    let first = somewhere_ahead();
+    let first = calendar.some_day();
     gateway
         .insert_event(calendar_id, weekly_event(&id, first))
         .await
@@ -361,14 +524,11 @@ async fn a_recurring_event_is_listed_only_around_its_occurrences(calendar: &Cale
         .eventually(
             "2回目に重なる期間の一覧に、繰り返しイベントが現れる",
             || async move {
-                let events = gateway
-                    .list_events(calendar_id, from, Some(to))
-                    .await
-                    .unwrap();
-                events
+                let events = gateway.list_events(calendar_id, from, Some(to)).await?;
+                Ok(events
                     .iter()
                     .any(|event| event.id.as_deref() == Some(series_id) && !is_cancelled(event))
-                    .then_some(())
+                    .then_some(()))
             },
         )
         .await;
@@ -388,8 +548,6 @@ async fn a_recurring_event_is_listed_only_around_its_occurrences(calendar: &Cale
             .any(|event| event.id.as_deref() == Some(series_id)),
         "回と回の合間の期間には現れない"
     );
-
-    calendar.remove(&id).await;
 }
 
 /// 1つの回を、回のイベントIDで、版を条件に書き換え・削除できる
@@ -397,7 +555,7 @@ async fn one_occurrence_is_written_by_its_instance_id(calendar: &Calendar) {
     let gateway = &calendar.gateway;
     let calendar_id = calendar.calendar_id.as_str();
     let id = new_event_id();
-    let first = somewhere_ahead();
+    let first = calendar.some_day();
     let series = gateway
         .insert_event(calendar_id, weekly_event(&id, first))
         .await
@@ -478,14 +636,14 @@ async fn one_occurrence_is_written_by_its_instance_id(calendar: &Calendar) {
         .eventually(
             "変えた回と取り消した回が、回のイベントとして読める",
             || async move {
-                let events = gateway.list_series(calendar_id, ical_uid).await.unwrap();
+                let events = gateway.list_series(calendar_id, ical_uid).await?;
                 let moved = events
                     .iter()
                     .any(|event| original_start(event) == Some(second) && !is_cancelled(event));
                 let cancelled = events
                     .iter()
                     .any(|event| original_start(event) == Some(third) && is_cancelled(event));
-                (moved && cancelled).then_some(events)
+                Ok((moved && cancelled).then_some(events))
             },
         )
         .await;
@@ -497,14 +655,12 @@ async fn one_occurrence_is_written_by_its_instance_id(calendar: &Calendar) {
         moved.start.as_ref().and_then(|start| start.date_time),
         Some(second + Duration::hours(3))
     );
-
-    calendar.remove(&id).await;
 }
 
 /// 単発予約をアダプタ越しに作り、読み、書き換え、取り消す
 async fn a_one_time_reservation_round_trips(calendar: &Calendar) {
     let repository = calendar.repository();
-    let start = somewhere_ahead();
+    let start = calendar.some_day();
     let mut reservation = Reservation::one_time(
         holder(),
         TimePeriod::new(start, start + Duration::hours(1)).unwrap(),
@@ -519,17 +675,32 @@ async fn a_one_time_reservation_round_trips(calendar: &Calendar) {
         .await
         .unwrap()
         .expect("保存した予約を読める");
-    assert!(found.has_same_content_as(&reservation));
+    assert!(
+        found.has_same_content_as(&reservation),
+        "保存したとおりに読める\n保存: {reservation:?}\n読んだ: {found:?}"
+    );
     let mut stale = found.clone();
 
+    let longer = TimePeriod::new(start, start + Duration::hours(2)).unwrap();
     found
-        .reschedule_slot(
-            &OccurrenceKey::Only,
-            TimePeriod::new(start, start + Duration::hours(2)).unwrap(),
-            &holder(),
-        )
+        .reschedule_slot(&OccurrenceKey::Only, longer.clone(), &holder())
         .unwrap();
     repository.save(&mut found).await.unwrap();
+    let reread = repository
+        .find(reservation.id())
+        .await
+        .unwrap()
+        .expect("書き換えた予約を読める");
+    assert_eq!(
+        reread.slot(&OccurrenceKey::Only).unwrap().time_period(),
+        &longer,
+        "書き換えた時間で読める: {reread:?}"
+    );
+    assert_eq!(
+        reread.version(),
+        found.version(),
+        "保存したあとの版を覚えている"
+    );
 
     stale
         .change_slot_notes(
@@ -553,7 +724,7 @@ async fn a_one_time_reservation_round_trips(calendar: &Calendar) {
 async fn a_recurring_reservation_round_trips(calendar: &Calendar) {
     let repository = calendar.repository();
     let id = new_event_id();
-    let first = somewhere_ahead();
+    let first = calendar.some_day();
     calendar
         .gateway
         .insert_event(&calendar.calendar_id, weekly_event(&id, first))
@@ -579,12 +750,14 @@ async fn a_recurring_reservation_round_trips(calendar: &Calendar) {
     let (reservation_ref, second_ref, third_ref) = (&reservation_id, &second, &third);
     let stored = calendar
         .eventually("変えた回と取り消した回が読める", || async move {
-            let stored = repository_ref.find(reservation_ref).await.unwrap()?;
+            let Some(stored) = repository_ref.find(reservation_ref).await? else {
+                return Ok(None);
+            };
             let changed = stored
-                .slot(third_ref)?
-                .notes()
+                .slot(third_ref)
+                .and_then(|slot| slot.notes().cloned())
                 .is_some_and(|notes| notes.contains("この回だけ"));
-            (stored.slot(second_ref).is_none() && changed).then_some(stored)
+            Ok((stored.slot(second_ref).is_none() && changed).then_some(stored))
         })
         .await;
     assert!(
@@ -600,13 +773,12 @@ async fn a_recurring_reservation_round_trips(calendar: &Calendar) {
         .eventually(
             "4回目に重なる期間で定期予約が読める",
             || async move {
-                repository_ref
+                Ok(repository_ref
                     .find_overlapping(around_ref)
-                    .await
-                    .unwrap()
+                    .await?
                     .iter()
                     .any(|found| found.id() == reservation_ref)
-                    .then_some(())
+                    .then_some(()))
             },
         )
         .await;
@@ -617,6 +789,225 @@ async fn a_recurring_reservation_round_trips(calendar: &Calendar) {
     assert!(repository.find(&reservation_id).await.unwrap().is_none());
 }
 
+/// 無いイベントは見つからない
+///
+/// 作ったことのないID、繰り返しイベントの規則に無い時刻の回のIDは、どちらも見つからない
+/// （ゲートウェイは404を`None`にする）。
+async fn an_event_that_does_not_exist_is_not_found(calendar: &Calendar) {
+    let gateway = &calendar.gateway;
+    let calendar_id = calendar.calendar_id.as_str();
+
+    let never_created = gateway
+        .get_event(calendar_id, &new_event_id())
+        .await
+        .unwrap();
+    assert!(never_created.is_none(), "{never_created:?}");
+
+    let id = new_event_id();
+    let first = calendar.some_day();
+    gateway
+        .insert_event(calendar_id, weekly_event(&id, first))
+        .await
+        .unwrap();
+    let off_the_rule = gateway
+        .get_event(calendar_id, &instance_id(&id, first + Duration::days(8)))
+        .await
+        .unwrap();
+    assert!(
+        off_the_rule.is_none(),
+        "規則に無い時刻の回は無い: {off_the_rule:?}"
+    );
+    let beyond_the_count = gateway
+        .get_event(calendar_id, &instance_id(&id, first + Duration::days(28)))
+        .await
+        .unwrap();
+    assert!(
+        beyond_the_count.is_none(),
+        "回数を超えた回は無い: {beyond_the_count:?}"
+    );
+}
+
+/// 使ったことのあるIDでは作れない（消したイベントのIDも）
+async fn an_id_that_was_used_cannot_be_used_again(calendar: &Calendar) {
+    let gateway = &calendar.gateway;
+    let calendar_id = calendar.calendar_id.as_str();
+    let id = new_event_id();
+    let start = calendar.some_day();
+    let event = || reservation_event(&id, start, start + Duration::hours(1));
+    let created = gateway.insert_event(calendar_id, event()).await.unwrap();
+
+    let while_it_exists = gateway.insert_event(calendar_id, event()).await;
+    assert!(
+        matches!(while_it_exists, Err(RepositoryError::Conflict)),
+        "{while_it_exists:?}"
+    );
+
+    gateway
+        .delete_event(calendar_id, &id, &created.etag.unwrap())
+        .await
+        .unwrap();
+    let after_deleting = gateway.insert_event(calendar_id, event()).await;
+    assert!(
+        matches!(after_deleting, Err(RepositoryError::Conflict)),
+        "消したイベントのIDでも作れない: {after_deleting:?}"
+    );
+}
+
+/// 一覧には、期間に接するだけのイベントは現れない
+///
+/// `time_min`ちょうどに終わるイベントも、`time_max`ちょうどに始まるイベントも含まない。
+async fn listing_leaves_out_events_that_only_touch_the_period(calendar: &Calendar) {
+    let gateway = &calendar.gateway;
+    let calendar_id = calendar.calendar_id.as_str();
+    let id = new_event_id();
+    let start = calendar.some_day();
+    let end = start + Duration::hours(1);
+    gateway
+        .insert_event(calendar_id, reservation_event(&id, start, end))
+        .await
+        .unwrap();
+    let event_id = id.as_str();
+    let listed = |from: DateTime<Utc>, to: DateTime<Utc>| async move {
+        Ok::<_, RepositoryError>(
+            gateway
+                .list_events(calendar_id, from, Some(to))
+                .await?
+                .iter()
+                .any(|event| event.id.as_deref() == Some(event_id)),
+        )
+    };
+
+    // 書いた直後は一覧に現れないことがあるので、重なる期間で現れるのを待ってから確かめる
+    calendar
+        .eventually("重なる期間の一覧に現れる", || async move {
+            Ok(listed(end - Duration::minutes(1), end + Duration::hours(1))
+                .await?
+                .then_some(()))
+        })
+        .await;
+    assert!(
+        !listed(end, end + Duration::hours(1)).await.unwrap(),
+        "終わる時刻から始まる期間には現れない"
+    );
+    assert!(
+        !listed(start - Duration::hours(1), start).await.unwrap(),
+        "始まる時刻で終わる期間には現れない"
+    );
+}
+
+/// 動かした回だけが期間にあるとき、その回は一覧に現れ、アダプタはその予約を読める
+async fn a_moved_occurrence_alone_in_the_period_is_found(calendar: &Calendar) {
+    let gateway = &calendar.gateway;
+    let calendar_id = calendar.calendar_id.as_str();
+    let id = new_event_id();
+    let first = calendar.some_day();
+    gateway
+        .insert_event(calendar_id, weekly_event(&id, first))
+        .await
+        .unwrap();
+    // 2回目を、3回目と4回目の間（どの回とも重ならない日）へ動かす
+    let second = first + Duration::days(7);
+    let moved_to = first + Duration::days(17);
+    let regular = gateway
+        .get_event(calendar_id, &instance_id(&id, second))
+        .await
+        .unwrap()
+        .expect("2回目");
+    let mut moved = reservation_event(
+        &instance_id(&id, second),
+        moved_to,
+        moved_to + Duration::hours(2),
+    );
+    moved.recurring_event_id = Some(id.clone());
+    moved.original_start_time = Some(at(second));
+    gateway
+        .update_event(
+            calendar_id,
+            &instance_id(&id, second),
+            moved,
+            &regular.etag.unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let period =
+        TimePeriod::new(moved_to - Duration::hours(1), moved_to + Duration::hours(1)).unwrap();
+    let instance = instance_id(&id, second);
+    let (period_ref, instance_ref) = (&period, instance.as_str());
+    calendar
+        .eventually("動かした回が一覧に現れる", || async move {
+            Ok(gateway
+                .list_events(calendar_id, period_ref.start(), Some(period_ref.end()))
+                .await?
+                .iter()
+                .any(|event| event.id.as_deref() == Some(instance_ref) && !is_cancelled(event))
+                .then_some(()))
+        })
+        .await;
+
+    let repository = calendar.repository();
+    let reservations = repository.find_overlapping(&period).await.unwrap();
+    let reservation = reservations
+        .iter()
+        .find(|found| found.id().as_str() == id)
+        .expect("動かした回だけが期間にある定期予約も読める");
+    let slots = reservation.slots_in(&period);
+    assert_eq!(slots.len(), 1, "{slots:?}");
+    assert_eq!(slots[0].key(), &OccurrenceKey::At(second));
+    assert_eq!(slots[0].time_period().start(), moved_to);
+}
+
+/// 夏時間のある時間帯の毎週の繰り返しは、現地の同じ時刻に回を作る
+///
+/// 切り替えをまたぐと、回の開始時刻（UTC）は1時間ずれ、回のイベントIDもその時刻になる。
+async fn a_weekly_event_keeps_its_local_time_across_daylight_saving_time(calendar: &Calendar) {
+    let gateway = &calendar.gateway;
+    let calendar_id = calendar.calendar_id.as_str();
+    let new_york = chrono_tz::America::New_York;
+    let date = calendar.a_date_before_a_dst_change();
+    let first = local_time(new_york, date, 10);
+    let second = local_time(new_york, date + Duration::days(7), 10);
+    assert_ne!(second - first, Duration::days(7), "切り替えをまたいでいる");
+    let id = new_event_id();
+    let in_new_york = |time: DateTime<Utc>| EventDateTime {
+        date_time: Some(time),
+        time_zone: Some("America/New_York".to_string()),
+        ..Default::default()
+    };
+    let series = Event {
+        start: Some(in_new_york(first)),
+        end: Some(in_new_york(first + Duration::hours(1))),
+        ..weekly_event(&id, first)
+    };
+    gateway.insert_event(calendar_id, series).await.unwrap();
+
+    let instance = gateway
+        .get_event(calendar_id, &instance_id(&id, second))
+        .await
+        .unwrap()
+        .expect("2回目は、切り替えのあとの現地10時（UTCでは1時間ずれた時刻）の回");
+    assert_eq!(
+        instance.start.as_ref().and_then(|start| start.date_time),
+        Some(second)
+    );
+
+    let reservation = calendar
+        .repository()
+        .find(&ReservationId::from_string(id.clone()))
+        .await
+        .unwrap()
+        .expect("定期予約として読める");
+    let slot = reservation
+        .slot(&OccurrenceKey::At(second))
+        .expect("アダプタも同じ時刻に回を数える");
+    assert_eq!(slot.time_period().start(), second);
+    assert!(
+        reservation
+            .slot(&OccurrenceKey::At(first + Duration::days(7)))
+            .is_none()
+    );
+}
+
 /// 契約を、偽のゲートウェイと本物のカレンダーの両方で確かめるテストにする
 macro_rules! contract {
     ($name:ident) => {
@@ -625,13 +1016,19 @@ macro_rules! contract {
 
             #[tokio::test]
             async fn with_the_fake_gateway() {
-                super::$name(&Calendar::fake()).await;
+                run(Calendar::fake(), |calendar| async move {
+                    super::$name(&calendar).await
+                })
+                .await;
             }
 
             #[tokio::test]
             #[ignore = "本物のテスト用カレンダーが要る（モジュールの説明を参照）"]
             async fn with_a_real_calendar() {
-                super::$name(&Calendar::real().await).await;
+                run(Calendar::real().await, |calendar| async move {
+                    super::$name(&calendar).await
+                })
+                .await;
             }
         }
     };
@@ -642,3 +1039,8 @@ contract!(a_recurring_event_is_listed_only_around_its_occurrences);
 contract!(one_occurrence_is_written_by_its_instance_id);
 contract!(a_one_time_reservation_round_trips);
 contract!(a_recurring_reservation_round_trips);
+contract!(an_event_that_does_not_exist_is_not_found);
+contract!(an_id_that_was_used_cannot_be_used_again);
+contract!(listing_leaves_out_events_that_only_touch_the_period);
+contract!(a_moved_occurrence_alone_in_the_period_is_found);
+contract!(a_weekly_event_keeps_its_local_time_across_daylight_saving_time);
