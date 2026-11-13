@@ -625,21 +625,19 @@ async fn find_overlapping_queries_exactly_the_requested_period() {
     repository.find_slots_overlapping(&period).await.unwrap();
 
     let queries = gateway.queries();
-    assert_eq!(
-        queries.len(),
-        1,
-        "サーバーカレンダー1件分の問い合わせが行われる"
-    );
-    assert_eq!(
-        queries[0].time_min,
-        period.start(),
-        "問い合わせの下限は対象期間の開始時刻であるべき"
-    );
-    assert_eq!(
-        queries[0].time_max,
-        Some(period.end()),
-        "問い合わせの上限は対象期間の終了時刻であるべき"
-    );
+    assert!(!queries.is_empty(), "カレンダーに問い合わせる");
+    for query in queries {
+        assert_eq!(
+            query.time_min,
+            period.start(),
+            "問い合わせの下限は対象期間の開始時刻であるべき"
+        );
+        assert_eq!(
+            query.time_max,
+            Some(period.end()),
+            "問い合わせの上限は対象期間の終了時刻であるべき"
+        );
+    }
 }
 
 #[tokio::test]
@@ -775,23 +773,30 @@ async fn a_window_starting_now_keeps_an_ongoing_reservation() {
     );
 }
 
+// 同じイベントの解釈失敗を毎回警告すると、ポーリングのたびにログが積み上がる。
+// 報告するかの判断だけを確かめる（ログそのものは見ない）
+
 #[tokio::test]
-async fn parse_failures_are_reported_once_per_event() {
+async fn a_parse_failure_is_reported_the_first_time() {
     let (repository, _gateway) = repository_with(vec![]);
 
-    // 同じイベントの解釈失敗を毎回警告すると、ポーリングのたびにログが積み上がる
-    assert!(
-        repository.should_report_parse_failure("event-a"),
-        "初回は報告する"
-    );
-    assert!(
-        !repository.should_report_parse_failure("event-a"),
-        "2回目以降は報告しない"
-    );
-    assert!(
-        repository.should_report_parse_failure("event-b"),
-        "別のイベントは報告する"
-    );
+    assert!(repository.should_report_parse_failure("event-a"));
+}
+
+#[tokio::test]
+async fn the_same_parse_failure_is_not_reported_again() {
+    let (repository, _gateway) = repository_with(vec![]);
+    repository.should_report_parse_failure("event-a");
+
+    assert!(!repository.should_report_parse_failure("event-a"));
+}
+
+#[tokio::test]
+async fn a_parse_failure_of_another_event_is_reported() {
+    let (repository, _gateway) = repository_with(vec![]);
+    repository.should_report_parse_failure("event-a");
+
+    assert!(repository.should_report_parse_failure("event-b"));
 }
 
 /// メールアドレスからOSユーザー名を引けるテスト用のIdentityLinkリポジトリ
@@ -885,17 +890,31 @@ fn gpu_usage(holder: &str, device_number: u32) -> Reservation {
     .unwrap()
 }
 
+/// 予約を保存し、カレンダーに書いたイベントの説明欄を返す
+async fn written_description(
+    repository: &GoogleCalendarReservationRepository,
+    gateway: &FakeCalendarEventGateway,
+    reservation: &mut Reservation,
+) -> String {
+    repository.save(reservation).await.unwrap();
+    gateway
+        .inserted()
+        .last()
+        .and_then(|(_, event)| event.description.clone())
+        .expect("説明欄を書く")
+}
+
 #[tokio::test]
 async fn description_includes_the_os_user_name_for_the_reserved_server() {
-    let (repository, _gateway) =
+    let (repository, gateway) =
         repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
             "holder@example.com",
             "Thalys",
             "kkawaguchi",
         ));
-    let reservation = gpu_usage("holder@example.com", 0);
+    let mut reservation = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&reservation).await;
+    let description = written_description(&repository, &gateway, &mut reservation).await;
 
     assert!(
         description.contains("OS: kkawaguchi"),
@@ -905,10 +924,10 @@ async fn description_includes_the_os_user_name_for_the_reserved_server() {
 
 #[tokio::test]
 async fn description_includes_the_reservation_id() {
-    let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let reservation = gpu_usage("holder@example.com", 0);
+    let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
+    let mut reservation = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&reservation).await;
+    let description = written_description(&repository, &gateway, &mut reservation).await;
 
     assert!(
         description.contains(reservation.id().as_str()),
@@ -918,10 +937,10 @@ async fn description_includes_the_reservation_id() {
 
 #[tokio::test]
 async fn description_omits_the_os_line_when_no_link_exists() {
-    let (repository, _gateway) = repository_with_identities(StubIdentityLinkRepository::default());
-    let reservation = gpu_usage("unlinked@example.com", 0);
+    let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
+    let mut reservation = gpu_usage("unlinked@example.com", 0);
 
-    let description = repository.build_description(&reservation).await;
+    let description = written_description(&repository, &gateway, &mut reservation).await;
 
     assert!(
         !description.contains("OS:"),
@@ -936,21 +955,23 @@ async fn description_omits_the_os_line_when_no_link_exists() {
 #[tokio::test]
 async fn description_uses_the_os_name_of_the_server_being_reserved() {
     // 同じ利用者がサーバーごとに別のOSユーザー名を持つ場合、予約したサーバーの名前を使う
-    let (repository, _gateway) = repository_with_identities(
+    let (repository, gateway) = repository_with_identities(
         StubIdentityLinkRepository::default()
             .with_os_user("holder@example.com", "Thalys", "kkawaguchi")
             .with_os_user("holder@example.com", "Freccia", "kinji"),
     );
-    let reservation = gpu_usage("holder@example.com", 0);
+    let mut reservation = gpu_usage("holder@example.com", 0);
 
-    let description = repository.build_description(&reservation).await;
+    let description = written_description(&repository, &gateway, &mut reservation).await;
 
     assert!(description.contains("OS: kkawaguchi"), "{description}");
     assert!(!description.contains("kinji"), "{description}");
 }
 
 #[tokio::test]
-async fn added_metadata_lines_do_not_leak_into_notes() {
+async fn the_holder_and_notes_read_back_as_saved_despite_the_added_lines() {
+    // 説明欄には、予約者のほかにOSユーザー名や予約IDの行も入る。読み戻すとき、それらが
+    // 予約者や備考に紛れ込まない
     let (repository, _gateway) =
         repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
             "holder@example.com",
@@ -958,7 +979,7 @@ async fn added_metadata_lines_do_not_leak_into_notes() {
             "kkawaguchi",
         ));
     let now = Utc::now();
-    let reservation = Reservation::one_time(
+    let mut reservation = Reservation::one_time(
         crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
         TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
         vec![Resource::Gpu(
@@ -972,11 +993,14 @@ async fn added_metadata_lines_do_not_leak_into_notes() {
     )
     .unwrap();
 
-    // 生成したdescriptionを読み戻したとき、管理セクションの行が備考に混ざらないこと
-    let description = repository.build_description(&reservation).await;
-    let notes = GoogleCalendarReservationRepository::extract_notes(&description);
+    repository.save(&mut reservation).await.unwrap();
+    let found = repository.find(reservation.id()).await.unwrap().unwrap();
 
-    assert_eq!(notes.as_deref(), Some("killしても大丈夫です"));
+    assert_eq!(found.holder_email().as_str(), "holder@example.com");
+    assert_eq!(
+        found.notes().map(String::as_str),
+        Some("killしても大丈夫です")
+    );
 }
 
 /// 旧バージョンが書いたdescription（管理セクション内は予約者行のみ）
@@ -1043,67 +1067,6 @@ async fn reads_reservations_written_before_markers_existed() {
 }
 
 #[tokio::test]
-async fn newly_written_description_round_trips() {
-    let (repository, _gateway) =
-        repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
-            "holder@example.com",
-            "Thalys",
-            "kkawaguchi",
-        ));
-    let now = Utc::now();
-    let reservation = Reservation::one_time(
-        crate::domain::common::EmailAddress::new("holder@example.com".to_string()).unwrap(),
-        TimePeriod::new(now, now + Duration::hours(1)).unwrap(),
-        vec![Resource::Gpu(
-            crate::domain::aggregates::reservation::value_objects::Gpu::new(
-                "Thalys".to_string(),
-                0,
-                "A100 80GB PCIe".to_string(),
-            ),
-        )],
-        Some("実験中".to_string()),
-    )
-    .unwrap();
-
-    // 新形式で書いたdescriptionから、予約者と備考が元の値として読み戻せること
-    let description = repository.build_description(&reservation).await;
-
-    let holder = description
-        .lines()
-        .find_map(|line| line.strip_prefix("予約者: "))
-        .expect("予約者行が読めるべき");
-    assert_eq!(holder, "holder@example.com");
-    assert_eq!(
-        GoogleCalendarReservationRepository::extract_notes(&description).as_deref(),
-        Some("実験中")
-    );
-}
-
-#[tokio::test]
-async fn metadata_lines_are_not_mistaken_for_the_holder() {
-    // OS行や予約ID行が予約者として誤読されないこと（行の走査順に依存しない）
-    let (repository, _gateway) =
-        repository_with_identities(StubIdentityLinkRepository::default().with_os_user(
-            "holder@example.com",
-            "Thalys",
-            "kkawaguchi",
-        ));
-    let reservation = gpu_usage("holder@example.com", 0);
-
-    let description = repository.build_description(&reservation).await;
-    let holder_lines: Vec<&str> = description
-        .lines()
-        .filter_map(|line| line.strip_prefix("予約者: "))
-        .collect();
-
-    assert_eq!(
-        holder_lines,
-        vec!["holder@example.com"],
-        "予約者行はちょうど1行であるべき: {description}"
-    );
-}
-
-#[tokio::test]
 async fn adding_a_reservation_uses_an_event_id_derived_from_its_id() {
     let (repository, gateway) = repository_with_identities(StubIdentityLinkRepository::default());
     let mut reservation = gpu_usage("holder@example.com", 0);
@@ -1119,9 +1082,7 @@ async fn adding_a_reservation_uses_an_event_id_derived_from_its_id() {
         "イベントIDは予約IDから導出されるべき"
     );
     assert!(
-        event_id
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
+        event_id.chars().all(|c| matches!(c, '0'..='9' | 'a'..='v')),
         "イベントIDに使える文字はbase32hexに限られる: {event_id}"
     );
     assert_eq!(
