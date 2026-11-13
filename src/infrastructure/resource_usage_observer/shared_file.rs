@@ -332,8 +332,27 @@ mod tests {
         })
     }
 
-    fn temp_dir() -> PathBuf {
-        std::env::temp_dir().join(format!("lrm_test_{}", uuid::Uuid::new_v4()))
+    /// テストが終われば、失敗しても消える一時ディレクトリ
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new() -> Self {
+            Self(std::env::temp_dir().join(format!("lrm_test_{}", uuid::Uuid::new_v4())))
+        }
+    }
+
+    impl std::ops::Deref for TempDir {
+        type Target = std::path::Path;
+
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     async fn write_report(dir: &std::path::Path, filename: &str, content: &str) {
@@ -343,9 +362,12 @@ mod tests {
 
     #[tokio::test]
     async fn a_server_without_a_report_is_not_covered() {
-        let dir = temp_dir();
-        let observer =
-            SharedFileResourceUsageObserver::new(dir, test_resource_config(), Duration::minutes(5));
+        let dir = TempDir::new();
+        let observer = SharedFileResourceUsageObserver::new(
+            dir.to_path_buf(),
+            test_resource_config(),
+            Duration::minutes(5),
+        );
 
         let snapshot = observer.observe_active_usages().await.unwrap();
 
@@ -363,7 +385,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_valid_report_is_parsed() {
-        let dir = temp_dir();
+        let dir = TempDir::new();
         let report_generated_at = Utc::now();
         let generated_at = report_generated_at;
         let started_at = generated_at - Duration::minutes(20);
@@ -381,7 +403,7 @@ mod tests {
         .await;
 
         let observer = SharedFileResourceUsageObserver::new(
-            dir.clone(),
+            dir.to_path_buf(),
             test_resource_config(),
             Duration::minutes(5),
         );
@@ -410,13 +432,11 @@ mod tests {
             }
             other => panic!("unexpected resource: {:?}", other),
         }
-
-        tokio::fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn a_stale_report_leaves_the_server_uncovered() {
-        let dir = temp_dir();
+        let dir = TempDir::new();
         let stale_generated_at = Utc::now() - Duration::minutes(30);
         let generated_at = stale_generated_at;
         let started_at = generated_at - Duration::minutes(20);
@@ -434,7 +454,7 @@ mod tests {
         .await;
 
         let observer = SharedFileResourceUsageObserver::new(
-            dir.clone(),
+            dir.to_path_buf(),
             test_resource_config(),
             Duration::minutes(5),
         );
@@ -455,13 +475,11 @@ mod tests {
             )],
             "届いてはいるが古い、と区別できる"
         );
-
-        tokio::fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn test_unconfigured_device_is_filtered_out() {
-        let dir = temp_dir();
+        let dir = TempDir::new();
         let generated_at = Utc::now();
         write_report(
             &dir,
@@ -477,7 +495,7 @@ mod tests {
         .await;
 
         let observer = SharedFileResourceUsageObserver::new(
-            dir.clone(),
+            dir.to_path_buf(),
             test_resource_config(),
             Duration::minutes(5),
         );
@@ -488,13 +506,11 @@ mod tests {
             snapshot.covers("Thalys"),
             "レポートは読めているので、そのサーバーの利用状況は把握できている"
         );
-
-        tokio::fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn a_report_carries_how_hard_each_device_was_working() {
-        let dir = temp_dir();
+        let dir = TempDir::new();
         let generated_at = Utc::now();
         write_report(
             &dir,
@@ -509,7 +525,7 @@ mod tests {
         .await;
 
         let observer = SharedFileResourceUsageObserver::new(
-            dir.clone(),
+            dir.to_path_buf(),
             test_resource_config(),
             Duration::minutes(5),
         );
@@ -520,13 +536,11 @@ mod tests {
             .gpu_activity_of(&gpu)
             .expect("レポートに載っているデバイスの稼働状況は読み取れる");
         assert_eq!(activity.peak_utilization_percent(), 3);
-
-        tokio::fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn a_report_without_device_activity_leaves_it_unknown() {
-        let dir = temp_dir();
+        let dir = TempDir::new();
         let generated_at = Utc::now();
         // 稼働状況を報告しない`gpu-usage-reporter`が書いたレポート
         write_report(
@@ -543,7 +557,7 @@ mod tests {
         .await;
 
         let observer = SharedFileResourceUsageObserver::new(
-            dir.clone(),
+            dir.to_path_buf(),
             test_resource_config(),
             Duration::minutes(5),
         );
@@ -559,13 +573,11 @@ mod tests {
             1,
             "稼働状況が無くても、誰が乗っているかは読み取れる"
         );
-
-        tokio::fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn a_usage_whose_owner_could_not_be_resolved_is_still_read() {
-        let dir = temp_dir();
+        let dir = TempDir::new();
         let generated_at = Utc::now();
         let started_at = generated_at - Duration::minutes(20);
         write_report(
@@ -582,7 +594,7 @@ mod tests {
         .await;
 
         let observer = SharedFileResourceUsageObserver::new(
-            dir.clone(),
+            dir.to_path_buf(),
             test_resource_config(),
             Duration::minutes(5),
         );
@@ -605,13 +617,11 @@ mod tests {
             }
             other => panic!("unexpected resource: {:?}", other),
         }
-
-        tokio::fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn an_unattributed_usage_on_an_unconfigured_device_is_filtered_out() {
-        let dir = temp_dir();
+        let dir = TempDir::new();
         let generated_at = Utc::now();
         write_report(
             &dir,
@@ -627,20 +637,18 @@ mod tests {
         .await;
 
         let observer = SharedFileResourceUsageObserver::new(
-            dir.clone(),
+            dir.to_path_buf(),
             test_resource_config(),
             Duration::minutes(5),
         );
         let snapshot = observer.observe_active_usages().await.unwrap();
 
         assert!(snapshot.unattributed_usages().is_empty());
-
-        tokio::fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn a_report_from_an_older_reporter_reads_as_having_no_unattributed_usage() {
-        let dir = temp_dir();
+        let dir = TempDir::new();
         let generated_at = Utc::now();
         // `unattributed`欄を知らない古い`gpu-usage-reporter`が書いたレポート
         write_report(
@@ -657,7 +665,7 @@ mod tests {
         .await;
 
         let observer = SharedFileResourceUsageObserver::new(
-            dir.clone(),
+            dir.to_path_buf(),
             test_resource_config(),
             Duration::minutes(5),
         );
@@ -669,17 +677,15 @@ mod tests {
             1,
             "旧形式のレポートも読み続けられる"
         );
-
-        tokio::fs::remove_dir_all(&dir).await.ok();
     }
 
     #[tokio::test]
     async fn a_report_that_cannot_be_parsed_is_reported_as_unreadable() {
-        let dir = temp_dir();
+        let dir = TempDir::new();
         write_report(&dir, "thalys.json", "{ this is not json").await;
 
         let observer = SharedFileResourceUsageObserver::new(
-            dir.clone(),
+            dir.to_path_buf(),
             test_resource_config(),
             Duration::minutes(5),
         );
@@ -691,7 +697,5 @@ mod tests {
             vec![("Thalys", &ServerObservation::Unreadable)],
             "壊れたレポートは、届いていないこととは別の手当てが要る"
         );
-
-        tokio::fs::remove_dir_all(&dir).await.ok();
     }
 }

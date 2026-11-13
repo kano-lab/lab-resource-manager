@@ -175,4 +175,14 @@ mod tests {
         );
         assert_eq!(slot_id.reservation_id(), &reservation_id);
     }
+
+    #[test]
+    fn an_id_whose_last_part_is_not_a_start_time_is_a_one_time_slot() {
+        // `_`を含んでも、末尾が回の開始時刻でなければ定期予約の回ではない
+        let slot_id = ReservedSlotId::from_string("legacy_event_id".to_string());
+
+        assert_eq!(slot_id.key(), &OccurrenceKey::Only);
+        assert_eq!(slot_id.reservation_id().as_str(), "legacy_event_id");
+        assert_eq!(slot_id.as_str(), "legacy_event_id");
+    }
 }

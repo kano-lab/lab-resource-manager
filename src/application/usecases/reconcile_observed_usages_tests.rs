@@ -126,27 +126,31 @@ fn make_reservation(
         .unwrap()
 }
 
-#[allow(clippy::type_complexity)]
-fn make_usecase(
-    threshold_minutes: i64,
-) -> (
-    ReconcileObservedUsagesUseCase<
-        InMemoryReservationRepository,
-        MockResourceUsageObserver,
-        InMemoryIdentityLinkRepository,
-        MockReservationProposalNotifier,
-        RecordingUnauthorizedUsageNotifier,
-    >,
-    Arc<InMemoryReservationRepository>,
-    Arc<MockResourceUsageObserver>,
-    Arc<InMemoryIdentityLinkRepository>,
-    MockReservationProposalNotifier,
+type UseCaseWith<P> = ReconcileObservedUsagesUseCase<
+    InMemoryReservationRepository,
+    MockResourceUsageObserver,
+    InMemoryIdentityLinkRepository,
+    P,
     RecordingUnauthorizedUsageNotifier,
-) {
+>;
+
+/// 実利用の照合を、`threshold_minutes`分続いた利用について行う状況
+struct Fixture<P: ReservationProposalNotifier> {
+    usecase: UseCaseWith<P>,
+    repository: Arc<InMemoryReservationRepository>,
+    observer: Arc<MockResourceUsageObserver>,
+    identity_repo: Arc<InMemoryIdentityLinkRepository>,
+    proposal_notifier: P,
+    notifier: RecordingUnauthorizedUsageNotifier,
+}
+
+fn fixture_with<P>(threshold_minutes: i64, proposal_notifier: P) -> Fixture<P>
+where
+    P: ReservationProposalNotifier + Clone,
+{
     let repository = Arc::new(InMemoryReservationRepository::new());
     let observer = Arc::new(MockResourceUsageObserver::new());
     let identity_repo = Arc::new(InMemoryIdentityLinkRepository::default());
-    let proposal_notifier = MockReservationProposalNotifier::new();
     let notifier = RecordingUnauthorizedUsageNotifier::default();
 
     let usecase = ReconcileObservedUsagesUseCase::new(
@@ -159,53 +163,36 @@ fn make_usecase(
         vec![Duration::hours(1), Duration::hours(2), Duration::hours(3)],
     );
 
-    (
+    Fixture {
         usecase,
         repository,
         observer,
         identity_repo,
         proposal_notifier,
         notifier,
-    )
+    }
 }
 
-#[allow(clippy::type_complexity)]
-fn make_usecase_with_failing_notifier(
+fn fixture(threshold_minutes: i64) -> Fixture<MockReservationProposalNotifier> {
+    fixture_with(threshold_minutes, MockReservationProposalNotifier::new())
+}
+
+/// 予約の提案を、指定した相手には送れない状況
+fn fixture_with_failing_proposals(
     threshold_minutes: i64,
-) -> (
-    ReconcileObservedUsagesUseCase<
-        InMemoryReservationRepository,
-        MockResourceUsageObserver,
-        InMemoryIdentityLinkRepository,
-        FailingReservationProposalNotifier,
-        RecordingUnauthorizedUsageNotifier,
-    >,
-    Arc<MockResourceUsageObserver>,
-    Arc<InMemoryIdentityLinkRepository>,
-    FailingReservationProposalNotifier,
-) {
-    let repository = Arc::new(InMemoryReservationRepository::new());
-    let observer = Arc::new(MockResourceUsageObserver::new());
-    let identity_repo = Arc::new(InMemoryIdentityLinkRepository::default());
-    let proposal_notifier = FailingReservationProposalNotifier::new();
-    let notifier = RecordingUnauthorizedUsageNotifier::default();
-
-    let usecase = ReconcileObservedUsagesUseCase::new(
-        repository,
-        observer.clone(),
-        identity_repo.clone(),
-        proposal_notifier.clone(),
-        notifier,
-        Duration::minutes(threshold_minutes),
-        vec![Duration::hours(1), Duration::hours(2), Duration::hours(3)],
-    );
-
-    (usecase, observer, identity_repo, proposal_notifier)
+) -> Fixture<FailingReservationProposalNotifier> {
+    fixture_with(threshold_minutes, FailingReservationProposalNotifier::new())
 }
 
 #[tokio::test]
-async fn test_below_threshold_does_not_propose() {
-    let (usecase, _repo, observer, identity_repo, proposal_notifier, _notifier) = make_usecase(15);
+async fn a_usage_shorter_than_the_threshold_is_not_proposed() {
+    let Fixture {
+        usecase,
+        observer,
+        identity_repo,
+        proposal_notifier,
+        ..
+    } = fixture(15);
     identity_repo.add_link("user@example.com", os_system(), "kkawaguchi");
 
     let now = Utc::now();
@@ -221,8 +208,14 @@ async fn test_below_threshold_does_not_propose() {
 }
 
 #[tokio::test]
-async fn test_unreserved_past_threshold_proposes_once() {
-    let (usecase, _repo, observer, identity_repo, proposal_notifier, _notifier) = make_usecase(15);
+async fn an_unreserved_usage_past_the_threshold_is_proposed_once() {
+    let Fixture {
+        usecase,
+        observer,
+        identity_repo,
+        proposal_notifier,
+        ..
+    } = fixture(15);
     identity_repo.add_link("user@example.com", os_system(), "kkawaguchi");
 
     let active_since = Utc::now() - Duration::minutes(20);
@@ -242,8 +235,13 @@ async fn test_unreserved_past_threshold_proposes_once() {
 }
 
 #[tokio::test]
-async fn test_unlinked_user_does_not_propose() {
-    let (usecase, _repo, observer, _identity_repo, proposal_notifier, _notifier) = make_usecase(15);
+async fn a_usage_by_an_unlinked_os_user_is_not_proposed() {
+    let Fixture {
+        usecase,
+        observer,
+        proposal_notifier,
+        ..
+    } = fixture(15);
 
     let active_since = Utc::now() - Duration::minutes(20);
     observer.set_active_usages(vec![ObservedUsage::new(
@@ -258,8 +256,15 @@ async fn test_unlinked_user_does_not_propose() {
 }
 
 #[tokio::test]
-async fn test_reserved_matching_owner_no_notification() {
-    let (usecase, repo, observer, identity_repo, proposal_notifier, notifier) = make_usecase(15);
+async fn the_holder_using_their_own_reservation_is_not_notified() {
+    let Fixture {
+        usecase,
+        repository: repo,
+        observer,
+        identity_repo,
+        proposal_notifier,
+        notifier,
+    } = fixture(15);
     identity_repo.add_link("owner@example.com", os_system(), "kkawaguchi");
 
     let now = Utc::now();
@@ -283,8 +288,15 @@ async fn test_reserved_matching_owner_no_notification() {
 }
 
 #[tokio::test]
-async fn test_reserved_mismatched_owner_notifies_unauthorized() {
-    let (usecase, repo, observer, identity_repo, proposal_notifier, notifier) = make_usecase(15);
+async fn someone_else_using_a_reserved_gpu_is_reported() {
+    let Fixture {
+        usecase,
+        repository: repo,
+        observer,
+        identity_repo,
+        proposal_notifier,
+        notifier,
+    } = fixture(15);
     identity_repo.add_link("other@example.com", os_system(), "kkawaguchi");
 
     let now = Utc::now();
@@ -314,8 +326,15 @@ async fn test_reserved_mismatched_owner_notifies_unauthorized() {
 }
 
 #[tokio::test]
-async fn test_unauthorized_notification_deduplicated_per_observation_session() {
-    let (usecase, repo, observer, identity_repo, _proposal_notifier, notifier) = make_usecase(15);
+async fn an_unauthorized_usage_is_reported_once_per_session() {
+    let Fixture {
+        usecase,
+        repository: repo,
+        observer,
+        identity_repo,
+        notifier,
+        ..
+    } = fixture(15);
     identity_repo.add_link("other@example.com", os_system(), "kkawaguchi");
 
     let now = Utc::now();
@@ -350,8 +369,15 @@ async fn test_unauthorized_notification_deduplicated_per_observation_session() {
 }
 
 #[tokio::test]
-async fn test_reserved_unknown_identity_skips_notification() {
-    let (usecase, repo, observer, _identity_repo, proposal_notifier, notifier) = make_usecase(15);
+async fn a_usage_by_an_unknown_os_user_on_a_reserved_gpu_is_not_reported() {
+    let Fixture {
+        usecase,
+        repository: repo,
+        observer,
+        proposal_notifier,
+        notifier,
+        ..
+    } = fixture(15);
     // 誰にもリンクされていないOS識別子（IdentityLink未登録）
 
     let now = Utc::now();
@@ -376,9 +402,14 @@ async fn test_reserved_unknown_identity_skips_notification() {
 }
 
 #[tokio::test]
-async fn test_propose_failure_allows_retry_on_next_poll() {
-    let (usecase, observer, identity_repo, proposal_notifier) =
-        make_usecase_with_failing_notifier(15);
+async fn a_proposal_that_failed_is_tried_again_on_the_next_poll() {
+    let Fixture {
+        usecase,
+        observer,
+        identity_repo,
+        proposal_notifier,
+        ..
+    } = fixture_with_failing_proposals(15);
     identity_repo.add_link("user@example.com", os_system(), "kkawaguchi");
     proposal_notifier.fail_for("user@example.com");
 
@@ -405,9 +436,14 @@ async fn test_propose_failure_allows_retry_on_next_poll() {
 }
 
 #[tokio::test]
-async fn test_one_failure_does_not_block_other_usages() {
-    let (usecase, observer, identity_repo, proposal_notifier) =
-        make_usecase_with_failing_notifier(15);
+async fn one_failed_proposal_does_not_hold_back_the_others() {
+    let Fixture {
+        usecase,
+        observer,
+        identity_repo,
+        proposal_notifier,
+        ..
+    } = fixture_with_failing_proposals(15);
     identity_repo.add_link("userA@example.com", os_system(), "kkawaguchiA");
     identity_repo.add_link("userB@example.com", os_system(), "kkawaguchiB");
     proposal_notifier.fail_for("userA@example.com");
@@ -435,8 +471,14 @@ async fn test_one_failure_does_not_block_other_usages() {
     );
 }
 #[tokio::test]
-async fn test_same_user_starting_several_gpus_gets_one_proposal() {
-    let (usecase, _repo, observer, identity_repo, proposal_notifier, _notifier) = make_usecase(15);
+async fn several_gpus_started_together_by_one_user_get_one_proposal() {
+    let Fixture {
+        usecase,
+        observer,
+        identity_repo,
+        proposal_notifier,
+        ..
+    } = fixture(15);
     identity_repo.add_link("user@example.com", os_system(), "kkawaguchi");
 
     // 3枚を続けて使い始めると、観測開始時刻は秒単位でずれる
@@ -476,8 +518,14 @@ async fn test_same_user_starting_several_gpus_gets_one_proposal() {
 }
 
 #[tokio::test]
-async fn test_usages_far_apart_in_time_are_proposed_separately() {
-    let (usecase, _repo, observer, identity_repo, proposal_notifier, _notifier) = make_usecase(15);
+async fn usages_far_apart_in_time_are_proposed_separately() {
+    let Fixture {
+        usecase,
+        observer,
+        identity_repo,
+        proposal_notifier,
+        ..
+    } = fixture(15);
     identity_repo.add_link("user@example.com", os_system(), "kkawaguchi");
 
     let now = Utc::now();
@@ -505,8 +553,15 @@ async fn test_usages_far_apart_in_time_are_proposed_separately() {
 }
 
 #[tokio::test]
-async fn test_reserved_resource_is_excluded_from_the_grouped_proposal() {
-    let (usecase, repo, observer, identity_repo, proposal_notifier, _notifier) = make_usecase(15);
+async fn a_reserved_gpu_is_left_out_of_the_grouped_proposal() {
+    let Fixture {
+        usecase,
+        repository: repo,
+        observer,
+        identity_repo,
+        proposal_notifier,
+        ..
+    } = fixture(15);
     identity_repo.add_link("user@example.com", os_system(), "kkawaguchi");
 
     // GPU:0 は予約済み（提案対象外）、GPU:1 は未予約
@@ -544,8 +599,14 @@ async fn test_reserved_resource_is_excluded_from_the_grouped_proposal() {
 }
 
 #[tokio::test]
-async fn test_grouped_proposal_is_sent_only_once_per_session() {
-    let (usecase, _repo, observer, identity_repo, proposal_notifier, _notifier) = make_usecase(15);
+async fn a_grouped_proposal_is_sent_once_per_session() {
+    let Fixture {
+        usecase,
+        observer,
+        identity_repo,
+        proposal_notifier,
+        ..
+    } = fixture(15);
     identity_repo.add_link("user@example.com", os_system(), "kkawaguchi");
 
     let active_since = Utc::now() - Duration::minutes(20);
@@ -574,7 +635,14 @@ async fn test_grouped_proposal_is_sent_only_once_per_session() {
 
 #[tokio::test]
 async fn a_reservation_that_starts_later_today_does_not_count_as_in_progress() {
-    let (usecase, repo, observer, identity_repo, proposal_notifier, notifier) = make_usecase(15);
+    let Fixture {
+        usecase,
+        repository: repo,
+        observer,
+        identity_repo,
+        proposal_notifier,
+        notifier,
+    } = fixture(15);
     identity_repo.add_link("user@example.com", os_system(), "kkawaguchi");
 
     // 同じGPUに、今日のうちに始まる予約がある（まだ進行中ではない）
@@ -611,7 +679,14 @@ async fn a_reservation_that_starts_later_today_does_not_count_as_in_progress() {
 
 #[tokio::test]
 async fn using_several_gpus_of_one_reservation_notifies_once() {
-    let (usecase, repo, observer, identity_repo, _proposal_notifier, notifier) = make_usecase(15);
+    let Fixture {
+        usecase,
+        repository: repo,
+        observer,
+        identity_repo,
+        notifier,
+        ..
+    } = fixture(15);
     identity_repo.add_link("other@example.com", os_system(), "kkawaguchi");
 
     // 1件の予約が2枚のGPUを押さえていて、別の利用者がその2枚を使っている
@@ -654,7 +729,14 @@ async fn using_several_gpus_of_one_reservation_notifies_once() {
 
 #[tokio::test]
 async fn using_gpus_of_two_different_reservations_notifies_for_each() {
-    let (usecase, repo, observer, identity_repo, _proposal_notifier, notifier) = make_usecase(15);
+    let Fixture {
+        usecase,
+        repository: repo,
+        observer,
+        identity_repo,
+        notifier,
+        ..
+    } = fixture(15);
     identity_repo.add_link("other@example.com", os_system(), "kkawaguchi");
 
     // 別々の予約が1枚ずつ押さえている場合は、それぞれ知らせる必要がある
@@ -698,7 +780,13 @@ async fn using_gpus_of_two_different_reservations_notifies_for_each() {
 
 #[tokio::test]
 async fn an_opportunity_that_ended_is_forgotten() {
-    let (usecase, _repo, observer, identity_repo, proposal_notifier, _notifier) = make_usecase(15);
+    let Fixture {
+        usecase,
+        observer,
+        identity_repo,
+        proposal_notifier,
+        ..
+    } = fixture(15);
     identity_repo.add_link("user@example.com", os_system(), "kkawaguchi");
 
     let active_since = Utc::now() - Duration::minutes(20);
@@ -729,7 +817,14 @@ async fn an_opportunity_that_ended_is_forgotten() {
 
 #[tokio::test]
 async fn the_unauthorized_notice_is_forgotten_once_the_reservation_ends() {
-    let (usecase, repo, observer, identity_repo, _proposal_notifier, notifier) = make_usecase(15);
+    let Fixture {
+        usecase,
+        repository: repo,
+        observer,
+        identity_repo,
+        notifier,
+        ..
+    } = fixture(15);
     identity_repo.add_link("other@example.com", os_system(), "kkawaguchi");
 
     let now = Utc::now();
