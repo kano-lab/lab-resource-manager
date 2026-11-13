@@ -23,7 +23,8 @@ configuration or prompt that names tools explicitly.
 `get_reservation` and `cancel_reservation` are new tools that act on a whole reservation
 (one-time or recurring). For the old "cancel this one" behavior of `cancel_reservation`, use
 `cancel_reserved_slot`. Reserved slots in tool output now carry the ID (`reservation_id`) and kind
-(`reservation_kind`) of the reservation they belong to.
+(`reservation_kind`) of the reservation they belong to, and the holder's email address is in
+`holder_email` instead of `owner_email`.
 
 ### Notification Template Keys
 
