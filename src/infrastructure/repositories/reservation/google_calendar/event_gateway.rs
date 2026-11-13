@@ -82,6 +82,8 @@ pub(super) trait CalendarEventGateway: Send + Sync {
     ) -> Result<Option<Event>, RepositoryError>;
 
     /// イベントを作成し、作成されたイベントを返す
+    ///
+    /// 使ったことのあるIDを指定した場合（消したイベントのIDを含む）は`RepositoryError::Conflict`。
     async fn insert_event(&self, calendar_id: &str, event: Event)
     -> Result<Event, RepositoryError>;
 
@@ -352,7 +354,16 @@ impl CalendarEventGateway for GoogleCalendarEventGateway {
             .add_scope(SCOPE)
             .doit()
             .await
-            .map_err(|e| RepositoryError::ConnectionError(format!("イベント作成に失敗: {}", e)))?;
+            .map_err(|e| {
+                // 使ったことのあるIDは409（reason: duplicate）で断られる。google_calendar3の
+                // エラーは構造化されていないため、エラーメッセージから見分ける（TODO(#41)）
+                let message = e.to_string();
+                if message.contains("409") || message.contains("duplicate") {
+                    RepositoryError::Conflict
+                } else {
+                    RepositoryError::ConnectionError(format!("イベント作成に失敗: {}", e))
+                }
+            })?;
 
         Ok(created_event)
     }

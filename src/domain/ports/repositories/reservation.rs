@@ -43,6 +43,7 @@ pub trait ReservationRepository {
     /// | 取り消し済み | なし | 何もしない（保存する前に取り消した） |
     ///
     /// # Errors
-    /// 保存先の版が違う、または保存先から消えている場合、`RepositoryError::Conflict`
+    /// 保存先の版が違う、保存先から消えている、または作ろうとした予約のIDがすでに使われている
+    /// 場合、`RepositoryError::Conflict`
     async fn save(&self, reservation: &mut Reservation) -> Result<(), RepositoryError>;
 }
