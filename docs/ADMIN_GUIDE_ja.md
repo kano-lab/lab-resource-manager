@@ -671,3 +671,43 @@ sudo bash deploy/install.sh
 - `/etc/systemd/system/lab-resource-manager.service` - systemdサービス
 
 Dockerデプロイからアップグレードする場合は、[マイグレーションガイド](MIGRATION_ja.md)を参照してください。
+
+### マイナー・パッチ版の自動適用（オプション）
+
+`deploy/auto-update.sh` を systemd timer で毎晩動かすと、インストール済みと同じメジャー版の
+新しいリリースが出ていれば自動で入れ替えます。メジャー版は破壊的変更を含むため自動では適用せず、
+ログに「新しいメジャー版がある」とだけ残します。
+
+```bash
+sudo install -m 755 deploy/auto-update.sh /usr/local/sbin/lab-resource-manager-auto-update
+sudo cp deploy/lab-resource-manager-update.service deploy/lab-resource-manager-update.timer /etc/systemd/system/
+# いま動いている版を書いておく（バイナリは環境変数なしでは --version を返さないため）
+sudo mkdir -p /var/lib/lab-resource-manager-updater
+echo 3.0.0 | sudo tee /var/lib/lab-resource-manager-updater/installed-version
+sudo systemctl daemon-reload
+sudo systemctl enable --now lab-resource-manager-update.timer
+```
+
+入れ替える前に次を確かめ、どれかが満たされなければ何も変えずに失敗します。
+
+- draft でも pre-release でもないリリースであること
+- ダウンロードしたアーカイブの sha256 が、GitHub がそのアセットについて返す digest と一致すること
+- アーカイブ内の `deploy/lab-resource-manager.service` がインストール済みのものと同一であること（unit が変わる版は `install.sh` で手で入れる）
+
+入れ替えて再起動したあと、サービスが active のまま同じ PID で 60 秒動き続けなければ、元のバイナリに戻して
+再起動し、`lab-resource-manager-update.service` を失敗として終わります。直前のバイナリは
+`/usr/local/bin/lab-resource-manager.prev` に残ります。
+
+既定では `x86_64-unknown-linux-musl` のアーカイブを使います。gnu 版を使う場合は、unit の `[Service]` に
+`Environment=LRM_UPDATE_TARGET=x86_64-unknown-linux-gnu` を足してください。
+
+```bash
+# 結果の確認
+systemctl list-timers lab-resource-manager-update.timer
+sudo journalctl -u lab-resource-manager-update.service
+# いますぐ確認したいとき
+sudo systemctl start lab-resource-manager-update.service
+```
+
+メジャー版を手で入れたときは、`installed-version` もその版に書き換えてください。書き換えないと、
+古いメジャー版の新しいリリースを探し続けます。

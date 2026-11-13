@@ -699,3 +699,43 @@ This installs:
 - `/etc/systemd/system/lab-resource-manager.service` - systemd service
 
 See [Migration Guide](MIGRATION.md) if upgrading from Docker deployment.
+
+### Applying Minor and Patch Releases Automatically (Optional)
+
+Run `deploy/auto-update.sh` nightly from a systemd timer and it replaces the binary whenever a newer
+release with the installed major version is out. Major versions carry breaking changes, so they are
+never applied automatically; the log only notes that one is available.
+
+```bash
+sudo install -m 755 deploy/auto-update.sh /usr/local/sbin/lab-resource-manager-auto-update
+sudo cp deploy/lab-resource-manager-update.service deploy/lab-resource-manager-update.timer /etc/systemd/system/
+# Record the running version (the binary does not answer --version without its environment)
+sudo mkdir -p /var/lib/lab-resource-manager-updater
+echo 3.0.0 | sudo tee /var/lib/lab-resource-manager-updater/installed-version
+sudo systemctl daemon-reload
+sudo systemctl enable --now lab-resource-manager-update.timer
+```
+
+Before replacing anything it checks the following, and fails without changing anything if one does not hold:
+
+- the release is neither a draft nor a pre-release
+- the downloaded archive's sha256 matches the digest GitHub reports for the asset
+- the archive's `deploy/lab-resource-manager.service` is identical to the installed one (a release that changes the unit is installed by hand with `install.sh`)
+
+After the restart, the service has to stay active with the same PID for 60 seconds. If it does not, the
+previous binary is put back, the service is restarted on it, and `lab-resource-manager-update.service`
+ends as failed. The previous binary is kept at `/usr/local/bin/lab-resource-manager.prev`.
+
+The `x86_64-unknown-linux-musl` archive is used by default. To use the gnu build, add
+`Environment=LRM_UPDATE_TARGET=x86_64-unknown-linux-gnu` to the unit's `[Service]` section.
+
+```bash
+# See what happened
+systemctl list-timers lab-resource-manager-update.timer
+sudo journalctl -u lab-resource-manager-update.service
+# Check right now
+sudo systemctl start lab-resource-manager-update.service
+```
+
+After installing a major version by hand, write that version into `installed-version` too. Otherwise the
+updater keeps looking for releases of the old major version.
