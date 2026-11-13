@@ -318,8 +318,8 @@ mod tests {
             vec!["EXDATE:20261118T010000Z"],
             vec!["RRULE:FREQ=SOMETIMES"],
         ] {
-            let lines = lines.into_iter().map(String::from).collect();
-            assert!(RecurrenceRule::parse(lines).is_err());
+            let parsed = RecurrenceRule::parse(lines.iter().map(|line| line.to_string()).collect());
+            assert!(parsed.is_err(), "{lines:?}: {parsed:?}");
         }
     }
 
@@ -364,9 +364,128 @@ mod tests {
         let first = jst(2026, 11, 16, 10);
 
         assert_eq!(rule(&["RRULE:FREQ=DAILY"]).last_start(first, tokyo()), None);
+    }
+
+    #[test]
+    fn the_last_occurrence_of_a_counted_rule_is_its_last_count() {
+        let first = jst(2026, 11, 16, 10);
+
         assert_eq!(
             rule(&["RRULE:FREQ=DAILY;COUNT=3"]).last_start(first, tokyo()),
             Some(jst(2026, 11, 18, 10))
         );
+    }
+
+    #[test]
+    fn weekdays_are_those_of_the_rules_time_zone_not_of_utc() {
+        // 東京の月曜8時は、UTCでは前日（日曜）の23時
+        let first = jst(2026, 11, 16, 8);
+        let rule = rule(&["RRULE:FREQ=WEEKLY;BYDAY=MO"]);
+
+        let starts = rule.occurrence_starts(first, tokyo(), first, jst(2026, 11, 30, 8));
+
+        assert_eq!(
+            starts,
+            vec![
+                jst(2026, 11, 16, 8),
+                jst(2026, 11, 23, 8),
+                jst(2026, 11, 30, 8)
+            ],
+            "UTCの曜日で数えると、火曜8時（UTCの月曜23時）になってしまう"
+        );
+    }
+
+    #[test]
+    fn a_weekly_rule_keeps_its_local_time_across_the_end_of_daylight_saving_time() {
+        // ニューヨークは2026年11月1日に夏時間が終わる。毎週月曜10時は、UTCでは1時間ずれる
+        let new_york: Tz = "America/New_York".parse().unwrap();
+        let first = Utc.with_ymd_and_hms(2026, 10, 26, 14, 0, 0).unwrap(); // 10:00 EDT
+        let rule = rule(&["RRULE:FREQ=WEEKLY;COUNT=2"]);
+
+        let starts = rule.occurrence_starts(first, new_york, first, first + Duration::days(8));
+
+        assert_eq!(
+            starts,
+            vec![first, Utc.with_ymd_and_hms(2026, 11, 2, 15, 0, 0).unwrap()] // 10:00 EST
+        );
+        assert_eq!(
+            rule.last_start(first, new_york),
+            Some(Utc.with_ymd_and_hms(2026, 11, 2, 15, 0, 0).unwrap())
+        );
+    }
+
+    #[test]
+    fn a_daily_rule_keeps_its_local_time_on_the_day_daylight_saving_time_ends() {
+        // ベルリンは2026年10月25日の3時（現地）に夏時間が終わる。毎日9時は同じ現地時刻
+        let berlin: Tz = "Europe/Berlin".parse().unwrap();
+        let first = Utc.with_ymd_and_hms(2026, 10, 24, 7, 0, 0).unwrap(); // 09:00 CEST
+        let rule = rule(&["RRULE:FREQ=DAILY;COUNT=3"]);
+
+        let starts = rule.occurrence_starts(first, berlin, first, first + Duration::days(3));
+
+        assert_eq!(
+            starts,
+            vec![
+                first,
+                Utc.with_ymd_and_hms(2026, 10, 25, 8, 0, 0).unwrap(), // 09:00 CET
+                Utc.with_ymd_and_hms(2026, 10, 26, 8, 0, 0).unwrap(),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_rule_counted_once_has_only_its_first_occurrence() {
+        let first = jst(2026, 11, 16, 10);
+        let rule = rule(&["RRULE:FREQ=WEEKLY;COUNT=1"]);
+
+        assert_eq!(
+            rule.occurrence_starts(first, tokyo(), first, first + Duration::days(30)),
+            vec![first]
+        );
+        assert_eq!(rule.last_start(first, tokyo()), Some(first));
+    }
+
+    #[test]
+    fn an_occurrence_beyond_the_count_is_not_an_occurrence() {
+        let first = jst(2026, 11, 16, 10);
+        let rule = rule(&["RRULE:FREQ=WEEKLY;COUNT=2"]);
+
+        assert!(rule.has_occurrence_at(first, tokyo(), jst(2026, 11, 23, 10)));
+        assert!(!rule.has_occurrence_at(first, tokyo(), jst(2026, 11, 30, 10)));
+    }
+
+    #[test]
+    fn until_includes_an_occurrence_that_starts_exactly_then() {
+        // RFC 5545: UNTILちょうどに始まる回は含む
+        let first = jst(2026, 11, 16, 10);
+        let rule = rule(&["RRULE:FREQ=WEEKLY;UNTIL=20261123T010000Z"]);
+
+        assert_eq!(
+            rule.occurrence_starts(first, tokyo(), first, first + Duration::days(30)),
+            vec![first, jst(2026, 11, 23, 10)]
+        );
+        assert_eq!(rule.last_start(first, tokyo()), Some(jst(2026, 11, 23, 10)));
+    }
+
+    #[test]
+    fn an_exception_date_given_in_utc_removes_that_occurrence() {
+        let first = jst(2026, 11, 16, 10);
+        let rule = rule(&["RRULE:FREQ=DAILY;COUNT=3", "EXDATE:20261117T010000Z"]);
+
+        assert_eq!(
+            rule.occurrence_starts(first, tokyo(), first, first + Duration::days(5)),
+            vec![first, jst(2026, 11, 18, 10)]
+        );
+    }
+
+    #[test]
+    fn an_endless_rule_is_expanded_only_up_to_the_cap() {
+        let first = jst(2026, 11, 16, 10);
+        let rule = rule(&["RRULE:FREQ=DAILY"]);
+
+        let starts = rule.occurrence_starts(first, tokyo(), first, first + Duration::days(36_500));
+
+        assert_eq!(starts.len(), usize::from(MAX_OCCURRENCES));
+        assert_eq!(starts.first(), Some(&first));
     }
 }

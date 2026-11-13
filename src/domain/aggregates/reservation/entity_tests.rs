@@ -2,7 +2,12 @@
 
 use super::*;
 use crate::domain::aggregates::reservation::value_objects::Gpu;
-use chrono::Duration;
+use chrono::{Duration, TimeZone};
+
+/// テストの「今」。2026年11月16日（月）10時（東京）
+fn now() -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 11, 16, 1, 0, 0).unwrap()
+}
 
 fn holder() -> EmailAddress {
     EmailAddress::new("holder@example.com".to_string()).unwrap()
@@ -27,13 +32,13 @@ fn one_time(start: DateTime<Utc>, end: DateTime<Utc>) -> Reservation {
 }
 
 fn running() -> (Reservation, DateTime<Utc>) {
-    let start = Utc::now() - Duration::hours(1);
+    let start = now() - Duration::hours(1);
     (one_time(start, start + Duration::hours(4)), start)
 }
 
 #[test]
 fn a_new_one_time_reservation_is_active_unsaved_and_has_one_slot() {
-    let start = Utc::now() + Duration::hours(1);
+    let start = now() + Duration::hours(1);
     let reservation = one_time(start, start + Duration::hours(2));
 
     assert_eq!(reservation.status(), ReservationStatus::Active);
@@ -51,7 +56,7 @@ fn a_new_one_time_reservation_is_active_unsaved_and_has_one_slot() {
 
 #[test]
 fn a_reservation_must_hold_at_least_one_resource() {
-    let start = Utc::now();
+    let start = now();
     let error = Reservation::one_time(
         holder(),
         TimePeriod::new(start, start + Duration::hours(1)).unwrap(),
@@ -65,7 +70,7 @@ fn a_reservation_must_hold_at_least_one_resource() {
 
 #[test]
 fn slots_in_returns_only_slots_overlapping_the_window() {
-    let start = Utc::now() + Duration::days(3);
+    let start = now() + Duration::days(3);
     let reservation = one_time(start, start + Duration::hours(2));
     let this_week = TimePeriod::new(start - Duration::days(1), start + Duration::days(1)).unwrap();
     let next_month =
@@ -92,11 +97,11 @@ fn ending_early_shortens_the_slot_to_that_moment() {
 
 #[test]
 fn a_slot_that_has_not_started_cannot_end_early() {
-    let start = Utc::now() + Duration::hours(1);
+    let start = now() + Duration::hours(1);
     let mut reservation = one_time(start, start + Duration::hours(2));
 
     let error = reservation
-        .end_slot_early(&OccurrenceKey::Only, Utc::now(), &holder())
+        .end_slot_early(&OccurrenceKey::Only, now(), &holder())
         .unwrap_err();
 
     assert!(
@@ -107,19 +112,63 @@ fn a_slot_that_has_not_started_cannot_end_early() {
 
 #[test]
 fn a_slot_that_has_already_ended_cannot_end_early() {
-    let end = Utc::now() - Duration::hours(1);
+    let end = now() - Duration::hours(1);
     let mut reservation = one_time(end - Duration::hours(2), end);
 
     let error = reservation
-        .end_slot_early(&OccurrenceKey::Only, Utc::now(), &holder())
+        .end_slot_early(&OccurrenceKey::Only, now(), &holder())
         .unwrap_err();
 
     assert!(matches!(error, ReservationError::AlreadyEnded { .. }));
 }
 
 #[test]
+fn ending_early_at_the_very_start_is_refused() {
+    let start = now();
+    let mut reservation = one_time(start, start + Duration::hours(2));
+
+    let error = reservation
+        .end_slot_early(&OccurrenceKey::Only, start, &holder())
+        .unwrap_err();
+
+    assert!(
+        matches!(error, ReservationError::NotYetStarted { .. }),
+        "始まった瞬間には、使った時間がまだない: {error:?}"
+    );
+}
+
+#[test]
+fn ending_early_a_moment_after_the_start_keeps_that_moment() {
+    let start = now();
+    let mut reservation = one_time(start, start + Duration::hours(2));
+    let a_moment_later = start + Duration::nanoseconds(1);
+
+    reservation
+        .end_slot_early(&OccurrenceKey::Only, a_moment_later, &holder())
+        .unwrap();
+
+    let slot = reservation.slot(&OccurrenceKey::Only).unwrap();
+    assert_eq!(slot.time_period().end(), a_moment_later);
+}
+
+#[test]
+fn ending_early_at_the_very_end_is_refused() {
+    let end = now();
+    let mut reservation = one_time(end - Duration::hours(2), end);
+
+    let error = reservation
+        .end_slot_early(&OccurrenceKey::Only, end, &holder())
+        .unwrap_err();
+
+    assert!(
+        matches!(error, ReservationError::AlreadyEnded { .. }),
+        "終わる時刻ちょうどには、もう終わっている: {error:?}"
+    );
+}
+
+#[test]
 fn the_holder_can_reschedule_and_rewrite_the_notes() {
-    let start = Utc::now() + Duration::hours(1);
+    let start = now() + Duration::hours(1);
     let mut reservation = one_time(start, start + Duration::hours(2));
     let later = TimePeriod::new(start + Duration::hours(3), start + Duration::hours(5)).unwrap();
 
@@ -143,25 +192,37 @@ fn only_the_holder_can_operate_and_a_refusal_changes_nothing() {
     let later = TimePeriod::new(start, start + Duration::hours(6)).unwrap();
 
     let refused = [
-        reservation
-            .reschedule_slot(&OccurrenceKey::Only, later, &someone_else())
-            .unwrap_err(),
-        reservation
-            .change_slot_notes(&OccurrenceKey::Only, "横取り".to_string(), &someone_else())
-            .unwrap_err(),
-        reservation
-            .end_slot_early(&OccurrenceKey::Only, Utc::now(), &someone_else())
-            .unwrap_err(),
-        reservation
-            .cancel_slot(&OccurrenceKey::Only, &someone_else())
-            .unwrap_err(),
-        reservation.cancel(&someone_else()).unwrap_err(),
+        (
+            "reschedule_slot",
+            reservation
+                .reschedule_slot(&OccurrenceKey::Only, later, &someone_else())
+                .unwrap_err(),
+        ),
+        (
+            "change_slot_notes",
+            reservation
+                .change_slot_notes(&OccurrenceKey::Only, "横取り".to_string(), &someone_else())
+                .unwrap_err(),
+        ),
+        (
+            "end_slot_early",
+            reservation
+                .end_slot_early(&OccurrenceKey::Only, now(), &someone_else())
+                .unwrap_err(),
+        ),
+        (
+            "cancel_slot",
+            reservation
+                .cancel_slot(&OccurrenceKey::Only, &someone_else())
+                .unwrap_err(),
+        ),
+        ("cancel", reservation.cancel(&someone_else()).unwrap_err()),
     ];
 
-    for error in refused {
+    for (operation, error) in refused {
         assert!(
             matches!(&error, ReservationError::NotHolder { actor } if actor == &someone_else()),
-            "{error:?}"
+            "{operation}: {error:?}"
         );
     }
     assert_eq!(reservation, untouched);
@@ -169,7 +230,7 @@ fn only_the_holder_can_operate_and_a_refusal_changes_nothing() {
 
 #[test]
 fn cancelling_the_slot_of_a_one_time_reservation_cancels_the_reservation() {
-    let start = Utc::now() + Duration::hours(1);
+    let start = now() + Duration::hours(1);
     let mut reservation = one_time(start, start + Duration::hours(2));
 
     let event = reservation
@@ -191,26 +252,44 @@ fn a_cancelled_reservation_accepts_no_more_operations() {
     let later = TimePeriod::new(start, start + Duration::hours(6)).unwrap();
 
     let refused = [
-        reservation
-            .reschedule_slot(&OccurrenceKey::Only, later, &holder())
-            .unwrap_err(),
-        reservation
-            .end_slot_early(&OccurrenceKey::Only, Utc::now(), &holder())
-            .unwrap_err(),
-        reservation.cancel(&holder()).unwrap_err(),
+        (
+            "reschedule_slot",
+            reservation
+                .reschedule_slot(&OccurrenceKey::Only, later, &holder())
+                .unwrap_err(),
+        ),
+        (
+            "change_slot_notes",
+            reservation
+                .change_slot_notes(&OccurrenceKey::Only, "続き".to_string(), &holder())
+                .unwrap_err(),
+        ),
+        (
+            "end_slot_early",
+            reservation
+                .end_slot_early(&OccurrenceKey::Only, now(), &holder())
+                .unwrap_err(),
+        ),
+        (
+            "cancel_slot",
+            reservation
+                .cancel_slot(&OccurrenceKey::Only, &holder())
+                .unwrap_err(),
+        ),
+        ("cancel", reservation.cancel(&holder()).unwrap_err()),
     ];
 
-    for error in refused {
+    for (operation, error) in refused {
         assert!(
             matches!(error, ReservationError::AlreadyCancelled),
-            "{error:?}"
+            "{operation}: {error:?}"
         );
     }
 }
 
 #[test]
 fn the_version_is_not_part_of_the_content() {
-    let start = Utc::now() + Duration::hours(1);
+    let start = now() + Duration::hours(1);
     let reservation = one_time(start, start + Duration::hours(2));
     let mut saved = reservation.clone();
     saved.record_version(Some(Version::new("\"2\"".to_string())));
@@ -480,5 +559,113 @@ mod recurring {
 
         assert_eq!(endless.last_end(), None);
         assert_eq!(three_times.last_end(), Some(jst(11, 30, 12)));
+    }
+
+    /// 予約枠を指す鍵ひとつに、4つの操作を試す
+    fn every_operation_on(
+        reservation: &mut Reservation,
+        key: &OccurrenceKey,
+    ) -> Vec<(&'static str, ReservationError)> {
+        let later = period(jst(12, 24, 14), jst(12, 24, 16));
+        vec![
+            (
+                "reschedule_slot",
+                reservation
+                    .reschedule_slot(key, later, &holder())
+                    .unwrap_err(),
+            ),
+            (
+                "change_slot_notes",
+                reservation
+                    .change_slot_notes(key, "特別回".to_string(), &holder())
+                    .unwrap_err(),
+            ),
+            (
+                "end_slot_early",
+                reservation
+                    .end_slot_early(key, jst(11, 24, 11), &holder())
+                    .unwrap_err(),
+            ),
+            (
+                "cancel_slot",
+                reservation.cancel_slot(key, &holder()).unwrap_err(),
+            ),
+        ]
+    }
+
+    #[test]
+    fn an_occurrence_the_rule_does_not_have_cannot_be_operated_on() {
+        let mut reservation = every_monday();
+        let untouched = reservation.clone();
+
+        // 火曜の10時と、単発予約の鍵。どちらもこの定期予約の予約枠ではない
+        for key in [OccurrenceKey::At(jst(11, 24, 10)), OccurrenceKey::Only] {
+            for (operation, error) in every_operation_on(&mut reservation, &key) {
+                assert!(
+                    matches!(error, ReservationError::NoSuchSlot(_)),
+                    "{key:?} {operation}: {error:?}"
+                );
+            }
+        }
+        assert_eq!(reservation, untouched, "断った操作は何も変えない");
+    }
+
+    #[test]
+    fn a_cancelled_occurrence_cannot_be_operated_on() {
+        let mut reservation = every_monday();
+        reservation.cancel_slot(&at(11, 23), &holder()).unwrap();
+        let after_cancelling = reservation.clone();
+
+        for (operation, error) in every_operation_on(&mut reservation, &at(11, 23)) {
+            assert!(
+                matches!(error, ReservationError::NoSuchSlot(_)),
+                "{operation}: {error:?}"
+            );
+        }
+        assert_eq!(reservation, after_cancelling);
+    }
+
+    #[test]
+    fn a_moved_occurrence_can_be_moved_again() {
+        let mut reservation = every_monday();
+        reservation
+            .reschedule_slot(
+                &at(11, 23),
+                period(jst(11, 24, 10), jst(11, 24, 12)),
+                &holder(),
+            )
+            .unwrap();
+
+        reservation
+            .reschedule_slot(
+                &at(11, 23),
+                period(jst(11, 25, 10), jst(11, 25, 12)),
+                &holder(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            reservation.slot(&at(11, 23)).unwrap().time_period(),
+            &period(jst(11, 25, 10), jst(11, 25, 12)),
+            "鍵は本来の開始時刻のまま、2度目の移動先にある"
+        );
+        assert!(
+            reservation
+                .slots_in(&period(jst(11, 24, 0), jst(11, 25, 0)))
+                .is_empty(),
+            "1度目の移動先には何も残らない"
+        );
+    }
+
+    #[test]
+    fn a_slot_that_only_touches_the_window_is_not_in_it() {
+        let reservation = every_monday();
+
+        // 11月23日の回は10時から12時
+        let right_after = period(jst(11, 23, 12), jst(11, 23, 13));
+        let right_before = period(jst(11, 23, 9), jst(11, 23, 10));
+
+        assert!(reservation.slots_in(&right_after).is_empty());
+        assert!(reservation.slots_in(&right_before).is_empty());
     }
 }

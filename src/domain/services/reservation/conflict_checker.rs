@@ -296,4 +296,45 @@ mod tests {
         assert!(holders.contains(&"alice@example.com"));
         assert!(holders.contains(&"bob@example.com"));
     }
+
+    #[tokio::test]
+    async fn the_slot_being_changed_does_not_conflict_with_itself() {
+        // 自分の予約枠を延ばすとき、元の自分の予約枠とは重なって当然
+        let gpu0 = || Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
+        let mine = slot_with("alice@example.com", vec![gpu0()]);
+        let repository = StubRepository {
+            overlapping: vec![mine.clone()],
+        };
+
+        let checker = ResourceConflictChecker::new();
+        let result = checker
+            .check_conflicts(&repository, &test_period(), &[gpu0()], Some(mine.id()))
+            .await;
+
+        assert!(result.is_ok(), "自分自身は競合ではない: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn excluding_one_slot_still_reports_the_others() {
+        let gpu0 = || Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
+        let mine = slot_with("alice@example.com", vec![gpu0()]);
+        let bobs = slot_with("bob@example.com", vec![gpu0()]);
+        let repository = StubRepository {
+            overlapping: vec![mine.clone(), bobs],
+        };
+
+        let checker = ResourceConflictChecker::new();
+        let result = checker
+            .check_conflicts(&repository, &test_period(), &[gpu0()], Some(mine.id()))
+            .await;
+
+        let Err(ConflictCheckError::Conflict(conflicts)) = result else {
+            panic!("expected Conflict, got {result:?}");
+        };
+        let holders: Vec<&str> = conflicts
+            .iter()
+            .map(|c| c.existing_slot.holder_email().as_str())
+            .collect();
+        assert_eq!(holders, vec!["bob@example.com"]);
+    }
 }

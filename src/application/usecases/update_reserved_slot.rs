@@ -211,4 +211,55 @@ mod tests {
         let stored = repository.find_slot(mine.id()).await.unwrap().unwrap();
         assert_eq!(stored, mine);
     }
+
+    #[tokio::test]
+    async fn the_holder_can_extend_the_slot_over_its_own_time() {
+        // 10–11時を10–12時へ延ばす。延ばした先は元の自分と重なるが、競合ではない
+        let start = Utc::now() + Duration::hours(1);
+        let mine = slot_of("holder@example.com", start, start + Duration::hours(1));
+        let repository = Arc::new(MockReservationRepository::new());
+        repository.put_slot(&mine);
+        let extended = TimePeriod::new(start, start + Duration::hours(2)).unwrap();
+
+        UpdateReservedSlotUseCase::new(repository.clone())
+            .execute(
+                mine.id(),
+                &email("holder@example.com"),
+                Some(extended.clone()),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let stored = repository.find_slot(mine.id()).await.unwrap().unwrap();
+        assert_eq!(stored.time_period(), &extended);
+    }
+
+    #[tokio::test]
+    async fn the_slot_can_end_exactly_when_another_begins() {
+        let start = Utc::now() + Duration::hours(1);
+        let mine = slot_of("holder@example.com", start, start + Duration::hours(1));
+        let theirs = slot_of(
+            "other@example.com",
+            start + Duration::hours(2),
+            start + Duration::hours(3),
+        );
+        let repository = Arc::new(MockReservationRepository::new());
+        repository.put_slot(&mine);
+        repository.put_slot(&theirs);
+        let up_to_theirs = TimePeriod::new(start, theirs.time_period().start()).unwrap();
+
+        UpdateReservedSlotUseCase::new(repository.clone())
+            .execute(
+                mine.id(),
+                &email("holder@example.com"),
+                Some(up_to_theirs.clone()),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let stored = repository.find_slot(mine.id()).await.unwrap().unwrap();
+        assert_eq!(stored.time_period(), &up_to_theirs);
+    }
 }
