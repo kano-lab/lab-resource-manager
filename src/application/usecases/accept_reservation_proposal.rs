@@ -192,7 +192,7 @@ mod tests {
     use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::ports::repositories::RepositoryError;
     use crate::domain::read_models::ReservedSlotView;
-    use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
     use async_trait::async_trait;
     use chrono::TimeZone;
     use std::sync::Mutex as StdMutex;
@@ -223,7 +223,7 @@ mod tests {
 
     /// 事後予約として保存済みの予約を作る
     async fn save_post_hoc_reservation(
-        repository: &MockReservationRepository,
+        repository: &InMemoryReservationRepository,
         holder: &str,
         resources: Vec<Resource>,
         start: DateTime<Utc>,
@@ -241,7 +241,7 @@ mod tests {
     }
 
     /// 保存されている全予約（終了済みを含む）
-    async fn all_reservations(repository: &MockReservationRepository) -> Vec<ReservedSlotView> {
+    async fn all_reservations(repository: &InMemoryReservationRepository) -> Vec<ReservedSlotView> {
         let far_past = now() - Duration::days(365);
         let far_future = now() + Duration::days(365);
         repository
@@ -252,7 +252,7 @@ mod tests {
 
     #[tokio::test]
     async fn accepting_twice_for_the_same_session_updates_the_period_instead_of_adding() {
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         let active_since = now() - Duration::hours(1);
         let existing_id = save_post_hoc_reservation(
             &repository,
@@ -288,7 +288,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_ended_post_hoc_reservation_is_left_alone_and_a_new_one_is_created() {
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         // 以前の受諾で作った予約が既に終わっている状況
         let active_since = now() - Duration::hours(5);
         save_post_hoc_reservation(
@@ -318,7 +318,7 @@ mod tests {
 
     #[tokio::test]
     async fn accepting_shorter_duration_shrinks_the_existing_reservation() {
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         let active_since = now() - Duration::hours(1);
         save_post_hoc_reservation(
             &repository,
@@ -352,7 +352,7 @@ mod tests {
 
     #[tokio::test]
     async fn creates_a_new_reservation_when_no_session_matches() {
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         let active_since = now() - Duration::minutes(30);
 
         let usecase = usecase(repository.clone());
@@ -382,7 +382,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_when_another_user_holds_an_overlapping_reservation() {
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         let active_since = now() - Duration::hours(1);
         save_post_hoc_reservation(
             &repository,
@@ -416,7 +416,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_different_resource_set_is_treated_as_a_separate_session() {
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         let active_since = now() - Duration::hours(1);
         save_post_hoc_reservation(
             &repository,
@@ -620,7 +620,7 @@ mod tests {
     }
     #[tokio::test]
     async fn the_reservation_starts_when_the_button_is_pressed_not_when_the_usage_began() {
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         let usecase = usecase(repository.clone());
         // 6日間使い続けている状況。利用開始を起点にすると、押した時点で既に終わった予約になる
         let active_since = now() - Duration::days(6);
@@ -647,7 +647,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_earlier_reservation_of_the_same_user_does_not_block_acceptance() {
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         // 利用開始から現在までの間に、自分の予約が既にあった（切れた直後に提案が来る状況）
         let active_since = now() - Duration::days(6);
         save_post_hoc_reservation(

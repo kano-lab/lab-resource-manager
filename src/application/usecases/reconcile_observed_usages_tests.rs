@@ -13,7 +13,7 @@ use crate::domain::ports::{
     UnauthorizedUsageNotifier,
 };
 use crate::domain::read_models::ReservedSlotView;
-use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
 use crate::infrastructure::reservation_proposal::MockReservationProposalNotifier;
 use crate::infrastructure::resource_usage_observer::MockResourceUsageObserver;
 use async_trait::async_trait;
@@ -131,19 +131,19 @@ fn make_usecase(
     threshold_minutes: i64,
 ) -> (
     ReconcileObservedUsagesUseCase<
-        MockReservationRepository,
+        InMemoryReservationRepository,
         MockResourceUsageObserver,
         InMemoryIdentityLinkRepository,
         MockReservationProposalNotifier,
         RecordingUnauthorizedUsageNotifier,
     >,
-    Arc<MockReservationRepository>,
+    Arc<InMemoryReservationRepository>,
     Arc<MockResourceUsageObserver>,
     Arc<InMemoryIdentityLinkRepository>,
     MockReservationProposalNotifier,
     RecordingUnauthorizedUsageNotifier,
 ) {
-    let repository = Arc::new(MockReservationRepository::new());
+    let repository = Arc::new(InMemoryReservationRepository::new());
     let observer = Arc::new(MockResourceUsageObserver::new());
     let identity_repo = Arc::new(InMemoryIdentityLinkRepository::default());
     let proposal_notifier = MockReservationProposalNotifier::new();
@@ -174,7 +174,7 @@ fn make_usecase_with_failing_notifier(
     threshold_minutes: i64,
 ) -> (
     ReconcileObservedUsagesUseCase<
-        MockReservationRepository,
+        InMemoryReservationRepository,
         MockResourceUsageObserver,
         InMemoryIdentityLinkRepository,
         FailingReservationProposalNotifier,
@@ -184,7 +184,7 @@ fn make_usecase_with_failing_notifier(
     Arc<InMemoryIdentityLinkRepository>,
     FailingReservationProposalNotifier,
 ) {
-    let repository = Arc::new(MockReservationRepository::new());
+    let repository = Arc::new(InMemoryReservationRepository::new());
     let observer = Arc::new(MockResourceUsageObserver::new());
     let identity_repo = Arc::new(InMemoryIdentityLinkRepository::default());
     let proposal_notifier = FailingReservationProposalNotifier::new();

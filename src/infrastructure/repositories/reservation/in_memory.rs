@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 ///
 /// 予約を版つきで持つ。版は保存のたびに1ずつ進む。
 #[derive(Clone, Default)]
-pub struct MockReservationRepository {
+pub struct InMemoryReservationRepository {
     state: Arc<Mutex<State>>,
 }
 
@@ -38,8 +38,8 @@ impl State {
     }
 }
 
-impl MockReservationRepository {
-    /// 新しいモックリポジトリを作成
+impl InMemoryReservationRepository {
+    /// 新しいインメモリリポジトリを作成
     pub fn new() -> Self {
         Self::default()
     }
@@ -107,7 +107,7 @@ impl MockReservationRepository {
 }
 
 #[async_trait]
-impl ReservationRepository for MockReservationRepository {
+impl ReservationRepository for InMemoryReservationRepository {
     async fn find(&self, id: &ReservationId) -> Result<Option<Reservation>, RepositoryError> {
         Ok(self
             .state
@@ -169,7 +169,7 @@ impl ReservationRepository for MockReservationRepository {
 }
 
 #[async_trait]
-impl ReservedSlotQuery for MockReservationRepository {
+impl ReservedSlotQuery for InMemoryReservationRepository {
     async fn find_slots_overlapping(
         &self,
         time_period: &TimePeriod,
@@ -220,7 +220,7 @@ mod tests {
 
     #[tokio::test]
     async fn saving_a_new_reservation_creates_it_and_records_its_version() {
-        let repository = MockReservationRepository::new();
+        let repository = InMemoryReservationRepository::new();
         let mut reservation = new_reservation();
 
         repository.save(&mut reservation).await.unwrap();
@@ -232,7 +232,7 @@ mod tests {
 
     #[tokio::test]
     async fn saving_over_a_newer_version_is_refused() {
-        let repository = MockReservationRepository::new();
+        let repository = InMemoryReservationRepository::new();
         let mut reservation = new_reservation();
         repository.save(&mut reservation).await.unwrap();
         let mut stale = repository.find(reservation.id()).await.unwrap().unwrap();
@@ -255,7 +255,7 @@ mod tests {
 
     #[tokio::test]
     async fn saving_a_reservation_that_was_deleted_meanwhile_does_not_recreate_it() {
-        let repository = MockReservationRepository::new();
+        let repository = InMemoryReservationRepository::new();
         let mut reservation = new_reservation();
         repository.save(&mut reservation).await.unwrap();
         let mut loaded = repository.find(reservation.id()).await.unwrap().unwrap();
@@ -275,7 +275,7 @@ mod tests {
 
     #[tokio::test]
     async fn saving_a_cancelled_reservation_removes_it() {
-        let repository = MockReservationRepository::new();
+        let repository = InMemoryReservationRepository::new();
         let mut reservation = new_reservation();
         repository.save(&mut reservation).await.unwrap();
 

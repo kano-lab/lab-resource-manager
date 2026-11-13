@@ -17,7 +17,7 @@ use crate::domain::ports::{
 };
 use crate::domain::read_models::ReservedSlotView;
 use crate::infrastructure::idle_reserved_slot_notifier::MockIdleReservedSlotNotifier;
-use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
 use crate::infrastructure::resource_usage_observer::MockResourceUsageObserver;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use std::collections::HashMap;
@@ -28,7 +28,7 @@ const SERVER: &str = "Thalys";
 const COMPUTING: u32 = 5;
 
 type TestUseCase = DetectIdleReservedSlotsUseCase<
-    MockReservationRepository,
+    InMemoryReservationRepository,
     MockResourceUsageObserver,
     MockIdleReservedSlotNotifier,
 >;
@@ -41,7 +41,7 @@ fn now() -> DateTime<Utc> {
 struct Fixture {
     usecase: TestUseCase,
     clock: Arc<FixedClock>,
-    repository: Arc<MockReservationRepository>,
+    repository: Arc<InMemoryReservationRepository>,
     observer: Arc<MockResourceUsageObserver>,
     notifier: MockIdleReservedSlotNotifier,
     notices: Arc<IdleNoticeLog>,
@@ -64,7 +64,7 @@ fn criteria(threshold_minutes: i64) -> IdleCriteria {
 }
 
 fn fixture_with(criteria: IdleCriteria) -> Fixture {
-    let repository = Arc::new(MockReservationRepository::new());
+    let repository = Arc::new(InMemoryReservationRepository::new());
     let observer = Arc::new(MockResourceUsageObserver::new());
     let notifier = MockIdleReservedSlotNotifier::new();
     let notices = Arc::new(IdleNoticeLog::new(Duration::hours(4)));

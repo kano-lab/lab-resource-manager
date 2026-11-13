@@ -92,7 +92,7 @@ mod tests {
     use crate::application::clock::FixedClock;
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::TimePeriod;
-    use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
     use chrono::{DateTime, Duration, TimeZone, Utc};
 
     /// テストの「今」
@@ -101,8 +101,8 @@ mod tests {
     }
 
     fn usecase(
-        repository: Arc<MockReservationRepository>,
-    ) -> EndReservedSlotEarlyUseCase<MockReservationRepository> {
+        repository: Arc<InMemoryReservationRepository>,
+    ) -> EndReservedSlotEarlyUseCase<InMemoryReservationRepository> {
         EndReservedSlotEarlyUseCase::new(repository).with_clock(Arc::new(FixedClock::at(now())))
     }
 
@@ -124,8 +124,8 @@ mod tests {
         .unwrap()
     }
 
-    async fn repository_with(slot: &ReservedSlotView) -> Arc<MockReservationRepository> {
-        let repository = Arc::new(MockReservationRepository::new());
+    async fn repository_with(slot: &ReservedSlotView) -> Arc<InMemoryReservationRepository> {
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(slot);
         repository
     }
@@ -199,7 +199,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_missing_slot_is_reported_as_not_found() {
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         let usecase = usecase(repository);
 
         let error = usecase

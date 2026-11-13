@@ -104,7 +104,7 @@ mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::read_models::ReservedSlotView;
-    use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
     use chrono::{DateTime, Duration, Utc};
 
     fn email(address: &str) -> EmailAddress {
@@ -129,7 +129,7 @@ mod tests {
     async fn the_holder_can_move_the_slot_and_rewrite_its_notes() {
         let start = Utc::now() + Duration::hours(1);
         let slot = slot_of("holder@example.com", start, start + Duration::hours(1));
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(&slot);
         let later =
             TimePeriod::new(start + Duration::hours(2), start + Duration::hours(4)).unwrap();
@@ -158,7 +158,7 @@ mod tests {
             start + Duration::hours(2),
             start + Duration::hours(3),
         );
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(&mine);
         repository.put_slot(&theirs);
         let onto_theirs = theirs.time_period().clone();
@@ -190,7 +190,7 @@ mod tests {
             start + Duration::hours(2),
             start + Duration::hours(3),
         );
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(&mine);
         repository.put_slot(&theirs);
 
@@ -217,7 +217,7 @@ mod tests {
         // 10–11時を10–12時へ延ばす。延ばした先は元の自分と重なるが、競合ではない
         let start = Utc::now() + Duration::hours(1);
         let mine = slot_of("holder@example.com", start, start + Duration::hours(1));
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(&mine);
         let extended = TimePeriod::new(start, start + Duration::hours(2)).unwrap();
 
@@ -244,7 +244,7 @@ mod tests {
             start + Duration::hours(2),
             start + Duration::hours(3),
         );
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(&mine);
         repository.put_slot(&theirs);
         let up_to_theirs = TimePeriod::new(start, theirs.time_period().start()).unwrap();

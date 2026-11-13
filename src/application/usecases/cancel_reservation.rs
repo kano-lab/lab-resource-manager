@@ -70,7 +70,7 @@ mod tests {
         value_objects::{Gpu, Resource},
     };
     use crate::domain::common::TimePeriod;
-    use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
     use chrono::{Duration, Utc};
 
     fn email(address: &str) -> EmailAddress {
@@ -104,8 +104,8 @@ mod tests {
         .unwrap()
     }
 
-    fn stored(reservation: &Reservation) -> Arc<MockReservationRepository> {
-        let repository = Arc::new(MockReservationRepository::new());
+    fn stored(reservation: &Reservation) -> Arc<InMemoryReservationRepository> {
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_reservation(reservation);
         repository
     }

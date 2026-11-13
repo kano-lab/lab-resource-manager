@@ -12,7 +12,7 @@ use crate::domain::aggregates::reservation::{
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::read_models::ReservedSlotView;
-use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
 use async_trait::async_trait;
 use chrono::TimeZone;
 use std::collections::BTreeMap;
@@ -74,9 +74,9 @@ fn slot(id: &str, start: DateTime<Utc>) -> ReservedSlotView {
 
 /// 今（`now()`）から監視を始める。時計を進めればポーリングの時刻も進む
 async fn watching(
-    repository: &Arc<MockReservationRepository>,
+    repository: &Arc<InMemoryReservationRepository>,
 ) -> (
-    NotifyReservationChangesUseCase<MockReservationRepository, RecordingNotifier>,
+    NotifyReservationChangesUseCase<InMemoryReservationRepository, RecordingNotifier>,
     RecordingNotifier,
     Arc<FixedClock>,
 ) {
@@ -95,7 +95,7 @@ async fn watching(
 
 #[tokio::test]
 async fn one_time_reservations_are_announced_one_by_one() {
-    let repository = Arc::new(MockReservationRepository::new());
+    let repository = Arc::new(InMemoryReservationRepository::new());
     let (usecase, notifier, _clock) = watching(&repository).await;
 
     let first = slot("one-time-1", now() + Duration::days(1));
@@ -128,7 +128,7 @@ async fn one_time_reservations_are_announced_one_by_one() {
 
 #[tokio::test]
 async fn ending_a_one_time_reservation_early_is_not_announced_as_a_cancellation() {
-    let repository = Arc::new(MockReservationRepository::new());
+    let repository = Arc::new(InMemoryReservationRepository::new());
     let running = slot("one-time", now() - Duration::hours(1));
     repository.put_slot(&running);
     let (usecase, notifier, _clock) = watching(&repository).await;
@@ -163,7 +163,7 @@ async fn ending_a_one_time_reservation_early_is_not_announced_as_a_cancellation(
 
 #[tokio::test]
 async fn a_slot_that_ran_its_course_is_not_announced() {
-    let repository = Arc::new(MockReservationRepository::new());
+    let repository = Arc::new(InMemoryReservationRepository::new());
     // 1分後に予定どおり終わる予約枠
     let ending = ReservedSlotView::reconstruct(
         ReservedSlotId::from_string("ending".to_string()),
@@ -191,7 +191,7 @@ async fn a_slot_that_ran_its_course_is_not_announced() {
 
 #[tokio::test]
 async fn an_announcement_that_failed_is_sent_on_the_next_pass_and_the_others_are_not_repeated() {
-    let repository = Arc::new(MockReservationRepository::new());
+    let repository = Arc::new(InMemoryReservationRepository::new());
     let (usecase, notifier, _clock) = watching(&repository).await;
     let first = slot("first", now() + Duration::days(1));
     let second = slot("second", now() + Duration::days(2));
@@ -232,7 +232,7 @@ async fn an_announcement_that_failed_is_sent_on_the_next_pass_and_the_others_are
 
 #[tokio::test]
 async fn cancelling_one_occurrence_of_a_recurring_reservation_is_announced_as_that_slot() {
-    let repository = Arc::new(MockReservationRepository::new());
+    let repository = Arc::new(InMemoryReservationRepository::new());
     let first_start = now() + Duration::days(1);
     let weekly = Reservation::reconstruct(
         ReservationId::from_string("weekly".to_string()),

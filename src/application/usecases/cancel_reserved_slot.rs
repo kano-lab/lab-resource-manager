@@ -74,7 +74,7 @@ mod tests {
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::TimePeriod;
     use crate::domain::read_models::ReservedSlotView;
-    use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
     use chrono::{Duration, Utc};
 
     fn email(address: &str) -> EmailAddress {
@@ -99,7 +99,7 @@ mod tests {
     #[tokio::test]
     async fn cancelling_the_slot_of_a_one_time_reservation_cancels_the_reservation() {
         let slot = upcoming_slot();
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(&slot);
 
         let event = CancelReservedSlotUseCase::new(repository.clone())
@@ -117,7 +117,7 @@ mod tests {
     #[tokio::test]
     async fn someone_else_cannot_cancel_the_slot() {
         let slot = upcoming_slot();
-        let repository = Arc::new(MockReservationRepository::new());
+        let repository = Arc::new(InMemoryReservationRepository::new());
         repository.put_slot(&slot);
 
         let error = CancelReservedSlotUseCase::new(repository.clone())
