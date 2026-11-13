@@ -270,3 +270,33 @@ async fn cancelling_one_occurrence_of_a_recurring_reservation_is_announced_as_th
         "定期予約の取り消しではなく、その回の取り消しとして伝える: {events:?}"
     );
 }
+
+#[tokio::test]
+async fn extending_one_occurrence_of_a_recurring_reservation_is_announced_as_that_slot() {
+    let repository = Arc::new(InMemoryReservationRepository::new());
+    let first_start = now() + Duration::days(1);
+    let weekly = crate::application::usecases::test_support::weekly_reservation(first_start);
+    repository.put_reservation(&weekly);
+    let (usecase, notifier, _clock) = watching(&repository).await;
+
+    // 2回目だけ、2時間を3時間に伸ばす
+    let second_start = first_start + Duration::days(7);
+    let second = OccurrenceKey::At(second_start);
+    let longer = TimePeriod::new(second_start, second_start + Duration::hours(3)).unwrap();
+    let mut stored = repository.find(weekly.id()).await.unwrap().unwrap();
+    stored
+        .reschedule_slot(&second, longer.clone(), weekly.holder_email())
+        .unwrap();
+    repository.save(&mut stored).await.unwrap();
+    usecase.poll_once().await.unwrap();
+
+    let events = notifier.take();
+    assert!(
+        matches!(
+            events.as_slice(),
+            [ReservationEvent::SlotChanged { slot, .. }]
+                if slot.key() == &second && slot.time_period() == &longer
+        ),
+        "伸ばした回の予約枠の変更として、1件だけ伝える: {events:?}"
+    );
+}
