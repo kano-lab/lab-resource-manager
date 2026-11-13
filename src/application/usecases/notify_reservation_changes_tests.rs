@@ -300,3 +300,97 @@ async fn extending_one_occurrence_of_a_recurring_reservation_is_announced_as_tha
         "伸ばした回の予約枠の変更として、1件だけ伝える: {events:?}"
     );
 }
+
+/// 毎日、`first_start`から2時間の定期予約（ID・規則を指定）
+fn daily(id: &str, first_start: DateTime<Utc>, rule: &str) -> Reservation {
+    Reservation::reconstruct(
+        ReservationId::from_string(id.to_string()),
+        EmailAddress::new("holder@example.com".to_string()).unwrap(),
+        vec![Resource::Gpu(Gpu::new(
+            "Thalys".to_string(),
+            0,
+            "A100".to_string(),
+        ))],
+        Some("毎日の学習".to_string()),
+        Schedule::Recurring(RecurringSchedule::new(
+            TimePeriod::new(first_start, first_start + Duration::hours(2)).unwrap(),
+            RecurrenceRule::parse(vec![rule.to_string()]).unwrap(),
+            chrono_tz::Asia::Tokyo,
+            BTreeMap::new(),
+        )),
+        None,
+    )
+    .unwrap()
+}
+
+/// `until`までで打ち切る規則
+fn until(rule: &str, until: DateTime<Utc>) -> String {
+    format!("{rule};UNTIL={}", until.format("%Y%m%dT%H%M%SZ"))
+}
+
+#[tokio::test]
+async fn changing_a_recurring_reservation_from_one_occurrence_on_is_two_announcements_not_one_per_slot()
+ {
+    // 毎日の定期予約。監視している60日には予約枠が60個ある
+    let repository = Arc::new(InMemoryReservationRepository::new());
+    let first = now() + Duration::days(1);
+    repository.put_reservation(&daily("series", first, "RRULE:FREQ=DAILY"));
+    let (usecase, notifier, _clock) = watching(&repository).await;
+
+    // カレンダーで10回目の予定を開き、「これ以降のすべての予定」の時間を1時間遅らせた。
+    // カレンダーは元の繰り返しを9回目までで打ち切り、10回目から新しい繰り返しを作る
+    let tenth = first + Duration::days(9);
+    repository.put_reservation(&daily(
+        "series",
+        first,
+        &until("RRULE:FREQ=DAILY", tenth - Duration::seconds(1)),
+    ));
+    repository.put_reservation(&daily(
+        "series_R20261126T010000",
+        tenth + Duration::hours(1),
+        "RRULE:FREQ=DAILY",
+    ));
+    usecase.poll_once().await.unwrap();
+
+    let mut events: Vec<String> = notifier
+        .take()
+        .iter()
+        .map(|event| {
+            let kind = match event {
+                ReservationEvent::Reserved(_) => "reserved",
+                ReservationEvent::Changed(_) => "changed",
+                other => panic!("予約全体の出来事のはず: {other:?}"),
+            };
+            format!("{kind} {}", event.reservation().id().as_str())
+        })
+        .collect();
+    events.sort();
+    assert_eq!(
+        events,
+        vec!["changed series", "reserved series_R20261126T010000"],
+        "打ち切った元の予約の変更と、新しい予約の2件だけ。予約枠ごとには伝えない"
+    );
+}
+
+#[tokio::test]
+async fn cancelling_a_recurring_reservation_from_one_occurrence_on_is_one_announcement() {
+    // カレンダーの「これ以降のすべての予定を削除」：元の繰り返しを打ち切るだけ
+    let repository = Arc::new(InMemoryReservationRepository::new());
+    let first = now() + Duration::days(1);
+    repository.put_reservation(&daily("series", first, "RRULE:FREQ=DAILY"));
+    let (usecase, notifier, _clock) = watching(&repository).await;
+
+    let tenth = first + Duration::days(9);
+    repository.put_reservation(&daily(
+        "series",
+        first,
+        &until("RRULE:FREQ=DAILY", tenth - Duration::seconds(1)),
+    ));
+    usecase.poll_once().await.unwrap();
+
+    let events = notifier.take();
+    assert!(
+        matches!(events.as_slice(), [ReservationEvent::Changed(reservation)] if reservation.id().as_str() == "series"),
+        "取り消した51個の予約枠ごとではなく、1件: {events:?}"
+    );
+}
