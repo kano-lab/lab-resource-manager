@@ -1,13 +1,17 @@
 //! 今の時刻
 
 use chrono::{DateTime, Utc};
+use std::panic::{RefUnwindSafe, UnwindSafe};
 
 /// 今の時刻を教える時計
 ///
 /// ユースケースは今の時刻をここから読む。テストでは止めた時計を渡し、時刻に依存する
 /// 振る舞い（予定どおり終わった、今で終了した、閾値を過ぎた）を決まった時刻で確かめる。
 /// ドメインの操作は時刻を引数で受け取るので、時計を持たない。
-pub trait Clock: Send + Sync {
+///
+/// 時計を持つユースケースが、持つ前と同じくスレッド間で共有でき、パニックをまたいで
+/// 使える（`UnwindSafe`・`RefUnwindSafe`）ように、時計にもそれを求める。
+pub trait Clock: Send + Sync + UnwindSafe + RefUnwindSafe {
     /// 今の時刻
     fn now(&self) -> DateTime<Utc>;
 }
