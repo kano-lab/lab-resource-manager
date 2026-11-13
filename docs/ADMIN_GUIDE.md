@@ -720,7 +720,8 @@ Before replacing anything it checks the following, and fails without changing an
 
 - the release is neither a draft nor a pre-release
 - the downloaded archive's sha256 matches the digest GitHub reports for the asset
-- the archive's `deploy/lab-resource-manager.service` is identical to the installed one (a release that changes the unit is installed by hand with `install.sh`)
+- the archive's `deploy/lab-resource-manager.service` is identical to the installed one (a release that
+  changes the unit is installed by hand with `install.sh`)
 
 After the restart, the service has to stay active with the same PID for 60 seconds. If it does not, the
 previous binary is put back, the service is restarted on it, and `lab-resource-manager-update.service`
