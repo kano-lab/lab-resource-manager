@@ -1,0 +1,10 @@
+[Unit]
+Description=Apply minor and patch releases of Lab Resource Manager
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lab-resource-manager-auto-update
+StandardOutput=journal
+StandardError=journal
