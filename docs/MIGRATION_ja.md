@@ -23,6 +23,7 @@ v3.0.0 では、予約を「予約（単発予約・定期予約）」と「予�
 `get_reservation`と`cancel_reservation`は、予約（単発予約・定期予約）を丸ごと扱うツールとして
 新しく用意しました。以前の`cancel_reservation`と同じ「1つだけ取り消す」動作が必要なら`cancel_reserved_slot`を使ってください。
 予約枠の出力には、属する予約のID（`reservation_id`）と種類（`reservation_kind`）が加わりました。
+予約者のメールアドレスは`owner_email`から`holder_email`に名前が変わりました。
 
 ### 通知テンプレートの設定キー
 
