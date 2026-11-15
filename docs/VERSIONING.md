@@ -3,7 +3,7 @@
 This repository releases two crates, versioned by different contracts.
 
 | Crate | Who relies on it | What its version follows |
-|---|---|---|
+| --- | --- | --- |
 | `lab-resource-manager` (application) | Operators who run it, people who use it from Slack or MCP | What a deployment relies on (below) |
 | `lab-resource-manager-core` (library) | Rust code that depends on it | Its Rust API, under [Cargo's SemVer rules](https://doc.rust-lang.org/cargo/reference/semver.html) |
 
@@ -18,7 +18,7 @@ replaced, so the operator has to do something. That is the line `deploy/auto-upd
 minor and patch releases on its own and leaves majors to an administrator.
 
 | Part of the contract (changing it is breaking) | Not part of the contract |
-|---|---|
+| --- | --- |
 | Environment variables and their meaning | The Rust API of the `lab-resource-manager` crate |
 | The format of `resources.toml` | Log messages and log field names |
 | The format of data files (`identity_links.json`, MCP tokens, state directories) | The wording of Slack messages |
@@ -48,6 +48,6 @@ operators only through the application's binary.
 ## Tags
 
 | Crate | Tag | GitHub release |
-|---|---|---|
+| --- | --- | --- |
 | Application | `vX.Y.Z` | Yes, with the binaries `deploy/auto-update.sh` downloads |
 | Library | `lab-resource-manager-core-vX.Y.Z` | No (crates.io and docs.rs carry it), so the application's release stays the latest |

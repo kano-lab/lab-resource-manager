@@ -3,7 +3,7 @@
 このリポジトリは2つのクレートをリリースする。それぞれ別の約束事に従って版を付ける。
 
 | クレート | 頼りにしている人 | 版が従うもの |
-|---|---|---|
+| --- | --- | --- |
 | `lab-resource-manager`（アプリケーション） | 運用者、SlackやMCPから使う人 | 設置したものが頼りにしているもの（後述） |
 | `lab-resource-manager-core`（ライブラリ） | このクレートに依存するRustのコード | RustのAPI（[CargoのSemVerの規則](https://doc.rust-lang.org/cargo/reference/semver.html)） |
 
@@ -16,7 +16,7 @@
 `deploy/auto-update.sh`が引く線と同じで、minorとpatchは自動で当て、majorは管理者に任せる。
 
 | 約束に含まれる（変えたら破壊的） | 約束に含まれない |
-|---|---|
+| --- | --- |
 | 環境変数とその意味 | `lab-resource-manager`クレートのRustのAPI |
 | `resources.toml`の書式 | ログのメッセージとフィールド名 |
 | データファイルの書式（`identity_links.json`、MCPトークン、状態を置くディレクトリ） | Slackに出す文面 |
@@ -45,6 +45,6 @@ APIの破壊的変更は、リリースPRを準備するときに[cargo-semver-c
 ## タグ
 
 | クレート | タグ | GitHubリリース |
-|---|---|---|
+| --- | --- | --- |
 | アプリケーション | `vX.Y.Z` | 作る。`deploy/auto-update.sh`が取得するバイナリを添える |
 | ライブラリ | `lab-resource-manager-core-vX.Y.Z` | 作らない（crates.ioとdocs.rsにある）。アプリケーションのリリースを最新のままにするため |

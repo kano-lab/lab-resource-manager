@@ -23,4 +23,8 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
+tokio = { workspace = true, features = [
+  "macros",
+  "rt-multi-thread",
+  "test-util",
+] }
