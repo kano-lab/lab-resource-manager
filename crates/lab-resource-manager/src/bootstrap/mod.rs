@@ -82,10 +82,65 @@ async fn serve_slack(
     }
 }
 
-/// 終了の合図（Ctrl+C）を受けたら、すべてに止まるよう伝える
+/// 終了の合図を受けたら、すべてに止まるよう伝える
+///
+/// systemdは止めるときSIGTERMを送る（`systemctl stop`、自動更新による再起動）。
+/// これを受けずにいると、カレンダーへの書き込みの途中でもプロセスが打ち切られる。
 async fn cancel_on_signal(shutdown: CancellationToken) {
-    if tokio::signal::ctrl_c().await.is_ok() {
-        info!("received shutdown signal");
+    match listen_for_shutdown_signal() {
+        Ok(listening) => {
+            let signal = listening.await;
+            info!(signal, "received shutdown signal");
+        }
+        Err(e) => warn!(error = %e, "cannot listen for shutdown signals; stopping"),
     }
     shutdown.cancel();
+}
+
+/// SIGINT（Ctrl+C）とSIGTERMを待ち受け始める
+///
+/// 呼んだ時点でSIGTERMの受け取りを登録する。返る値は、どちらかを受けたら受けた合図の名前になる。
+#[cfg(unix)]
+fn listen_for_shutdown_signal()
+-> std::io::Result<impl std::future::Future<Output = &'static str> + Send> {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut terminate = signal(SignalKind::terminate())?;
+    Ok(async move {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => "SIGINT",
+            _ = terminate.recv() => "SIGTERM",
+        }
+    })
+}
+
+/// Ctrl+Cを待ち受け始める（SIGTERMのない環境）
+#[cfg(not(unix))]
+fn listen_for_shutdown_signal()
+-> std::io::Result<impl std::future::Future<Output = &'static str> + Send> {
+    Ok(async {
+        let _ = tokio::signal::ctrl_c().await;
+        "Ctrl+C"
+    })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn sigterm_is_a_shutdown_signal() {
+        let signal = listen_for_shutdown_signal().unwrap();
+
+        let status = std::process::Command::new("kill")
+            .args(["-TERM", &std::process::id().to_string()])
+            .status()
+            .expect("killを実行できません");
+        assert!(status.success());
+
+        let received = tokio::time::timeout(std::time::Duration::from_secs(5), signal)
+            .await
+            .expect("SIGTERMを受けたら待ち受けが終わる");
+        assert_eq!(received, "SIGTERM");
+    }
 }
