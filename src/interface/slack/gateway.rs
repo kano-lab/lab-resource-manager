@@ -7,6 +7,7 @@ use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuer
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
 use slack_morphism::prelude::*;
+use std::sync::Arc;
 use tracing::error;
 
 impl<R, N> SlackApp<R, N>
@@ -22,7 +23,7 @@ where
     /// # 戻り値
     /// Slackに返すレスポンス
     pub async fn route_slash_command(
-        &self,
+        self: &Arc<Self>,
         event: SlackCommandEvent,
     ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>> {
         let command = event.command.0.as_str();

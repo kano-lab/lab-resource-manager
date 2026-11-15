@@ -75,17 +75,40 @@ pub async fn send_ephemeral(
     response_url: &SlackResponseUrl,
     message: String,
 ) {
-    let payload = serde_json::json!({
-        "text": message,
-        "response_type": "ephemeral"
-    });
+    post_ephemeral(
+        http_client,
+        response_url,
+        SlackMessageContent::new().with_text(message),
+    )
+    .await;
+}
 
-    match http_client
+/// ブロックを含む内容を、エフェメラルメッセージとして送信（ユーザーのみに表示）
+///
+/// response URLは期限切れなどでSlackに断られても通信自体は成功するため、
+/// ステータスコードまで確かめて失敗を記録する。
+///
+/// # 引数
+/// * `http_client` - HTTP client
+/// * `response_url` - Slack response URL from the event
+/// * `content` - 送信する内容
+pub async fn post_ephemeral(
+    http_client: &reqwest::Client,
+    response_url: &SlackResponseUrl,
+    content: SlackMessageContent,
+) {
+    // 空の項目を送らないよう、Slackの応答形式そのままで直列化する
+    let payload = SlackCommandEventResponse::new(content)
+        .with_response_type(SlackMessageResponseType::Ephemeral);
+
+    let result = http_client
         .post(response_url.0.as_str())
         .json(&payload)
         .send()
         .await
-    {
+        .and_then(reqwest::Response::error_for_status);
+
+    match result {
         Ok(_) => debug!("ephemeral message sent"),
         Err(e) => error!(error = %e, "sending the ephemeral message failed"),
     }
