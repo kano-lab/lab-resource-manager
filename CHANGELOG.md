@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.2.0](https://github.com/kano-lab/lab-resource-manager/compare/v3.1.1...v3.2.0) - 2026-11-15
+
+### Added
+
+- run without the Slack bot when its tokens are not set ([#200](https://github.com/kano-lab/lab-resource-manager/pull/200))
+
+### Fixed
+
+- check requested resources against a catalog in the core library ([#202](https://github.com/kano-lab/lab-resource-manager/pull/202))
+- shut down gracefully on SIGTERM ([#201](https://github.com/kano-lab/lab-resource-manager/pull/201))
+
+### Other
+
+- start jobs and entry points from a composition root ([#199](https://github.com/kano-lab/lab-resource-manager/pull/199))
+- split out lab-resource-manager-core and version it apart ([#198](https://github.com/kano-lab/lab-resource-manager/pull/198))
+
 ## [3.1.1](https://github.com/kano-lab/lab-resource-manager/compare/v3.1.0...v3.1.1) (2026-11-15)
 
 
