@@ -1,5 +1,6 @@
 use crate::domain::aggregates::identity_link::errors::IdentityLinkError;
 use crate::domain::aggregates::reservation::errors::ReservationError;
+use crate::domain::aggregates::reservation::value_objects::ResourceSelectionError;
 use crate::domain::common::TimePeriodError;
 use crate::domain::ports::{
     notifier::NotificationError, repositories::RepositoryError,
@@ -28,6 +29,8 @@ pub enum ApplicationError {
     InvalidTimePeriod(TimePeriodError),
     /// 予約に関するドメインエラー
     Reservation(ReservationError),
+    /// 指定されたリソースが予約できるリソースの一覧に無い
+    UnknownResource(ResourceSelectionError),
     /// ID紐付けに関するドメインエラー
     IdentityLink(IdentityLinkError),
 
@@ -66,6 +69,7 @@ impl fmt::Display for ApplicationError {
             ApplicationError::Observation(e) => write!(f, "利用状況観測エラー: {}", e),
             ApplicationError::InvalidTimePeriod(e) => write!(f, "期間エラー: {}", e),
             ApplicationError::Reservation(e) => write!(f, "予約エラー: {}", e),
+            ApplicationError::UnknownResource(e) => write!(f, "{}", e),
             ApplicationError::IdentityLink(e) => write!(f, "ID紐付けエラー: {}", e),
             ApplicationError::ExternalSystemAlreadyLinked {
                 email,
@@ -110,6 +114,7 @@ impl std::error::Error for ApplicationError {
             ApplicationError::Observation(e) => Some(e),
             ApplicationError::InvalidTimePeriod(e) => Some(e),
             ApplicationError::Reservation(e) => Some(e),
+            ApplicationError::UnknownResource(e) => Some(e),
             ApplicationError::IdentityLink(e) => Some(e),
             ApplicationError::ExternalSystemAlreadyLinked { .. } => None,
             ApplicationError::ResourceConflict { conflicts } => conflicts
@@ -140,6 +145,12 @@ impl From<ReservationError> for ApplicationError {
             ReservationError::NotHolder { .. } => ApplicationError::Unauthorized(e.to_string()),
             other => ApplicationError::Reservation(other),
         }
+    }
+}
+
+impl From<ResourceSelectionError> for ApplicationError {
+    fn from(e: ResourceSelectionError) -> Self {
+        ApplicationError::UnknownResource(e)
     }
 }
 

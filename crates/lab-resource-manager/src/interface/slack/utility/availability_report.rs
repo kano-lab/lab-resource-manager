@@ -86,12 +86,10 @@ pub async fn availabilities_in<R>(
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
 {
-    let resources = app.resource_config().all_resources();
-
     Ok(app
         .usecases()
         .check_resource_availability
-        .execute(&resources, window)
+        .execute(window)
         .await?)
 }
 

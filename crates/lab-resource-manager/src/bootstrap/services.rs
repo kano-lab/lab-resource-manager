@@ -12,6 +12,7 @@ use crate::application::usecases::{
     CreateReservationUseCase, EndReservedSlotEarlyUseCase, GrantUserResourceAccessUseCase,
     UpdateReservedSlotUseCase,
 };
+use crate::domain::aggregates::reservation::ResourceCatalog;
 use crate::domain::ports::ResourceUsageObserver;
 use crate::infrastructure::config::{AppConfig, ResourceConfig, StorageConfig};
 use crate::infrastructure::repositories::{
@@ -86,7 +87,10 @@ impl Services {
 
         Ok(Self {
             describe_monitoring: build_describe_monitoring(app_config, observer.clone()),
-            reservations: ReservationUseCases::new(&reservation_repo),
+            reservations: ReservationUseCases::new(
+                &reservation_repo,
+                Arc::new(resource_config.catalog()),
+            ),
             mcp_token_repo: Arc::new(JsonFileMcpTokenRepository::new(
                 app_config.mcp_tokens_file.clone(),
             )),
@@ -103,14 +107,20 @@ impl Services {
 }
 
 impl ReservationUseCases {
-    fn new(repo: &Arc<Repository>) -> Self {
+    fn new(repo: &Arc<Repository>, catalog: Arc<ResourceCatalog>) -> Self {
         Self {
-            create: Arc::new(CreateReservationUseCase::new(repo.clone())),
-            accept_proposal: Arc::new(AcceptReservationProposalUseCase::new(repo.clone())),
+            create: Arc::new(CreateReservationUseCase::new(repo.clone(), catalog.clone())),
+            accept_proposal: Arc::new(AcceptReservationProposalUseCase::new(
+                repo.clone(),
+                catalog.clone(),
+            )),
             update_slot: Arc::new(UpdateReservedSlotUseCase::new(repo.clone())),
             cancel_slot: Arc::new(CancelReservedSlotUseCase::new(repo.clone())),
             end_slot_early: Arc::new(EndReservedSlotEarlyUseCase::new(repo.clone())),
-            check_availability: Arc::new(CheckResourceAvailabilityUseCase::new(repo.clone())),
+            check_availability: Arc::new(CheckResourceAvailabilityUseCase::new(
+                repo.clone(),
+                catalog,
+            )),
         }
     }
 }

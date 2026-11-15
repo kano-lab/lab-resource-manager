@@ -1,4 +1,4 @@
-use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
+use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource, ResourceCatalog};
 use crate::infrastructure::config::notification_format::{
     FormatConfig, NotificationCustomization, TemplateConfig,
 };
@@ -115,7 +115,7 @@ impl ResourceConfig {
     /// 予約できるリソースを全て列挙する
     ///
     /// 設定に書かれた順（サーバーはデバイス番号順、その後に部屋）で返す。
-    pub fn all_resources(&self) -> Vec<Resource> {
+    fn all_resources(&self) -> Vec<Resource> {
         let gpus = self.servers.iter().flat_map(|server| {
             server.devices.iter().map(move |device| {
                 Resource::Gpu(Gpu::new(
@@ -131,6 +131,11 @@ impl ResourceConfig {
         });
 
         gpus.chain(rooms).collect()
+    }
+
+    /// 予約できるリソースの一覧
+    pub fn catalog(&self) -> ResourceCatalog {
+        ResourceCatalog::new(self.all_resources())
     }
 
     /// リソースに対する通知設定を取得

@@ -1,5 +1,7 @@
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::reservation::{Reservation, ReservationId, value_objects::Resource};
+use crate::domain::aggregates::reservation::{
+    Reservation, ReservationId, ResourceCatalog, ResourceSelection,
+};
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
@@ -10,6 +12,7 @@ use tracing::info;
 /// 単発予約を作るユースケース
 pub struct CreateReservationUseCase<R: ReservationRepository + ReservedSlotQuery> {
     repository: Arc<R>,
+    catalog: Arc<ResourceCatalog>,
     conflict_checker: ResourceConflictChecker,
 }
 
@@ -18,9 +21,11 @@ impl<R: ReservationRepository + ReservedSlotQuery> CreateReservationUseCase<R> {
     ///
     /// # Arguments
     /// * `repository` - 予約を保存し、既存の予約枠との競合を確かめるリポジトリ
-    pub fn new(repository: Arc<R>) -> Self {
+    /// * `catalog` - 予約できるリソースの一覧
+    pub fn new(repository: Arc<R>, catalog: Arc<ResourceCatalog>) -> Self {
         Self {
             repository,
+            catalog,
             conflict_checker: ResourceConflictChecker::new(),
         }
     }
@@ -30,22 +35,24 @@ impl<R: ReservationRepository + ReservedSlotQuery> CreateReservationUseCase<R> {
     /// # Arguments
     /// * `holder_email` - 予約者のメールアドレス
     /// * `time_period` - 期間
-    /// * `resources` - 押さえるリソース
+    /// * `selection` - 押さえるリソースの指定
     /// * `notes` - 備考（オプション）
     ///
     /// # Returns
     /// 作られた単発予約のID（その予約枠のIDと同じ）
     ///
     /// # Errors
+    /// - 指定されたリソースが予約できるリソースの一覧に無い場合
     /// - 指定期間に、同じリソースを押さえる予約枠がある場合
     /// - リポジトリエラー
     pub async fn execute(
         &self,
         holder_email: EmailAddress,
         time_period: TimePeriod,
-        resources: Vec<Resource>,
+        selection: &ResourceSelection,
         notes: Option<String>,
     ) -> Result<ReservationId, ApplicationError> {
+        let resources = self.catalog.select(selection)?;
         self.conflict_checker
             .check_conflicts(self.repository.as_ref(), &time_period, &resources, None)
             .await?;
@@ -73,7 +80,7 @@ impl<R: ReservationRepository + ReservedSlotQuery> CreateReservationUseCase<R> {
 mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::ReservedSlotId;
-    use crate::domain::aggregates::reservation::value_objects::Gpu;
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::testing::InMemoryReservationRepository;
     use chrono::{Duration, Utc};
 
@@ -81,8 +88,19 @@ mod tests {
         EmailAddress::new(address.to_string()).unwrap()
     }
 
-    fn gpu() -> Resource {
-        Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()))
+    fn gpu() -> ResourceSelection {
+        ResourceSelection::gpus("Thalys", vec![0])
+    }
+
+    fn usecase(
+        repository: &Arc<InMemoryReservationRepository>,
+    ) -> CreateReservationUseCase<InMemoryReservationRepository> {
+        let catalog = ResourceCatalog::new([Resource::Gpu(Gpu::new(
+            "Thalys".to_string(),
+            0,
+            "A100".to_string(),
+        ))]);
+        CreateReservationUseCase::new(repository.clone(), Arc::new(catalog))
     }
 
     #[tokio::test]
@@ -91,13 +109,8 @@ mod tests {
         let start = Utc::now() + Duration::hours(1);
         let period = TimePeriod::new(start, start + Duration::hours(2)).unwrap();
 
-        let id = CreateReservationUseCase::new(repository.clone())
-            .execute(
-                email("holder@example.com"),
-                period.clone(),
-                vec![gpu()],
-                None,
-            )
+        let id = usecase(&repository)
+            .execute(email("holder@example.com"), period.clone(), &gpu(), None)
             .await
             .unwrap();
 
@@ -113,26 +126,16 @@ mod tests {
     #[tokio::test]
     async fn a_reservation_that_overlaps_an_existing_slot_is_refused() {
         let repository = Arc::new(InMemoryReservationRepository::new());
-        let usecase = CreateReservationUseCase::new(repository.clone());
+        let usecase = usecase(&repository);
         let start = Utc::now() + Duration::hours(1);
         let period = TimePeriod::new(start, start + Duration::hours(2)).unwrap();
         usecase
-            .execute(
-                email("first@example.com"),
-                period.clone(),
-                vec![gpu()],
-                None,
-            )
+            .execute(email("first@example.com"), period.clone(), &gpu(), None)
             .await
             .unwrap();
 
         let error = usecase
-            .execute(
-                email("second@example.com"),
-                period.clone(),
-                vec![gpu()],
-                None,
-            )
+            .execute(email("second@example.com"), period.clone(), &gpu(), None)
             .await
             .unwrap_err();
 
@@ -153,7 +156,7 @@ mod tests {
     #[tokio::test]
     async fn a_reservation_may_start_exactly_when_another_ends_but_not_a_moment_earlier() {
         let repository = Arc::new(InMemoryReservationRepository::new());
-        let usecase = CreateReservationUseCase::new(repository.clone());
+        let usecase = usecase(&repository);
         let ten = Utc::now() + Duration::hours(1);
         let twelve = ten + Duration::hours(2);
         let fourteen = ten + Duration::hours(4);
@@ -161,7 +164,7 @@ mod tests {
             .execute(
                 email("first@example.com"),
                 TimePeriod::new(ten, twelve).unwrap(),
-                vec![gpu()],
+                &gpu(),
                 None,
             )
             .await
@@ -171,7 +174,7 @@ mod tests {
             .execute(
                 email("second@example.com"),
                 TimePeriod::new(twelve - Duration::minutes(1), fourteen).unwrap(),
-                vec![gpu()],
+                &gpu(),
                 None,
             )
             .await;
@@ -179,7 +182,7 @@ mod tests {
             .execute(
                 email("second@example.com"),
                 TimePeriod::new(twelve, fourteen).unwrap(),
-                vec![gpu()],
+                &gpu(),
                 None,
             )
             .await;
@@ -192,5 +195,34 @@ mod tests {
             "{a_minute_early:?}"
         );
         assert!(right_after.is_ok(), "続けて予約できる: {right_after:?}");
+    }
+
+    #[tokio::test]
+    async fn a_resource_outside_the_catalog_is_refused_before_anything_is_saved() {
+        let repository = Arc::new(InMemoryReservationRepository::new());
+        let start = Utc::now() + Duration::hours(1);
+        let period = TimePeriod::new(start, start + Duration::hours(2)).unwrap();
+
+        let error = usecase(&repository)
+            .execute(
+                email("holder@example.com"),
+                period.clone(),
+                &ResourceSelection::room("会議室Z"),
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(error, ApplicationError::UnknownResource(_)),
+            "{error:?}"
+        );
+        assert!(
+            repository
+                .find_slots_overlapping(&period)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }

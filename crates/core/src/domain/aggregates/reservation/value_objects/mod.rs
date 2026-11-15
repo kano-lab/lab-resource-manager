@@ -15,7 +15,10 @@ pub mod ids;
 pub mod recurrence;
 /// リソース（GPU、部屋など）の値オブジェクト
 pub mod resource;
+/// 予約できるリソースの一覧と、利用者の指定からの解決
+pub mod resource_catalog;
 
 pub use ids::{OccurrenceKey, ReservationId, ReservedSlotId, Version};
 pub use recurrence::{RecurrenceEnd, RecurrenceFrequency, RecurrenceRule, RecurrenceRuleError};
 pub use resource::{Gpu, Resource};
+pub use resource_catalog::{ResourceCatalog, ResourceSelection, ResourceSelectionError};

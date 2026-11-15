@@ -2,7 +2,7 @@
 //!
 //! ドメインエンティティはserde非依存のため、JSON出力専用のDTOをここに定義する。
 
-use crate::domain::aggregates::reservation::value_objects::Resource;
+use crate::domain::aggregates::reservation::value_objects::{Resource, ResourceSelection};
 use crate::domain::aggregates::reservation::{
     RecurrenceEnd, RecurrenceFrequency, RecurrenceRule, Reservation, Schedule,
 };
@@ -294,40 +294,48 @@ pub struct CheckAvailabilityParams {
     pub room: Option<String>,
 }
 
-/// `check_availability`が対象とするリソースを決める
-///
-/// 絞り込みの指定がなければ全リソース、あれば指定されたサーバーの全デバイスと部屋。
-///
-/// # Errors
-/// 指定されたサーバーまたは部屋が設定に無い場合
-pub fn resources_to_check(
-    config: &ResourceConfig,
-    server: Option<&str>,
-    room: Option<&str>,
-) -> Result<Vec<Resource>, String> {
-    if server.is_none() && room.is_none() {
-        return Ok(config.all_resources());
-    }
+impl CheckAvailabilityParams {
+    /// 絞り込みの指定。空なら予約できるすべてのリソースを調べる
+    pub fn selections(&self) -> Vec<ResourceSelection> {
+        let server = self
+            .server
+            .as_ref()
+            .map(|server| ResourceSelection::gpus(server.clone(), vec![]));
+        let room = self.room.as_ref().map(ResourceSelection::room);
 
-    if let Some(server) = server
-        && config.get_server(server).is_none()
-    {
-        return Err(format!("サーバー {server} が見つかりません"));
+        server.into_iter().chain(room).collect()
     }
-    if let Some(room) = room
-        && !config.rooms.iter().any(|candidate| candidate.name == room)
-    {
-        return Err(format!("部屋 {room} が見つかりません"));
-    }
+}
 
-    Ok(config
-        .all_resources()
-        .into_iter()
-        .filter(|resource| match resource {
-            Resource::Gpu(gpu) => server == Some(gpu.server()),
-            Resource::Room { name } => room == Some(name.as_str()),
-        })
-        .collect())
+impl CreateReservationParams {
+    /// 予約するリソースの指定
+    ///
+    /// GPUはデバイス番号を省略するとサーバーのすべてのデバイスを指す。
+    ///
+    /// # Errors
+    /// `resource_type`に合う名前が無い場合や、`resource_type`が不明な場合
+    pub fn selection(&self) -> Result<ResourceSelection, String> {
+        match self.resource_type.as_str() {
+            "gpu" => {
+                let server = self
+                    .server
+                    .clone()
+                    .ok_or("GPU予約にはserverの指定が必要です")?;
+                Ok(ResourceSelection::gpus(
+                    server,
+                    self.device_numbers.clone().unwrap_or_default(),
+                ))
+            }
+            "room" => {
+                let room = self
+                    .room
+                    .clone()
+                    .ok_or("部屋予約にはroomの指定が必要です")?;
+                Ok(ResourceSelection::room(room))
+            }
+            other => Err(format!("不明なresource_type: {}", other)),
+        }
+    }
 }
 
 /// 期間（開始・終了）の出力用DTO
@@ -442,13 +450,6 @@ mod tests {
         }
     }
 
-    fn names(resources: &[Resource]) -> Vec<String> {
-        resources
-            .iter()
-            .map(|resource| resource.to_string())
-            .collect()
-    }
-
     #[test]
     fn the_catalog_lists_what_can_be_named_when_reserving() {
         let catalog = ResourceCatalogDto::from(&config());
@@ -471,41 +472,77 @@ mod tests {
         assert_eq!(catalog.rooms, vec!["会議室A".to_string()]);
     }
 
-    #[test]
-    fn without_a_filter_every_resource_is_checked() {
-        let resources = resources_to_check(&config(), None, None).unwrap();
+    fn availability_params(server: Option<&str>, room: Option<&str>) -> CheckAvailabilityParams {
+        CheckAvailabilityParams {
+            start: Utc::now(),
+            end: Utc::now(),
+            server: server.map(str::to_string),
+            room: room.map(str::to_string),
+        }
+    }
 
-        assert_eq!(
-            resources.len(),
-            4,
-            "GPU3台と部屋1つ: {:?}",
-            names(&resources)
-        );
+    fn reservation_params(
+        resource_type: &str,
+        server: Option<&str>,
+        device_numbers: Option<Vec<u32>>,
+        room: Option<&str>,
+    ) -> CreateReservationParams {
+        CreateReservationParams {
+            resource_type: resource_type.to_string(),
+            server: server.map(str::to_string),
+            device_numbers,
+            room: room.map(str::to_string),
+            start: Utc::now(),
+            end: Utc::now(),
+            notes: None,
+        }
     }
 
     #[test]
-    fn a_server_filter_narrows_to_the_devices_of_that_server() {
-        let resources = resources_to_check(&config(), Some("Thalys"), None).unwrap();
-
-        assert_eq!(resources.len(), 2, "{:?}", names(&resources));
-        assert!(
-            resources
-                .iter()
-                .all(|resource| matches!(resource, Resource::Gpu(gpu) if gpu.server() == "Thalys"))
-        );
+    fn without_a_filter_nothing_narrows_the_check() {
+        assert!(availability_params(None, None).selections().is_empty());
     }
 
     #[test]
     fn a_server_and_a_room_can_be_checked_together() {
-        let resources = resources_to_check(&config(), Some("Freccia"), Some("会議室A")).unwrap();
-
-        assert_eq!(resources.len(), 2, "{:?}", names(&resources));
+        assert_eq!(
+            availability_params(Some("Freccia"), Some("会議室A")).selections(),
+            vec![
+                ResourceSelection::gpus("Freccia", vec![]),
+                ResourceSelection::room("会議室A"),
+            ]
+        );
     }
 
     #[test]
-    fn an_unknown_server_or_room_is_rejected_rather_than_reported_as_free() {
-        assert!(resources_to_check(&config(), Some("Unknown"), None).is_err());
-        assert!(resources_to_check(&config(), None, Some("どこか")).is_err());
+    fn a_gpu_reservation_without_device_numbers_takes_the_whole_server() {
+        assert_eq!(
+            reservation_params("gpu", Some("Thalys"), None, None).selection(),
+            Ok(ResourceSelection::gpus("Thalys", vec![]))
+        );
+        assert_eq!(
+            reservation_params("gpu", Some("Thalys"), Some(vec![1]), None).selection(),
+            Ok(ResourceSelection::gpus("Thalys", vec![1]))
+        );
+    }
+
+    #[test]
+    fn a_reservation_must_name_what_its_type_needs() {
+        assert!(
+            reservation_params("gpu", None, None, Some("会議室A"))
+                .selection()
+                .is_err()
+        );
+        assert!(
+            reservation_params("room", Some("Thalys"), None, None)
+                .selection()
+                .is_err()
+        );
+        assert!(
+            reservation_params("printer", None, None, None)
+                .selection()
+                .is_err()
+        );
     }
 
     #[test]
