@@ -1,6 +1,5 @@
 //! モーダル状態変更ハンドラ（リソースタイプ、サーバー選択）
 
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
@@ -12,14 +11,13 @@ use tracing::{debug, error};
 /// モーダル状態変更を処理（リソースタイプ選択、サーバー選択、リンク対象種別選択）
 ///
 /// 適切なフィールドを表示するようモーダルを動的に更新
-pub async fn handle<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn handle<R>(
+    app: &SlackApp<R>,
     block_actions: &SlackInteractionBlockActionsEvent,
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let action_id = action.action_id.to_string();
     debug!(action_id = %action_id, "modal update triggered");
@@ -55,14 +53,13 @@ where
 }
 
 /// `/reserve`モーダルの再構築（リソースタイプ・サーバー選択変更）
-fn build_updated_reserve_modal<R, N>(
-    app: &SlackApp<R, N>,
+fn build_updated_reserve_modal<R>(
+    app: &SlackApp<R>,
     action_id: &str,
     action: &SlackInteractionActionInfo,
 ) -> SlackView
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let config = app.resource_config();
 
@@ -104,13 +101,12 @@ where
 }
 
 /// `/link-user`モーダルの再構築（リンク対象種別変更）
-fn build_updated_link_user_modal<R, N>(
-    app: &SlackApp<R, N>,
+fn build_updated_link_user_modal<R>(
+    app: &SlackApp<R>,
     action: &SlackInteractionActionInfo,
 ) -> SlackView
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let new_target_type = action
         .selected_option

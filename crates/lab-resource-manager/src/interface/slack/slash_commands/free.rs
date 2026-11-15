@@ -1,6 +1,5 @@
 //! /free コマンドハンドラ
 
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::async_execution::background_task;
@@ -16,13 +15,12 @@ use tracing::{debug, error};
 ///
 /// 空きを調べるには全リソースのカレンダーを読む必要があり、Slackがコマンドに求める
 /// 3秒の応答期限を超えることがある。そのためコマンドにはすぐ応答し、結果は後から届ける。
-pub async fn handle<R, N>(
-    app: &Arc<SlackApp<R, N>>,
+pub async fn handle<R>(
+    app: &Arc<SlackApp<R>>,
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     debug!(slack_user = %event.user_id, "checking resource availability");
 

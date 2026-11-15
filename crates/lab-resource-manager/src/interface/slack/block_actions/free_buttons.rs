@@ -8,7 +8,6 @@
 
 use crate::domain::aggregates::reservation::value_objects::Resource;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::domain::services::reservation::availability::ResourceAvailability;
 use crate::interface::slack::app::SlackApp;
@@ -21,14 +20,13 @@ use slack_morphism::prelude::*;
 use tracing::{debug, error, info, warn};
 
 /// 日を切り替えるボタン・メニューのクリックを処理
-pub async fn handle_day_change<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn handle_day_change<R>(
+    app: &SlackApp<R>,
     block_actions: &SlackInteractionBlockActionsEvent,
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let Some(response_url) = &block_actions.response_url else {
         error!("cannot replace the availability message: no response url");
@@ -83,13 +81,12 @@ fn selected_day(action: &SlackInteractionActionInfo) -> Option<DaySelection> {
 /// いま空いているGPUのうち、最も多く空いているサーバーを選んだ状態で予約モーダルを開く。
 /// 複数のサーバーに空きがあるとき、どれを開いても選び直しは起こる。
 /// 選び直しがいちばん少なくて済むサーバーを選ぶ。
-pub async fn handle_reserve<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn handle_reserve<R>(
+    app: &SlackApp<R>,
     block_actions: &SlackInteractionBlockActionsEvent,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
     let window = TimePeriod::new(

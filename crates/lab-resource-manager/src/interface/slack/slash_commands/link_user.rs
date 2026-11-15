@@ -1,6 +1,5 @@
 //! /link-user コマンドハンドラ
 
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::slack_client::modals;
@@ -11,13 +10,12 @@ use tracing::debug;
 /// /link-user スラッシュコマンドを処理
 ///
 /// ユーザーリンクモーダルを開く（管理者コマンド）
-pub async fn handle<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn handle<R>(
+    app: &SlackApp<R>,
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     debug!("opening the identity link modal");
 

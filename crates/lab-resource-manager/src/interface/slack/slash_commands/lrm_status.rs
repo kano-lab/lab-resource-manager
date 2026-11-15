@@ -1,6 +1,5 @@
 //! /lrm-status コマンドハンドラ
 
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::views::messages::monitoring;
@@ -12,13 +11,12 @@ use tracing::{debug, info};
 ///
 /// 実利用の監視がいま効いているかを、本人にのみ見えるメッセージで返す。
 /// 監視が止まっていても突合が黙るだけなので、確かめる手段がないと気づけない。
-pub async fn handle<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn handle<R>(
+    app: &SlackApp<R>,
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     debug!(user = %event.user_id, "reporting the monitoring status");
 

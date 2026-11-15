@@ -1,6 +1,5 @@
 //! /reserve コマンドハンドラ
 
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::slack_client::modals;
@@ -12,13 +11,12 @@ use tracing::{debug, info};
 /// /reserve スラッシュコマンドを処理
 ///
 /// ユーザーが紐付け済みの場合は予約モーダルを表示、未紐付けの場合はメール登録モーダルを表示
-pub async fn handle<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn handle<R>(
+    app: &SlackApp<R>,
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let user_id = &event.user_id;
     let trigger_id = &event.trigger_id;
