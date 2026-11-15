@@ -1169,9 +1169,9 @@ dependencies = [
  "futures",
  "google-calendar3",
  "http",
+ "lab-resource-manager-core",
  "reqwest",
  "rmcp",
- "rrule",
  "rustls",
  "schemars 1.2.3",
  "serde",
@@ -1185,6 +1185,20 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "yup-oauth2",
+]
+
+[[package]]
+name = "lab-resource-manager-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "rrule",
+ "serde",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

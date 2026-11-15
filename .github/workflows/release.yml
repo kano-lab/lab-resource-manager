@@ -1,5 +1,11 @@
 name: Release
 
+# release-plz keeps a release pull request open with the next versions and
+# changelogs (see release-plz.toml). Merging it publishes the crates, tags them
+# and creates the GitHub releases. When the application is among them, its
+# binaries are built and attached to its release, where deploy/auto-update.sh
+# looks for them.
+
 on:
   push:
     branches:
@@ -8,27 +14,73 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
-  release-please:
-    name: Release Please
+  release:
+    name: Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # crates.ioのTrusted Publishing（OIDC）が、このワークフローの素性を証明するために要る
+      id-token: write
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
+      app_tag: ${{ steps.app.outputs.tag }}
     steps:
-      - name: Run Release Please
-        uses: googleapis/release-please-action@v5
+      - name: Fetch Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+
+      - name: Release the packages of a merged release pull request
         id: release
+        uses: release-plz/action@v0.5.146
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Find the application's release
+        id: app
+        env:
+          RELEASES: ${{ steps.release.outputs.releases }}
+        run: |
+          tag="$(jq -r '.[] | select(.package_name == "lab-resource-manager") | .tag' <<< "${RELEASES:-[]}")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  release-pr:
+    name: Release Pull Request
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Fetch Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+
+      - name: Open or update the release pull request
+        uses: release-plz/action@v0.5.146
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build:
     name: Build ${{ matrix.target }}
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    needs: release
+    if: ${{ needs.release.outputs.app_tag != '' }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
@@ -40,6 +92,8 @@ jobs:
     steps:
       - name: Fetch Repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.app_tag }}
 
       - name: Install stable toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v2
@@ -69,38 +123,12 @@ jobs:
           name: lab-resource-manager-${{ matrix.target }}
           path: lab-resource-manager-${{ matrix.target }}.tar.gz
 
-  publish-crate:
-    name: Publish to crates.io
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+  upload:
+    name: Upload Release Artifacts
+    needs: [release, build]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      # crates.ioのTrusted Publishing（OIDC）が、このワークフローの素性を証明するために要る
-      id-token: write
-    steps:
-      - name: Fetch Repository
-        uses: actions/checkout@v7
-
-      - name: Install stable toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v2
-
-      - name: Check semver compatibility against the last published version
-        uses: obi1kenobi/cargo-semver-checks-action@v2
-
-      - name: Authenticate with crates.io
-        uses: rust-lang/crates-io-auth-action@v1
-        id: auth
-
-      - name: Publish
-        run: cargo publish
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-
-  release:
-    name: Upload Release Artifacts
-    needs: [release-please, build]
-    runs-on: ubuntu-latest
+      contents: write
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v8
@@ -111,5 +139,5 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ needs.release-please.outputs.tag_name }}
+          tag_name: ${{ needs.release.outputs.app_tag }}
           files: artifacts/*.tar.gz

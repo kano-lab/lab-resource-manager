@@ -28,13 +28,16 @@ A resource reservation management system for laboratories.
 
 - **Users**: See [User Guide](docs/USER_GUIDE.md)
 - **Administrators**: See [Admin Guide](docs/ADMIN_GUIDE.md)
+- **Contributors**: See [Versioning](docs/VERSIONING.md) for how the application and the library are versioned
 
 ## Architecture
 
-This project follows Clean Architecture (DDD + Hexagonal Architecture):
+This project follows Clean Architecture (DDD + Hexagonal Architecture). The domain and
+use cases live in a separate library crate, `lab-resource-manager-core`, which depends on no
+calendar or chat service; the application wires it to Google Calendar, Slack and MCP:
 
 ```text
-src/
+crates/core/src/             # lab-resource-manager-core (library)
 ├── domain/                  # Domain layer (business logic)
 │   ├── aggregates/          # Aggregates (Reservation, IdentityLink)
 │   ├── common/              # Shared Kernel (EmailAddress, etc.)
@@ -43,6 +46,9 @@ src/
 │   └── errors.rs            # Domain errors
 ├── application/             # Application layer (use cases)
 │   └── usecases/            # Notify, GrantAccess use cases
+└── testing/                 # In-memory implementations of the ports
+
+crates/lab-resource-manager/src/  # lab-resource-manager (application)
 ├── infrastructure/          # Infrastructure layer (implementations)
 │   ├── repositories/        # Repository implementations
 │   ├── notifier/            # Notification implementations

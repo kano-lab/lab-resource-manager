@@ -1,0 +1,187 @@
+//! # lab-resource-manager
+//!
+//! GPU and room resource management system with Google Calendar and Slack integration.
+//!
+//! This crate provides a resource management system designed for research labs,
+//! tracking GPU servers and meeting room reservations through Google Calendar
+//! and sending notifications via Slack.
+//!
+//! ## Architecture
+//!
+//! Built with Clean Architecture (DDD + Hexagonal Architecture):
+//!
+//! - **Domain Layer**: Core business logic, aggregates, and value objects
+//! - **Application Layer**: Use cases that orchestrate domain logic
+//! - **Infrastructure Layer**: External system integrations (Google Calendar, Slack)
+//!
+//! ## Usage as a Binary
+//!
+//! The primary use case is running the watcher service:
+//!
+//! ```bash
+//! # Run with Google Calendar and Slack
+//! cargo run --bin watcher
+//!
+//! # Run with mock implementations for testing
+//! cargo run --bin watcher --notifier mock --repository mock
+//!
+//! # Customize polling interval (default: 60 seconds)
+//! cargo run --bin watcher --interval 30
+//! ```
+//!
+//! ## Usage as a Library
+//!
+//! You can also use this crate as a library to build custom resource management systems:
+//!
+//! ```rust,no_run
+//! use lab_resource_manager::{
+//!     NotifyReservationChangesUseCase,
+//!     GoogleCalendarReservationRepository,
+//!     NotificationRouter,
+//!     JsonFileIdentityLinkRepository,
+//!     load_config,
+//! };
+//! use std::sync::Arc;
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! // Load configuration (returns both resource config and storage config)
+//! let (resource_config, storage_config) = load_config("config/resources.toml")?;
+//!
+//! // Create identity link repository for Slack user mapping
+//! let identity_repo = Arc::new(JsonFileIdentityLinkRepository::new("data/identity_links.json".into()));
+//!
+//! // Create repository and notifier
+//! let repository = Arc::new(
+//!     GoogleCalendarReservationRepository::new(
+//!         "secrets/service-account.json",
+//!         resource_config.clone(),
+//!         identity_repo.clone(),
+//!         storage_config,
+//!     )
+//!     .await?,
+//! );
+//! // NotificationRouter automatically supports all configured notification types
+//! // (Slack, Mock, etc.) based on config/resources.toml
+//! let notifier = NotificationRouter::new(resource_config, identity_repo);
+//!
+//! // Create and run use case. The watch window states how far ahead changes are tracked;
+//! // recurring calendar events expand into individual reserved slots, so it cannot be unbounded.
+//! let usecase = NotifyReservationChangesUseCase::new(
+//!     repository,
+//!     notifier,
+//!     chrono::Duration::days(60),
+//! )
+//! .await?;
+//! usecase.poll_once().await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Device Specification Format
+//!
+//! Calendar event titles support flexible device specification:
+//!
+//! - Single: `0` → Device 0
+//! - Range: `0-2` → Devices 0, 1, 2
+//! - Multiple: `0,2,5` → Devices 0, 2, 5
+//! - Mixed: `0-1,6-7` → Devices 0, 1, 6, 7
+//!
+//! ## Features
+//!
+//! - Google Calendar integration for resource reservations
+//! - Slack notifications when reservations are created, updated, or cancelled
+//! - DDD Factory Pattern for device specification parsing
+//! - Mock implementations for testing
+//! - CLI arguments for flexible deployment
+//!
+//! ## Setup
+//!
+//! See the [README](https://github.com/kano-lab/lab-resource-manager) for detailed setup instructions.
+
+// ドメインとユースケースは lab-resource-manager-core にある。
+// アプリ内のコードが`crate::domain`、`crate::application`のまま参照できるよう再公開する。
+pub use lab_resource_manager_core::{application, domain, testing};
+
+pub mod infrastructure;
+pub mod interface;
+
+/// Commonly used types for building resource management systems
+///
+/// This prelude re-exports the most frequently used types and traits,
+/// allowing users to import everything they need with a single use statement:
+///
+/// ```rust
+/// use lab_resource_manager::prelude::*;
+/// ```
+pub mod prelude {
+    // Use cases
+    pub use crate::application::usecases::{
+        NotifyReservationChangesUseCase, ReconcileObservedUsagesUseCase,
+    };
+
+    // Application errors
+    pub use crate::application::error::ApplicationError;
+
+    // Domain types
+    pub use crate::domain::aggregates::reservation::{
+        Reservation, ReservationEvent, ReservationId, ReservedSlotId, Schedule,
+        errors::ReservationError,
+        factory::{ResourceFactory, ResourceFactoryError},
+        value_objects::{Gpu, Resource},
+    };
+    pub use crate::domain::common::TimePeriod;
+    pub use crate::domain::read_models::ReservedSlotView;
+
+    // Ports (traits)
+    pub use crate::domain::ports::{
+        notifier::{NotificationError, Notifier},
+        repositories::{RepositoryError, ReservationRepository, ReservedSlotQuery},
+        reservation_proposal::{ReservationProposal, ReservationProposalNotifier},
+        resource_usage_observer::{ObservationError, ObservedUsage, ResourceUsageObserver},
+    };
+
+    // Infrastructure implementations
+    /// `InMemoryReservationRepository`の旧名
+    #[allow(deprecated)]
+    pub use crate::infrastructure::repositories::reservation::mock::MockReservationRepository;
+    pub use crate::infrastructure::{
+        config::{DeviceConfig, ResourceConfig, RoomConfig, ServerConfig, load_config},
+        notifier::{
+            router::NotificationRouter,
+            senders::{MockSender, SlackSender},
+        },
+        repositories::{
+            identity_link::JsonFileIdentityLinkRepository,
+            reservation::google_calendar::GoogleCalendarReservationRepository,
+        },
+        resource_usage_observer::{
+            GpuUsageDeviceEntry, GpuUsageProcessEntry, GpuUsageReport,
+            SharedFileResourceUsageObserver, UnattributedUsageEntry,
+        },
+    };
+    pub use crate::testing::{
+        InMemoryReservationRepository, MockReservationProposalNotifier, MockResourceUsageObserver,
+    };
+}
+
+// Convenience re-exports at crate root
+pub use application::{error::ApplicationError, usecases::NotifyReservationChangesUseCase};
+pub use domain::ports::{
+    notifier::{NotificationError, Notifier},
+    repositories::{RepositoryError, ReservationRepository, ReservedSlotQuery},
+};
+/// `InMemoryReservationRepository`の旧名
+#[allow(deprecated)]
+pub use infrastructure::repositories::reservation::mock::MockReservationRepository;
+pub use infrastructure::{
+    config::load_config,
+    notifier::{
+        router::NotificationRouter,
+        senders::{MockSender, SlackSender},
+    },
+    repositories::{
+        identity_link::JsonFileIdentityLinkRepository,
+        reservation::google_calendar::GoogleCalendarReservationRepository,
+    },
+};
+pub use testing::InMemoryReservationRepository;

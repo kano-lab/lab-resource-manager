@@ -36,6 +36,12 @@ jobs:
       - name: cargo build
         run: cargo b --workspace --all-targets --all-features
 
+      # A workspace build unifies features across crates, so the core library can
+      # compile only thanks to a feature the application enables. Users of the
+      # library get no such help; build it on its own as they would.
+      - name: cargo check the core library on its own
+        run: cargo check -p lab-resource-manager-core --lib
+
   cargo-fmt:
     name: Cargo fmt
     runs-on: ubuntu-latest
@@ -202,4 +208,4 @@ jobs:
         with:
           globs: |
             **/*.md
-            !CHANGELOG.md
+            !**/CHANGELOG.md

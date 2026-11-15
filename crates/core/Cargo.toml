@@ -1,0 +1,30 @@
+[package]
+name = "lab-resource-manager-core"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Domain model and use cases of lab-resource-manager: GPU and room reservations, independent of any calendar or chat service"
+repository.workspace = true
+keywords = ["resource-management", "reservation", "gpu", "ddd"]
+categories = ["data-structures", "date-and-time"]
+readme = "README.md"
+rust-version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+chrono = { workspace = true, features = ["serde"] }
+chrono-tz.workspace = true
+# Expands the recurrence rules (RFC 5545 RRULE) of recurring reservations.
+rrule = "0.14"
+serde.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = [
+  "macros",
+  "rt-multi-thread",
+  "test-util",
+] }

@@ -21,13 +21,16 @@
 
 - **ユーザー向け**: [ユーザーガイド](docs/USER_GUIDE_ja.md)
 - **管理者向け**: [管理者ガイド](docs/ADMIN_GUIDE_ja.md)
+- **開発者向け**: アプリケーションとライブラリの版の付け方は[バージョンの付け方](docs/VERSIONING_ja.md)
 
 ## アーキテクチャ
 
-Clean Architecture（DDD + ヘキサゴナルアーキテクチャ）で設計:
+Clean Architecture（DDD + ヘキサゴナルアーキテクチャ）で設計。ドメインとユースケースは、
+カレンダーやチャットのサービスに依存しないライブラリ`lab-resource-manager-core`に分けてあり、
+アプリケーションがそれをGoogleカレンダー・Slack・MCPにつなぐ:
 
 ```text
-src/
+crates/core/src/             # lab-resource-manager-core（ライブラリ）
 ├── domain/                  # ドメイン層（ビジネスロジック）
 │   ├── aggregates/          # 集約（Reservation, IdentityLink）
 │   ├── common/              # Shared Kernel（EmailAddress等）
@@ -36,6 +39,9 @@ src/
 │   └── errors.rs            # ドメインエラー
 ├── application/             # アプリケーション層（ユースケース）
 │   └── usecases/            # 通知、アクセス許可ユースケース
+└── testing/                 # ポートのインメモリ実装
+
+crates/lab-resource-manager/src/  # lab-resource-manager（アプリケーション）
 ├── infrastructure/          # インフラ層（実装）
 │   ├── repositories/        # リポジトリ実装
 │   ├── notifier/            # 通知実装
