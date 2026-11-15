@@ -70,7 +70,7 @@ mod tests {
         value_objects::{Gpu, Resource},
     };
     use crate::domain::common::TimePeriod;
-    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
+    use crate::testing::InMemoryReservationRepository;
     use chrono::{Duration, Utc};
 
     fn email(address: &str) -> EmailAddress {

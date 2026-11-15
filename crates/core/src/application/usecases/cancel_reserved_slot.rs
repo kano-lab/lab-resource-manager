@@ -74,7 +74,7 @@ mod tests {
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::TimePeriod;
     use crate::domain::read_models::ReservedSlotView;
-    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
+    use crate::testing::InMemoryReservationRepository;
     use chrono::{Duration, Utc};
 
     fn email(address: &str) -> EmailAddress {
@@ -83,7 +83,7 @@ mod tests {
 
     fn upcoming_slot() -> ReservedSlotView {
         let start = Utc::now() + Duration::hours(1);
-        ReservedSlotView::of_new_one_time_reservation(
+        crate::testing::reserved_slot_of_new_one_time_reservation(
             email("holder@example.com"),
             TimePeriod::new(start, start + Duration::hours(1)).unwrap(),
             vec![Resource::Gpu(Gpu::new(

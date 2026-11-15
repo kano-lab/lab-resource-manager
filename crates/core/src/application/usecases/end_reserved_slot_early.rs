@@ -92,7 +92,7 @@ mod tests {
     use crate::application::clock::FixedClock;
     use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::TimePeriod;
-    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
+    use crate::testing::InMemoryReservationRepository;
     use chrono::{DateTime, Duration, TimeZone, Utc};
 
     /// テストの「今」
@@ -111,7 +111,7 @@ mod tests {
     }
 
     fn slot_of(holder: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> ReservedSlotView {
-        ReservedSlotView::of_new_one_time_reservation(
+        crate::testing::reserved_slot_of_new_one_time_reservation(
             email(holder),
             TimePeriod::new(start, end).unwrap(),
             vec![Resource::Gpu(Gpu::new(

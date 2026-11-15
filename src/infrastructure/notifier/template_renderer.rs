@@ -446,7 +446,7 @@ mod tests {
             Resource::Gpu(Gpu::new("Thalys".to_string(), 1, "A100".to_string())),
         ];
 
-        ReservedSlotView::of_new_one_time_reservation(
+        crate::testing::reserved_slot_of_new_one_time_reservation(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,
@@ -638,7 +638,7 @@ mod tests {
             "A100".to_string(),
         ))];
 
-        let slot = ReservedSlotView::of_new_one_time_reservation(
+        let slot = crate::testing::reserved_slot_of_new_one_time_reservation(
             EmailAddress::new("test@example.com".to_string()).unwrap(),
             period,
             resources,

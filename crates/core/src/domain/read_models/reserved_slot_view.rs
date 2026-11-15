@@ -102,21 +102,3 @@ impl ReservedSlotView {
         self.notes.as_ref()
     }
 }
-
-#[cfg(test)]
-impl ReservedSlotView {
-    /// 新しい単発予約を作り、その予約枠の写しを返す（テスト用）
-    pub(crate) fn of_new_one_time_reservation(
-        holder_email: EmailAddress,
-        time_period: TimePeriod,
-        resources: Vec<Resource>,
-        notes: Option<String>,
-    ) -> Result<Self, ReservationError> {
-        use crate::domain::aggregates::reservation::OccurrenceKey;
-        let reservation = Reservation::one_time(holder_email, time_period, resources, notes)?;
-        let slot = reservation
-            .slot(&OccurrenceKey::Only)
-            .expect("単発予約は予約枠を1つ持つ");
-        Ok(Self::of(&reservation, &slot))
-    }
-}

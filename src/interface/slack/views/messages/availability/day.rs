@@ -166,7 +166,7 @@ mod tests {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
     ) -> ReservedSlotView {
-        ReservedSlotView::of_new_one_time_reservation(
+        crate::testing::reserved_slot_of_new_one_time_reservation(
             EmailAddress::new("sato@example.com".to_string()).unwrap(),
             TimePeriod::new(from, to).unwrap(),
             resources,

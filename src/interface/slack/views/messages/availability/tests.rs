@@ -45,7 +45,7 @@ fn reservation(
     from: DateTime<Utc>,
     to: DateTime<Utc>,
 ) -> ReservedSlotView {
-    ReservedSlotView::of_new_one_time_reservation(
+    crate::testing::reserved_slot_of_new_one_time_reservation(
         email(holder),
         TimePeriod::new(from, to).unwrap(),
         resources,

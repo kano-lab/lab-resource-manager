@@ -97,9 +97,7 @@ pub fn weekly_reservation(
 /// 読まれた直後に、ほかの誰かが同じ予約を保存し直すリポジトリ
 ///
 /// 読んだ予約の版は、書き戻すときにはもう古い。ユースケースが衝突をどう伝えるかを確かめる。
-pub struct ChangedAfterReading(
-    pub crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository,
-);
+pub struct ChangedAfterReading(pub crate::testing::InMemoryReservationRepository);
 
 #[async_trait]
 impl ReservationRepository for ChangedAfterReading {

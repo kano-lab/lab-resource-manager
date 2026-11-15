@@ -25,7 +25,7 @@ impl ExternalIdentityBindingRecord {
     }
 
     /// 永続化層からの復元用
-    pub(crate) fn reconstitute(identity: ExternalIdentity, linked_at: DateTime<Utc>) -> Self {
+    pub fn reconstitute(identity: ExternalIdentity, linked_at: DateTime<Utc>) -> Self {
         Self {
             identity,
             linked_at,

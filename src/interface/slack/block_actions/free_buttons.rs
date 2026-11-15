@@ -200,7 +200,7 @@ mod tests {
     }
 
     fn reservation(resources: Vec<Resource>) -> ReservedSlotView {
-        ReservedSlotView::of_new_one_time_reservation(
+        crate::testing::reserved_slot_of_new_one_time_reservation(
             EmailAddress::new("sato@example.com".to_string()).unwrap(),
             TimePeriod::new(at(9), at(18)).unwrap(),
             resources,

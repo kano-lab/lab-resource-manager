@@ -68,7 +68,7 @@ mod tests {
     fn slot() -> ReservedSlotView {
         let start = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
-        ReservedSlotView::of_new_one_time_reservation(
+        crate::testing::reserved_slot_of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start, end).unwrap(),
             vec![Resource::Gpu(Gpu::new(

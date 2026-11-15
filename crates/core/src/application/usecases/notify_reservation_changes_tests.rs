@@ -12,7 +12,7 @@ use crate::domain::aggregates::reservation::{
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::NotificationError;
 use crate::domain::read_models::ReservedSlotView;
-use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
+use crate::testing::InMemoryReservationRepository;
 use async_trait::async_trait;
 use chrono::TimeZone;
 use std::collections::BTreeMap;

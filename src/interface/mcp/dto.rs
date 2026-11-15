@@ -513,7 +513,7 @@ mod tests {
         let start = Utc.with_ymd_and_hms(2026, 11, 12, 0, 0, 0).unwrap();
         let window = TimePeriod::new(start, start + Duration::hours(6)).unwrap();
         let gpu = Resource::Gpu(Gpu::new("Thalys".to_string(), 0, "A100".to_string()));
-        let slot = ReservedSlotView::of_new_one_time_reservation(
+        let slot = crate::testing::reserved_slot_of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start + Duration::hours(1), start + Duration::hours(2)).unwrap(),
             vec![gpu.clone()],

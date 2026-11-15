@@ -48,7 +48,7 @@ impl IdentityLink {
     ///
     /// **Repository実装専用**。保存されていた状態をそのまま復元する。
     /// ビジネスロジックは適用されない（時刻は指定された値がそのまま使われる）。
-    pub(crate) fn reconstitute(
+    pub fn reconstitute(
         email: EmailAddress,
         external_identities: Vec<ExternalIdentityBindingRecord>,
         created_at: DateTime<Utc>,

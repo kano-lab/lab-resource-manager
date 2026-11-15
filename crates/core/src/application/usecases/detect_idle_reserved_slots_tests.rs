@@ -16,9 +16,9 @@ use crate::domain::ports::{
     UnattributedUsage,
 };
 use crate::domain::read_models::ReservedSlotView;
-use crate::infrastructure::idle_reserved_slot_notifier::MockIdleReservedSlotNotifier;
-use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
-use crate::infrastructure::resource_usage_observer::MockResourceUsageObserver;
+use crate::testing::InMemoryReservationRepository;
+use crate::testing::MockIdleReservedSlotNotifier;
+use crate::testing::MockResourceUsageObserver;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -104,7 +104,7 @@ fn gpu(device_number: u32) -> Resource {
 }
 
 fn reservation_of(holder: &str, resources: Vec<Resource>, ends_in: Duration) -> ReservedSlotView {
-    ReservedSlotView::of_new_one_time_reservation(
+    crate::testing::reserved_slot_of_new_one_time_reservation(
         EmailAddress::new(holder.to_string()).unwrap(),
         TimePeriod::new(now() - Duration::hours(1), now() + ends_in).unwrap(),
         resources,

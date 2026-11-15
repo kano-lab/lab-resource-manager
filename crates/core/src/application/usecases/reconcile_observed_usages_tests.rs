@@ -13,9 +13,9 @@ use crate::domain::ports::{
     UnauthorizedUsageNotifier,
 };
 use crate::domain::read_models::ReservedSlotView;
-use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
-use crate::infrastructure::reservation_proposal::MockReservationProposalNotifier;
-use crate::infrastructure::resource_usage_observer::MockResourceUsageObserver;
+use crate::testing::InMemoryReservationRepository;
+use crate::testing::MockReservationProposalNotifier;
+use crate::testing::MockResourceUsageObserver;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashSet;
@@ -122,8 +122,13 @@ fn make_reservation(
 ) -> ReservedSlotView {
     let email = EmailAddress::new(holder_email.to_string()).unwrap();
     let period = TimePeriod::new(start, end).unwrap();
-    ReservedSlotView::of_new_one_time_reservation(email, period, vec![gpu_resource()], None)
-        .unwrap()
+    crate::testing::reserved_slot_of_new_one_time_reservation(
+        email,
+        period,
+        vec![gpu_resource()],
+        None,
+    )
+    .unwrap()
 }
 
 type UseCaseWith<P> = ReconcileObservedUsagesUseCase<
@@ -691,7 +696,7 @@ async fn using_several_gpus_of_one_reservation_notifies_once() {
 
     // 1件の予約が2枚のGPUを押さえていて、別の利用者がその2枚を使っている
     let now = Utc::now();
-    let reservation = ReservedSlotView::of_new_one_time_reservation(
+    let reservation = crate::testing::reserved_slot_of_new_one_time_reservation(
         EmailAddress::new("owner@example.com".to_string()).unwrap(),
         TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap(),
         vec![gpu_resource(), gpu_resource_device1()],
@@ -745,7 +750,7 @@ async fn using_gpus_of_two_different_reservations_notifies_for_each() {
         ("owner-a@example.com", gpu_resource()),
         ("owner-b@example.com", gpu_resource_device1()),
     ] {
-        let reservation = ReservedSlotView::of_new_one_time_reservation(
+        let reservation = crate::testing::reserved_slot_of_new_one_time_reservation(
             EmailAddress::new(owner.to_string()).unwrap(),
             TimePeriod::new(now - Duration::hours(1), now + Duration::hours(1)).unwrap(),
             vec![resource],

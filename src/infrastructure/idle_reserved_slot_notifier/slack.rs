@@ -248,7 +248,7 @@ mod tests {
 
     fn sample_slot() -> ReservedSlotView {
         let start = Utc::now() - Duration::hours(2);
-        ReservedSlotView::of_new_one_time_reservation(
+        crate::testing::reserved_slot_of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(start, start + Duration::hours(6)).unwrap(),
             vec![Resource::Gpu(Gpu::new(

@@ -192,7 +192,7 @@ mod tests {
     use crate::domain::aggregates::reservation::value_objects::Gpu;
     use crate::domain::ports::repositories::RepositoryError;
     use crate::domain::read_models::ReservedSlotView;
-    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
+    use crate::testing::InMemoryReservationRepository;
     use async_trait::async_trait;
     use chrono::TimeZone;
     use std::sync::Mutex as StdMutex;
@@ -229,7 +229,7 @@ mod tests {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> ReservedSlotId {
-        let slot = ReservedSlotView::of_new_one_time_reservation(
+        let slot = crate::testing::reserved_slot_of_new_one_time_reservation(
             email(holder),
             TimePeriod::new(start, end).unwrap(),
             resources,

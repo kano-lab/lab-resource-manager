@@ -138,7 +138,7 @@ mod tests {
     }
 
     fn slot_with(holder: &str, resources: Vec<Resource>) -> ReservedSlotView {
-        ReservedSlotView::of_new_one_time_reservation(
+        crate::testing::reserved_slot_of_new_one_time_reservation(
             EmailAddress::new(holder.to_string()).unwrap(),
             test_period(),
             resources,

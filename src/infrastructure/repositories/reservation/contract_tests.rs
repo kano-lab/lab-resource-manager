@@ -6,13 +6,13 @@
 //! 偽のカレンダーの上で流す）。
 
 use super::google_calendar::repository_tests::repository_on_an_empty_fake_calendar;
-use super::in_memory::InMemoryReservationRepository;
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::aggregates::reservation::{OccurrenceKey, Reservation};
 use crate::domain::common::{EmailAddress, TimePeriod};
 use crate::domain::ports::repositories::{
     RepositoryError, ReservationRepository, ReservedSlotQuery,
 };
+use crate::testing::InMemoryReservationRepository;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 
 const ONLY: OccurrenceKey = OccurrenceKey::Only;

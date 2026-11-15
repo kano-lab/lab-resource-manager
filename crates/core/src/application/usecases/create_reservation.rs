@@ -74,7 +74,7 @@ mod tests {
     use super::*;
     use crate::domain::aggregates::reservation::ReservedSlotId;
     use crate::domain::aggregates::reservation::value_objects::Gpu;
-    use crate::infrastructure::repositories::reservation::in_memory::InMemoryReservationRepository;
+    use crate::testing::InMemoryReservationRepository;
     use chrono::{Duration, Utc};
 
     fn email(address: &str) -> EmailAddress {

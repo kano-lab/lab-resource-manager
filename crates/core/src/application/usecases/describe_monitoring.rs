@@ -87,7 +87,7 @@ impl DescribeMonitoringUseCase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::resource_usage_observer::MockResourceUsageObserver;
+    use crate::testing::MockResourceUsageObserver;
 
     fn settings() -> MonitoringSettings {
         MonitoringSettings {

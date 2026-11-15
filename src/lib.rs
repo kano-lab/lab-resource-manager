@@ -98,9 +98,10 @@
 //!
 //! See the [README](https://github.com/kano-lab/lab-resource-manager) for detailed setup instructions.
 
-// Module declarations
-pub mod application;
-pub mod domain;
+// ドメインとユースケースは lab-resource-manager-core にある。
+// アプリ内のコードが`crate::domain`、`crate::application`のまま参照できるよう再公開する。
+pub use lab_resource_manager_core::{application, domain, testing};
+
 pub mod infrastructure;
 pub mod interface;
 
@@ -151,16 +152,15 @@ pub mod prelude {
         },
         repositories::{
             identity_link::JsonFileIdentityLinkRepository,
-            reservation::{
-                google_calendar::GoogleCalendarReservationRepository,
-                in_memory::InMemoryReservationRepository,
-            },
+            reservation::google_calendar::GoogleCalendarReservationRepository,
         },
-        reservation_proposal::MockReservationProposalNotifier,
         resource_usage_observer::{
-            GpuUsageDeviceEntry, GpuUsageProcessEntry, GpuUsageReport, MockResourceUsageObserver,
+            GpuUsageDeviceEntry, GpuUsageProcessEntry, GpuUsageReport,
             SharedFileResourceUsageObserver, UnattributedUsageEntry,
         },
+    };
+    pub use crate::testing::{
+        InMemoryReservationRepository, MockReservationProposalNotifier, MockResourceUsageObserver,
     };
 }
 
@@ -181,9 +181,7 @@ pub use infrastructure::{
     },
     repositories::{
         identity_link::JsonFileIdentityLinkRepository,
-        reservation::{
-            google_calendar::GoogleCalendarReservationRepository,
-            in_memory::InMemoryReservationRepository,
-        },
+        reservation::google_calendar::GoogleCalendarReservationRepository,
     },
 };
+pub use testing::InMemoryReservationRepository;

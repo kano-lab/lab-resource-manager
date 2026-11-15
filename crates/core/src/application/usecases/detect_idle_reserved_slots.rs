@@ -453,7 +453,7 @@ mod tests {
     use crate::domain::services::reservation::GpusAtRest;
 
     fn slot_ending_in(remaining: Duration, now: DateTime<Utc>) -> ReservedSlotView {
-        ReservedSlotView::of_new_one_time_reservation(
+        crate::testing::reserved_slot_of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(now - Duration::hours(1), now + remaining).unwrap(),
             vec![Resource::Gpu(Gpu::new(

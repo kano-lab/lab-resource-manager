@@ -249,7 +249,7 @@ mod tests {
     }
 
     fn slot(holder: &str, resources: Vec<Resource>, from: u32, to: u32) -> ReservedSlotView {
-        ReservedSlotView::of_new_one_time_reservation(
+        crate::testing::reserved_slot_of_new_one_time_reservation(
             EmailAddress::new(holder.to_string()).unwrap(),
             TimePeriod::new(at(from), at(to)).unwrap(),
             resources,
@@ -535,7 +535,7 @@ mod tests {
     #[test]
     fn a_slot_that_ends_before_the_window_does_not_appear() {
         let window = TimePeriod::new(at(9), at(21)).unwrap();
-        let past = ReservedSlotView::of_new_one_time_reservation(
+        let past = crate::testing::reserved_slot_of_new_one_time_reservation(
             EmailAddress::new("holder@example.com".to_string()).unwrap(),
             TimePeriod::new(at(9) - Duration::hours(3), at(9)).unwrap(),
             vec![gpu(0)],
