@@ -1,7 +1,7 @@
 //! Slackへの接続とSlackボットの組み立て
 
 use super::services::{Repository, Services};
-use crate::infrastructure::config::AppConfig;
+use crate::infrastructure::config::SlackTokens;
 use crate::interface::slack::{SlackApp, SlackRepositories, SlackUseCases};
 use slack_morphism::prelude::*;
 use std::sync::Arc;
@@ -22,11 +22,11 @@ impl SlackConnection {
     ///
     /// # Errors
     /// HTTPクライアントを作れない場合
-    pub(super) fn new(app_config: &AppConfig) -> Result<Self, super::BoxError> {
+    pub(super) fn new(tokens: &SlackTokens) -> Result<Self, super::BoxError> {
         Ok(Self {
             client: Arc::new(SlackClient::new(SlackClientHyperConnector::new()?)),
-            bot_token: SlackApiToken::new(app_config.slack_bot_token.clone().into()),
-            app_token: SlackApiToken::new(app_config.slack_app_token.clone().into()),
+            bot_token: SlackApiToken::new(tokens.bot_token.clone().into()),
+            app_token: SlackApiToken::new(tokens.app_token.clone().into()),
         })
     }
 }

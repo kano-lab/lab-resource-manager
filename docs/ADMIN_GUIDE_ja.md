@@ -30,6 +30,11 @@ RUST_LOG=info
 
 **注意**: 通知設定は `config/resources.toml` でリソースごとに設定します。
 
+**Slackボットなしで動かす場合**: `SLACK_BOT_TOKEN` と `SLACK_APP_TOKEN` を両方とも書かずにおきます。
+予約変更の通知（`resources.toml` の通知先へ送るもの）とMCPサーバーは動き続けます。
+スラッシュコマンドには応答せず、実利用の監視（`GPU_USAGE_REPORTS_DIR`）も動きません。監視は予約者へSlackで知らせるためです。
+2つのトークンの片方だけを設定すると、書き忘れとみなして起動を止めます。
+
 ### 2. Slackアプリの設定（App Manifest）
 
 必要なスラッシュコマンドとスコープは、`deploy/slack-app-manifest.ja.example.yaml`（または `.json`）に

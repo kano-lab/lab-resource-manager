@@ -20,7 +20,7 @@ pub mod resource_config;
 /// ストレージバックエンド設定
 pub mod storage_config;
 
-pub use app_config::AppConfig;
+pub use app_config::{AppConfig, SlackTokens};
 pub use loader::{ConfigLoadError, load_from_env};
 pub use notification_format::{
     DateFormat, FormatConfig, NotificationCustomization, ResourceStyle, TemplateConfig, TimeStyle,

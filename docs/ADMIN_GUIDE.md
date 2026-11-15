@@ -30,6 +30,11 @@ For development, you can set these as shell environment variables.
 
 **Note**: Notification settings are configured in `config/resources.toml` per resource.
 
+**Running without the Slack bot**: leave out both `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN`. Reservation change
+notifications (sent to the destinations in `resources.toml`) and the MCP server keep working. Slash commands
+are not answered, and usage monitoring (`GPU_USAGE_REPORTS_DIR`) does not run, because it messages reservation
+holders on Slack. Setting only one of the two tokens stops the start, since it is almost always a mistake.
+
 ### 2. Configure the Slack App (App Manifest)
 
 The slash commands and scopes the bot needs are collected in

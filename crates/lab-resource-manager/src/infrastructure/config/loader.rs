@@ -3,7 +3,7 @@
 //! 環境変数から設定を読み込むロジックを担当する。
 //! 構造やデフォルト値の知識は別モジュールから取得する。
 
-use super::app_config::AppConfig;
+use super::app_config::{AppConfig, SlackTokens};
 use super::defaults;
 use crate::application::usecases::detect_idle_reserved_slots::NoticePolicy;
 use chrono::Duration;
@@ -30,11 +30,10 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(defaults::GOOGLE_SERVICE_ACCOUNT_KEY_PATH));
 
-    let slack_bot_token = env::var("SLACK_BOT_TOKEN")
-        .map_err(|_| ConfigLoadError::MissingEnvVar("SLACK_BOT_TOKEN"))?;
-
-    let slack_app_token = env::var("SLACK_APP_TOKEN")
-        .map_err(|_| ConfigLoadError::MissingEnvVar("SLACK_APP_TOKEN"))?;
+    let slack = slack_tokens(
+        non_empty_env("SLACK_BOT_TOKEN"),
+        non_empty_env("SLACK_APP_TOKEN"),
+    )?;
 
     let resource_config_path = env::var("RESOURCE_CONFIG")
         .map(PathBuf::from)
@@ -130,8 +129,7 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
 
     Ok(AppConfig {
         google_service_account_key_path,
-        slack_bot_token,
-        slack_app_token,
+        slack,
         resource_config_path,
         identity_links_file,
         polling_interval_secs,
@@ -150,6 +148,33 @@ pub fn load_from_env() -> Result<AppConfig, ConfigLoadError> {
         mcp_tls_cert_file,
         mcp_tls_key_file,
     })
+}
+
+/// 空でない環境変数の値（未設定や空白だけなら`None`）
+fn non_empty_env(name: &str) -> Option<String> {
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+/// Slackボットのトークンを組にする
+///
+/// どちらもなければSlackなしで動かす。片方だけの設定は書き忘れとみなして起動を止める
+/// （黙ってSlackなしで動くと、ボットが応えない理由に気づけない）。
+fn slack_tokens(
+    bot_token: Option<String>,
+    app_token: Option<String>,
+) -> Result<Option<SlackTokens>, ConfigLoadError> {
+    match (bot_token, app_token) {
+        (Some(bot_token), Some(app_token)) => Ok(Some(SlackTokens {
+            bot_token,
+            app_token,
+        })),
+        (None, None) => Ok(None),
+        (Some(_), None) => Err(ConfigLoadError::MissingEnvVar("SLACK_APP_TOKEN")),
+        (None, Some(_)) => Err(ConfigLoadError::MissingEnvVar("SLACK_BOT_TOKEN")),
+    }
 }
 
 /// 環境変数を数値として読む（未設定ならデフォルト値）
@@ -269,6 +294,48 @@ fn validate_mcp_tls_paths(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn token(value: &str) -> Option<String> {
+        Some(value.to_string())
+    }
+
+    #[test]
+    fn both_slack_tokens_enable_slack() {
+        let tokens = slack_tokens(token("xoxb-1"), token("xapp-1"))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(tokens.bot_token, "xoxb-1");
+        assert_eq!(tokens.app_token, "xapp-1");
+    }
+
+    #[test]
+    fn no_slack_tokens_run_without_slack() {
+        assert!(slack_tokens(None, None).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_lone_slack_token_stops_the_start() {
+        assert!(matches!(
+            slack_tokens(token("xoxb-1"), None),
+            Err(ConfigLoadError::MissingEnvVar("SLACK_APP_TOKEN"))
+        ));
+        assert!(matches!(
+            slack_tokens(None, token("xapp-1")),
+            Err(ConfigLoadError::MissingEnvVar("SLACK_BOT_TOKEN"))
+        ));
+    }
+
+    #[test]
+    fn slack_tokens_are_hidden_from_debug_output() {
+        let tokens = slack_tokens(token("xoxb-secret"), token("xapp-secret"))
+            .unwrap()
+            .unwrap();
+
+        let printed = format!("{tokens:?}");
+
+        assert!(!printed.contains("secret"), "{printed}");
+    }
 
     #[test]
     fn test_parse_duration_candidates_hours_valid() {
