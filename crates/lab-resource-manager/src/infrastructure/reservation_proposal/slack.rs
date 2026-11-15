@@ -16,7 +16,7 @@ use slack_morphism::prelude::*;
 use std::sync::Arc;
 use tracing::warn;
 
-use crate::interface::slack::constants::ACTION_ACCEPT_RESERVATION_PROPOSAL;
+use crate::infrastructure::slack_button_actions::ACTION_ACCEPT_RESERVATION_PROPOSAL;
 
 /// DM内の受諾ボタンに埋め込む、予約再構築に必要な最小限のデータ
 ///

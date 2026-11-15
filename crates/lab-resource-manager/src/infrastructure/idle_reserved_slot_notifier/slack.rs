@@ -16,7 +16,7 @@ use slack_morphism::prelude::*;
 use std::sync::Arc;
 use tracing::warn;
 
-use crate::interface::slack::constants::{
+use crate::infrastructure::slack_button_actions::{
     ACTION_IDLE_CANCEL, ACTION_IDLE_END_EARLY, ACTION_IDLE_KEEP,
 };
 

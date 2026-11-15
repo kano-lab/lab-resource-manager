@@ -11,7 +11,7 @@ use crate::domain::common::EmailAddress;
 use crate::domain::ports::notifier::NotificationError;
 use crate::infrastructure::notifier::senders::sender::{NotificationContext, Sender};
 use crate::infrastructure::notifier::template_renderer::{TemplateRenderer, render_event};
-use crate::interface::slack::constants::{
+use crate::infrastructure::slack_button_actions::{
     ACTION_CANCEL_RESERVED_SLOT, ACTION_END_RESERVED_SLOT_EARLY, ACTION_UPDATE_RESERVED_SLOT,
 };
 
