@@ -40,7 +40,7 @@ crates/core/src/             # lab-resource-manager-core（ライブラリ）
 │   └── usecases/            # 通知、アクセス許可ユースケース
 └── testing/                 # ポートのインメモリ実装
 
-src/                         # lab-resource-manager（アプリケーション）
+crates/lab-resource-manager/src/  # lab-resource-manager（アプリケーション）
 ├── infrastructure/          # インフラ層（実装）
 │   ├── repositories/        # リポジトリ実装
 │   ├── notifier/            # 通知実装

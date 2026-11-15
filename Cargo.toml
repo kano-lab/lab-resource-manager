@@ -1,5 +1,14 @@
 [workspace]
-members = ["crates/core"]
+members = ["crates/*"]
+resolver = "3"
+
+# Metadata shared by the application and the core library.
+[workspace.package]
+edition = "2024"
+authors = ["Kinji Kawaguchi"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kano-lab/lab-resource-manager"
+rust-version = "1.90"
 
 # Versions shared by the application and the core library, kept in one place.
 [workspace.dependencies]
@@ -11,60 +20,3 @@ serde = { version = "1.0.228", features = ["derive"] }
 tokio = "1.48.0"
 tracing = "0.1"
 uuid = { version = "1.11", features = ["v4"] }
-
-[package]
-name = "lab-resource-manager"
-version = "3.1.1"
-edition = "2024"
-authors = ["Kinji Kawaguchi"]
-license = "MIT OR Apache-2.0"
-description = "GPU and room resource management system with Google Calendar and Slack integration"
-repository = "https://github.com/kano-lab/lab-resource-manager"
-keywords = ["resource-management", "calendar", "slack", "notification", "ddd"]
-categories = ["web-programming", "api-bindings", "command-line-utilities"]
-readme = "README.md"
-rust-version = "1.90"
-
-[dependencies]
-lab-resource-manager-core = { path = "crates/core", version = "0.1.0" }
-async-trait.workspace = true
-chrono.workspace = true
-chrono-tz.workspace = true
-clap = { version = "4.5", features = ["derive"] }
-google-calendar3 = "7.0.0"
-# google-calendar3 7 pulls yup-oauth2 in without default features. The
-# service-account authenticator and its default HTTPS client are among them.
-yup-oauth2 = "12"
-reqwest = { version = "0.12.24", default-features = false, features = [
-  "json",
-  "rustls-tls",
-] }
-rustls = { version = "0.23", features = ["ring"] }
-serde.workspace = true
-serde_json = "1.0.145"
-thiserror = "2.0"
-slack-morphism = { version = "2.32", features = ["hyper"] }
-futures = "0.3"
-tokio = { workspace = true, features = ["full", "macros"] }
-tokio-util = { version = "0.7", features = ["rt"] }
-toml = "1.2.1"
-tracing.workspace = true
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-uuid.workspace = true
-rmcp = { version = "3.9.0", features = [
-  "server",
-  "macros",
-  "transport-streamable-http-server",
-  "transport-streamable-http-server-session",
-  "schemars",
-] }
-schemars = { version = "1.2.1", features = ["chrono04"] }
-axum = "0.8.9"
-http = "1.4.2"
-axum-server = { version = "0.9.0", default-features = false, features = [
-  "tls-rustls-no-provider",
-] }
-
-[dev-dependencies]
-# Lets tests advance a paused clock instead of waiting in real time.
-tokio = { workspace = true, features = ["test-util"] }

@@ -47,7 +47,7 @@ crates/core/src/             # lab-resource-manager-core (library)
 │   └── usecases/            # Notify, GrantAccess use cases
 └── testing/                 # In-memory implementations of the ports
 
-src/                         # lab-resource-manager (application)
+crates/lab-resource-manager/src/  # lab-resource-manager (application)
 ├── infrastructure/          # Infrastructure layer (implementations)
 │   ├── repositories/        # Repository implementations
 │   ├── notifier/            # Notification implementations

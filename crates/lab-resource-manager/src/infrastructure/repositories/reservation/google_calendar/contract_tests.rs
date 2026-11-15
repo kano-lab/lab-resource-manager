@@ -189,7 +189,7 @@ impl Calendar {
             "LRM_CONTRACT_SERVICE_ACCOUNT_KEYにサービスアカウントの鍵ファイルのパスを設定してください（.env.contract）",
         );
         // 相対パスはリポジトリ直下から数える
-        let key = Path::new(env!("CARGO_MANIFEST_DIR"))
+        let key = repository_root()
             .join(key)
             .to_string_lossy()
             .into_owned();
@@ -375,7 +375,7 @@ fn setting(name: &str) -> Option<String> {
     {
         return Some(value.trim().to_string());
     }
-    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(".env.contract");
+    let file = repository_root().join(".env.contract");
     std::fs::read_to_string(file)
         .ok()?
         .lines()
@@ -1044,3 +1044,11 @@ contract!(an_id_that_was_used_cannot_be_used_again);
 contract!(listing_leaves_out_events_that_only_touch_the_period);
 contract!(a_moved_occurrence_alone_in_the_period_is_found);
 contract!(a_weekly_event_keeps_its_local_time_across_daylight_saving_time);
+
+/// リポジトリ直下のディレクトリ
+///
+/// 鍵ファイルと`.env.contract`は、クレートではなくリポジトリ直下に置く決まりにしている。
+/// このクレートは`crates/lab-resource-manager`にあるため、2つ上がリポジトリ直下になる。
+fn repository_root() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}

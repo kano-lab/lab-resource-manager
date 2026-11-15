@@ -1,15 +1,15 @@
 [package]
 name = "lab-resource-manager-core"
 version = "0.1.0"
-edition = "2024"
-authors = ["Kinji Kawaguchi"]
-license = "MIT OR Apache-2.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
 description = "Domain model and use cases of lab-resource-manager: GPU and room reservations, independent of any calendar or chat service"
-repository = "https://github.com/kano-lab/lab-resource-manager"
+repository.workspace = true
 keywords = ["resource-management", "reservation", "gpu", "ddd"]
 categories = ["data-structures", "date-and-time"]
 readme = "README.md"
-rust-version = "1.90"
+rust-version.workspace = true
 
 [dependencies]
 async-trait.workspace = true
