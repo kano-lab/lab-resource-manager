@@ -12,19 +12,17 @@
 use crate::application::usecases::{
     AcceptReservationProposalUseCase, CancelReservedSlotUseCase, CheckResourceAvailabilityUseCase,
     CreateReservationUseCase, DescribeMonitoringUseCase, EndReservedSlotEarlyUseCase,
-    GrantUserResourceAccessUseCase, NotifyReservationChangesUseCase, UpdateReservedSlotUseCase,
+    GrantUserResourceAccessUseCase, UpdateReservedSlotUseCase,
 };
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{
     IdentityLinkRepository, McpTokenRepository, ReservationRepository, ReservedSlotQuery,
 };
 use std::sync::Arc;
 
 /// Slackボットが呼び出すユースケース
-pub struct SlackUseCases<R, N>
+pub struct SlackUseCases<R>
 where
     R: ReservationRepository + ReservedSlotQuery,
-    N: Notifier,
 {
     /// リソースへのアクセス権を付与する
     pub grant_access: Arc<GrantUserResourceAccessUseCase>,
@@ -40,8 +38,6 @@ where
     pub end_reserved_slot_early: Arc<EndReservedSlotEarlyUseCase<R>>,
     /// リソースの空きを調べる
     pub check_resource_availability: Arc<CheckResourceAvailabilityUseCase<R>>,
-    /// 予約の変更を監視して通知する
-    pub notify_reservation_changes: Arc<NotifyReservationChangesUseCase<R, N>>,
     /// 実利用の監視の稼働状況を答える
     pub describe_monitoring: Arc<DescribeMonitoringUseCase>,
 }

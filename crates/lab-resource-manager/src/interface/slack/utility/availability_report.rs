@@ -5,7 +5,6 @@
 
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{
     IdentityLinkRepository, ReservationRepository, ReservedSlotQuery,
 };
@@ -29,12 +28,11 @@ use std::sync::Arc;
 pub const LOOKAHEAD_DAYS: i64 = 7;
 
 /// いまの空き状況メッセージを組み立てる
-pub async fn now_view<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn now_view<R>(
+    app: &SlackApp<R>,
 ) -> Result<SlackMessageContent, Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
     let timezone = display_timezone(app.resource_config());
@@ -56,13 +54,12 @@ where
 /// ある一日の空き時間帯メッセージを組み立てる
 ///
 /// 今日を指定した場合、過ぎた時間は範囲に含めない。
-pub async fn day_view<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn day_view<R>(
+    app: &SlackApp<R>,
     date: NaiveDate,
 ) -> Result<SlackMessageContent, Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let now = Utc::now();
     let timezone = display_timezone(app.resource_config());
@@ -82,13 +79,12 @@ where
 }
 
 /// 指定した範囲における全リソースの空き
-pub async fn availabilities_in<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn availabilities_in<R>(
+    app: &SlackApp<R>,
     window: &TimePeriod,
 ) -> Result<Vec<ResourceAvailability>, Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let resources = app.resource_config().all_resources();
 

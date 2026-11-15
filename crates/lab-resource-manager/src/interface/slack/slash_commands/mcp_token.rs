@@ -1,7 +1,6 @@
 //! /mcp-token コマンドハンドラ
 
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::utility::user_resolver;
@@ -13,13 +12,12 @@ use tracing::{debug, info, warn};
 /// 呼び出したSlackユーザーに紐付いたメールアドレス宛にMCPアクセストークンを発行し、
 /// 本人にのみ見えるエフェメラルメッセージで返す。再実行すると新しいトークンが発行され、
 /// 古いトークンは失効する。
-pub async fn handle<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn handle<R>(
+    app: &SlackApp<R>,
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     debug!(user = %event.user_id, "issuing an mcp token");
 

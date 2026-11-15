@@ -2,7 +2,6 @@
 
 use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::utility::{interaction_reply, reservation_failure, user_resolver};
@@ -10,14 +9,13 @@ use slack_morphism::prelude::*;
 use tracing::{debug, error, info};
 
 /// 予約キャンセルボタンのクリックを処理
-pub async fn handle<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn handle<R>(
+    app: &SlackApp<R>,
     block_actions: &SlackInteractionBlockActionsEvent,
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let Some(slot_id_str) = &action.value else {
         error!("cancel button carried no reserved slot id");

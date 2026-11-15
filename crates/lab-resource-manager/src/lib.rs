@@ -102,6 +102,7 @@
 // アプリ内のコードが`crate::domain`、`crate::application`のまま参照できるよう再公開する。
 pub use lab_resource_manager_core::{application, domain, testing};
 
+pub mod bootstrap;
 pub mod infrastructure;
 pub mod interface;
 

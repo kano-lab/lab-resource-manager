@@ -1,6 +1,5 @@
 //! 予約編集ボタンハンドラ
 
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::CALLBACK_RESERVE_UPDATE;
@@ -11,14 +10,13 @@ use slack_morphism::prelude::*;
 use tracing::error;
 
 /// 予約編集ボタンのクリックを処理
-pub async fn handle<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn handle<R>(
+    app: &SlackApp<R>,
     block_actions: &SlackInteractionBlockActionsEvent,
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let Some(slot_id_str) = &action.value else {
         error!("cancel button carried no reserved slot id");

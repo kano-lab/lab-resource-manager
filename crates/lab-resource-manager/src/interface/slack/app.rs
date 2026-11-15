@@ -3,33 +3,31 @@
 //! 依存関係を管理し、Slackインタラクションのメインエントリポイントを提供
 
 use crate::application::idle_notice_log::IdleNoticeLog;
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
-use crate::infrastructure::config::{AppConfig, ResourceConfig};
+use crate::infrastructure::config::ResourceConfig;
 use crate::interface::slack::dependencies::{SlackRepositories, SlackUseCases};
 use chrono::{DateTime, Utc};
 use slack_morphism::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{debug, error, info, warn};
 
-/// 依存性注入を備えたSlackアプリケーション
+/// Slackボット
 ///
-/// このBotアプリケーションに必要なすべての依存関係を保持し、
-/// `run()`メソッドでアプリケーション全体を実行します。
-pub struct SlackApp<R, N>
+/// スラッシュコマンドとボタン・モーダルの操作を受け付ける入口。
+/// 予約の監視や通知のような、Slackがなくても続けるべき処理は持たない
+/// （それらはコンポジションルートが起動する）。
+pub struct SlackApp<R>
 where
     R: ReservationRepository + ReservedSlotQuery,
-    N: Notifier,
 {
     // 設定
-    app_config: AppConfig,
     resource_config: Arc<ResourceConfig>,
 
     // 依存
-    usecases: SlackUseCases<R, N>,
+    usecases: SlackUseCases<R>,
     repositories: SlackRepositories,
 
     // 予約者の応答で更新される、未使用予約のお知らせの抑制記録
@@ -38,6 +36,8 @@ where
     // Slackインフラストラクチャ
     slack_client: Arc<SlackHyperClient>,
     bot_token: SlackApiToken,
+    /// Socket Modeの接続に使うApp-Level Token（xapp-...）
+    app_token: SlackApiToken,
 
     // 内部状態
     /// このプロセスが動き始めた時刻（稼働時間の起点）
@@ -47,32 +47,31 @@ where
     http_client: reqwest::Client,
 }
 
-impl<R, N> SlackApp<R, N>
+impl<R> SlackApp<R>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     /// 新しいSlackAppを作成
     ///
     /// すべての依存関係をコンストラクタで受け取ります（Dependency Injection）。
     /// 内部状態（user_channel_map, task_tracker, http_client）はコンストラクタ内で生成します。
     pub fn new(
-        app_config: AppConfig,
         resource_config: Arc<ResourceConfig>,
         repositories: SlackRepositories,
-        usecases: SlackUseCases<R, N>,
+        usecases: SlackUseCases<R>,
         idle_notices: Arc<IdleNoticeLog>,
         slack_client: Arc<SlackHyperClient>,
         bot_token: SlackApiToken,
+        app_token: SlackApiToken,
     ) -> Self {
         Self {
-            app_config,
             resource_config,
             repositories,
             usecases,
             idle_notices,
             slack_client,
             bot_token,
+            app_token,
             started_at: Utc::now(),
             user_channel_map: Arc::new(RwLock::new(HashMap::new())),
             task_tracker: TaskTracker::new(),
@@ -80,20 +79,20 @@ where
         }
     }
 
-    /// アプリケーションを実行
+    /// Slackからのイベントを受け付ける
     ///
-    /// Socket Modeリスナーとポーリングタスクを起動し、
-    /// Ctrl+Cシグナルまで実行を継続します。
-    pub async fn run(self: Arc<Self>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    /// Socket Modeでつなぎ、`shutdown`が取り消されるか接続が終わるまで受け付ける。
+    /// 終えるときは、受け付けたイベントの処理が終わるのを待つ。
+    pub async fn run(
+        self: Arc<Self>,
+        shutdown: CancellationToken,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!(
-            resource_config = %self.app_config.resource_config_path.display(),
-            identity_links = %self.app_config.identity_links_file.display(),
             servers = self.resource_config.servers.len(),
             rooms = self.resource_config.rooms.len(),
             "starting slack bot"
         );
 
-        // Socket Mode リスナーの設定
         let socket_mode_callbacks = SlackSocketModeListenerCallbacks::new()
             .with_command_events(Self::handle_command_event)
             .with_interaction_events(Self::handle_interaction_event);
@@ -110,45 +109,17 @@ where
             socket_mode_callbacks,
         );
 
-        let app_token = SlackApiToken::new(self.app_config.slack_app_token.clone().into());
-        socket_mode_listener.listen_for(&app_token).await?;
+        socket_mode_listener.listen_for(&self.app_token).await?;
+        info!("connected to slack socket mode; accepting commands");
 
-        info!(
-            polling_interval_secs = self.app_config.polling_interval_secs,
-            "connected to slack socket mode; accepting commands"
-        );
-
-        // バックグラウンドでポーリングタスクを実行
-        let polling_handle = {
-            let notify_usecase = self.usecases.notify_reservation_changes.clone();
-            let polling_interval = Duration::from_secs(self.app_config.polling_interval_secs);
-            tokio::spawn(async move {
-                loop {
-                    match notify_usecase.poll_once().await {
-                        Ok(_) => {}
-                        Err(e) => {
-                            error!(error = %e, "reservation change polling failed");
-                        }
-                    }
-                    tokio::time::sleep(polling_interval).await;
-                }
-            })
-        };
-
-        // Socket Mode リスナーとポーリングタスクを並行実行
         tokio::select! {
             _ = socket_mode_listener.serve() => {
                 info!("socket mode listener ended");
             }
-            _ = tokio::signal::ctrl_c() => {
-                info!("received shutdown signal");
-            }
+            _ = shutdown.cancelled() => {}
         }
 
-        // ポーリングタスクを停止
-        polling_handle.abort();
-
-        info!("shutting down");
+        info!("waiting for slack event handlers to finish");
         self.shutdown().await;
 
         Ok(())
@@ -167,7 +138,7 @@ where
         let app = state
             .read()
             .await
-            .get_user_state::<Arc<SlackApp<R, N>>>()
+            .get_user_state::<Arc<SlackApp<R>>>()
             .ok_or("App の状態が見つかりません")?
             .clone();
 
@@ -196,7 +167,7 @@ where
         let app = state
             .read()
             .await
-            .get_user_state::<Arc<SlackApp<R, N>>>()
+            .get_user_state::<Arc<SlackApp<R>>>()
             .ok_or("App の状態が見つかりません")?
             .clone();
 
@@ -291,7 +262,7 @@ where
         &self.repositories
     }
 
-    pub fn usecases(&self) -> &SlackUseCases<R, N> {
+    pub fn usecases(&self) -> &SlackUseCases<R> {
         &self.usecases
     }
 

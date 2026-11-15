@@ -48,29 +48,10 @@ pub const ACTION_LINK_SERVER_SELECT: &str = "link_server_select";
 /// OSユーザー名入力フィールドのアクション
 pub const ACTION_LINK_OS_USERNAME_INPUT: &str = "link_os_username_input";
 
-// アクションID - 通知に付く予約枠のボタン
+// アクションID - 送信するメッセージに置くボタン
 //
-// 値はSlackとの間でやり取りする識別子で、投稿済みのメッセージのボタンにも埋め込まれている。
-// 値を変えると、すでにチャンネルにあるボタンが押しても動かなくなるため、定数名だけを
-// ユビキタス言語に合わせ、値は以前のままにしている。
-/// 予約枠の期間・備考を変更するボタンのアクション
-pub const ACTION_UPDATE_RESERVED_SLOT: &str = "edit_reservation";
-/// 予約枠を取り消すボタンのアクション
-pub const ACTION_CANCEL_RESERVED_SLOT: &str = "cancel_reservation";
-/// 予約枠を今の時点で終了するボタンのアクション
-pub const ACTION_END_RESERVED_SLOT_EARLY: &str = "release_reservation_early";
-
-// アクションID - 使われていない予約枠のお知らせDM（値については上と同じ理由で以前のまま）
-/// 使われていない予約枠を今の時点で終了するボタンのアクション
-pub const ACTION_IDLE_END_EARLY: &str = "idle_release_reservation";
-/// 使われていない予約枠をこれから使うと答えるボタンのアクション
-pub const ACTION_IDLE_KEEP: &str = "idle_keep_reservation";
-/// 使われていない予約枠を取り消すボタンのアクション
-pub const ACTION_IDLE_CANCEL: &str = "idle_cancel_reservation";
-
-// アクションID - 事後予約提案DM
-/// 事後予約提案の受諾ボタンのアクション
-pub const ACTION_ACCEPT_RESERVATION_PROPOSAL: &str = "accept_reservation_proposal";
+// ボタンを置くのは通知やDMを組み立てるinfrastructure層なので、値はそちらで定める。
+pub use crate::infrastructure::slack_button_actions::*;
 
 // アクションID - 空き状況メッセージ
 /// 表示する日を切り替えるボタンのアクション（値は表示タイムゾーンでのYYYY-MM-DD）

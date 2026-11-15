@@ -2,7 +2,6 @@
 
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::value_objects::resource::{Gpu, Resource};
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
@@ -14,13 +13,12 @@ use slack_morphism::prelude::*;
 use tracing::{debug, error, info, warn};
 
 /// リソース予約モーダル送信を処理
-pub async fn handle<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn handle<R>(
+    app: &SlackApp<R>,
     view_submission: &SlackInteractionViewSubmissionEvent,
 ) -> Result<Option<SlackViewSubmissionResponse>, Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let user_id = view_submission.user.id.clone();
 

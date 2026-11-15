@@ -1,6 +1,5 @@
 //! /register-calendar コマンドハンドラ（非推奨）
 
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::slack_client::modals;
@@ -11,13 +10,12 @@ use tracing::debug;
 /// /register-calendar スラッシュコマンドを処理（非推奨）
 ///
 /// メールアドレス登録モーダルを開く
-pub async fn handle<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn handle<R>(
+    app: &SlackApp<R>,
     event: SlackCommandEvent,
 ) -> Result<SlackCommandEventResponse, Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let user_id = event.user_id.to_string();
     debug!(user = %user_id, "opening the email registration modal");

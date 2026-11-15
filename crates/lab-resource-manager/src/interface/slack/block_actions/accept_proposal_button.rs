@@ -3,7 +3,6 @@
 use crate::application::error::ApplicationError;
 use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::domain::services::reservation::errors::ResourceConflictError;
 use crate::infrastructure::reservation_proposal::ProposalAcceptPayload;
@@ -14,14 +13,13 @@ use slack_morphism::prelude::*;
 use tracing::{error, info, warn};
 
 /// 事後予約提案の受諾ボタンのクリックを処理
-pub async fn handle<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn handle<R>(
+    app: &SlackApp<R>,
     block_actions: &SlackInteractionBlockActionsEvent,
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let Some(value) = &action.value else {
         error!("accept button carried no proposal payload");
@@ -156,10 +154,9 @@ fn log_failure(failure: &AcceptFailure) {
 ///
 /// 競合の場合、誰の予約と重なったのかが分からなければ利用者は動きようがない。
 /// `/reserve`と同じ整形を通し、相手が本人であれば予約しなくてよいことを伝える。
-async fn build_failure_message<R, N>(app: &SlackApp<R, N>, failure: &AcceptFailure) -> String
+async fn build_failure_message<R>(app: &SlackApp<R>, failure: &AcceptFailure) -> String
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let AcceptFailure::Rejected {
         accepted_by,
@@ -186,13 +183,12 @@ where
     }
 }
 
-async fn create_reservation_from_payload<R, N>(
-    app: &SlackApp<R, N>,
+async fn create_reservation_from_payload<R>(
+    app: &SlackApp<R>,
     value: &str,
 ) -> Result<(), AcceptFailure>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let payload: ProposalAcceptPayload = serde_json::from_str(value)?;
 
@@ -227,14 +223,13 @@ where
 /// デバイス番号からGPUリソースを復元する
 ///
 /// モデル名はボタンのペイロードに載せていないため、リソース設定から引く。
-fn resolve_gpu_resources<R, N>(
-    app: &SlackApp<R, N>,
+fn resolve_gpu_resources<R>(
+    app: &SlackApp<R>,
     server_name: &str,
     device_numbers: &[u32],
 ) -> Result<Vec<Resource>, Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let server = app
         .resource_config()

@@ -2,7 +2,6 @@
 //!
 //! 受信したSlackイベントを適切なハンドラにルーティング
 
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
@@ -10,10 +9,9 @@ use slack_morphism::prelude::*;
 use std::sync::Arc;
 use tracing::error;
 
-impl<R, N> SlackApp<R, N>
+impl<R> SlackApp<R>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     /// スラッシュコマンドイベントをルーティング
     ///

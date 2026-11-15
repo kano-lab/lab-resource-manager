@@ -5,7 +5,6 @@
 
 use crate::domain::aggregates::reservation::value_objects::ReservedSlotId;
 use crate::domain::common::EmailAddress;
-use crate::domain::ports::notifier::Notifier;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::{
@@ -19,14 +18,13 @@ use slack_morphism::prelude::*;
 use tracing::{error, info, warn};
 
 /// 未使用予約のお知らせDMのボタンのクリックを処理
-pub async fn handle<R, N>(
-    app: &SlackApp<R, N>,
+pub async fn handle<R>(
+    app: &SlackApp<R>,
     block_actions: &SlackInteractionBlockActionsEvent,
     action: &SlackInteractionActionInfo,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let Some(slot_id_str) = &action.value else {
         error!("idle reserved slot button carried no reserved slot id");
@@ -68,10 +66,9 @@ where
 /// 「まだ使う」に答える
 ///
 /// 予約は使われる見込みなので、しばらくこの予約について声をかけない。
-fn keep<R, N>(app: &SlackApp<R, N>, slot_id: &ReservedSlotId) -> String
+fn keep<R>(app: &SlackApp<R>, slot_id: &ReservedSlotId) -> String
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     app.idle_notices().silence(slot_id, Utc::now());
     info!(
@@ -83,14 +80,13 @@ where
 }
 
 /// 「今で終了する」に答える
-async fn release<R, N>(
-    app: &SlackApp<R, N>,
+async fn release<R>(
+    app: &SlackApp<R>,
     slot_id: &ReservedSlotId,
     requested_by: &EmailAddress,
 ) -> String
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     info!(
         reserved_slot_id = %slot_id.as_str(),
@@ -122,14 +118,13 @@ where
 }
 
 /// 「予約を取り消す」に答える
-async fn cancel<R, N>(
-    app: &SlackApp<R, N>,
+async fn cancel<R>(
+    app: &SlackApp<R>,
     slot_id: &ReservedSlotId,
     requested_by: &EmailAddress,
 ) -> String
 where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     info!(
         reserved_slot_id = %slot_id.as_str(),
@@ -161,13 +156,12 @@ where
 ///
 /// 置き換えられなかった場合に限り、結果を新しいメッセージとして送る。
 /// ボタンは残ってしまうが、何が起きたのかは必ず伝わるようにする。
-async fn reply<R, N>(
-    app: &SlackApp<R, N>,
+async fn reply<R>(
+    app: &SlackApp<R>,
     block_actions: &SlackInteractionBlockActionsEvent,
     feedback: String,
 ) where
     R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-    N: Notifier + Send + Sync + 'static,
 {
     let session = app.slack_client().open_session(app.bot_token());
 
