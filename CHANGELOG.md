@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.1](https://github.com/kano-lab/lab-resource-manager/compare/v3.1.0...v3.1.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* stop /free from timing out on a slow Calendar API ([#196](https://github.com/kano-lab/lab-resource-manager/issues/196)) ([a564e3a](https://github.com/kano-lab/lab-resource-manager/commit/a564e3abfba4f2a3ebb219f0e52ae31df2b7cec3))
+
 ## [3.1.0](https://github.com/kano-lab/lab-resource-manager/compare/v3.0.0...v3.1.0) (2026-11-13)
 
 
