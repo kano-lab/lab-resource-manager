@@ -14,6 +14,8 @@ use crate::infrastructure::config::{ResourceConfig, StorageConfig};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
+use futures::future::try_join_all;
+use futures::stream::{self, StreamExt, TryStreamExt};
 use google_calendar3::api::{Event, EventDateTime};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -69,6 +71,42 @@ struct FetchedEvent {
     exceptions: Vec<Event>,
     calendar_id: String,
     resource_context: String,
+}
+
+/// 1つのカレンダーに同時に投げるリクエストの上限
+///
+/// 繰り返し予約が多いと、規則どおりでない回の取得がイベントの数だけ発生する。
+/// 一度に投げるとGoogle Calendar APIの利用上限に触れうるため、ここで抑える。
+const MAX_CONCURRENT_REQUESTS_PER_CALENDAR: usize = 4;
+
+/// 一覧で得たイベントを、予約として扱うイベントと、一覧に無い繰り返しイベントのIDに分ける
+///
+/// 期間内に時間を変えた回だけがあり、繰り返しイベントそのものが一覧に無いことがある。
+/// その繰り返しイベントは別途取得する必要があるため、IDを返す。
+/// 削除されたイベントと、繰り返しイベントの回だけのイベントは、予約として返さない。
+fn split_series(events: Vec<Event>) -> (Vec<Event>, Vec<String>) {
+    let (instances, others): (Vec<Event>, Vec<Event>) = events
+        .into_iter()
+        .partition(|event| event.recurring_event_id.is_some());
+    let listed: Vec<Event> = others.into_iter().filter(is_active_event).collect();
+
+    let mut series_ids: Vec<String> = instances
+        .into_iter()
+        .filter_map(|event| event.recurring_event_id)
+        .collect();
+    series_ids.sort();
+    series_ids.dedup();
+
+    let unlisted = series_ids
+        .into_iter()
+        .filter(|series_id| {
+            !listed
+                .iter()
+                .any(|event| event.id.as_deref() == Some(series_id.as_str()))
+        })
+        .collect();
+
+    (listed, unlisted)
 }
 
 /// キャンセル済みイベントのstatus値
@@ -252,48 +290,53 @@ impl GoogleCalendarReservationRepository {
         time_min: DateTime<Utc>,
         time_max: Option<DateTime<Utc>>,
     ) -> Result<Vec<FetchedEvent>, RepositoryError> {
-        let mut fetched = Vec::new();
+        // カレンダーごとの往復を順に待つと、応答時間がカレンダーの数に比例して伸びる。
+        // Slackのコマンドは3秒以内に応えなければならないため、カレンダーは同時に問い合わせる。
+        let per_calendar = try_join_all(self.calendars().into_iter().map(
+            |(calendar_id, resource_name)| {
+                self.fetch_calendar_events(calendar_id, resource_name, time_min, time_max)
+            },
+        ))
+        .await?;
 
-        for (calendar_id, resource_name) in self.calendars() {
-            let events = self
-                .gateway
-                .list_events(&calendar_id, time_min, time_max)
-                .await?;
+        Ok(per_calendar.into_iter().flatten().collect())
+    }
 
-            let mut series = Vec::new();
-            let mut series_of_instances = Vec::new();
-            for event in events {
-                if let Some(series_id) = &event.recurring_event_id {
-                    series_of_instances.push(series_id.clone());
-                } else if is_active_event(&event) {
-                    series.push(event);
-                }
-            }
-            series_of_instances.sort();
-            series_of_instances.dedup();
-            for series_id in series_of_instances {
-                let listed = series
-                    .iter()
-                    .any(|event| event.id.as_deref() == Some(series_id.as_str()));
-                if listed {
-                    continue;
-                }
-                if let Some(event) = self.gateway.get_event(&calendar_id, &series_id).await?
-                    && is_active_event(&event)
-                {
-                    series.push(event);
-                }
-            }
+    /// 1つのカレンダーから、指定期間に重なるイベントを取得
+    ///
+    /// 一覧に無い繰り返しイベントの取得と、規則どおりでない回の取得は、
+    /// カレンダー内でも同時に行う。ただしAPIの利用上限に触れないよう、同時に投げる数は抑える。
+    async fn fetch_calendar_events(
+        &self,
+        calendar_id: String,
+        resource_name: String,
+        time_min: DateTime<Utc>,
+        time_max: Option<DateTime<Utc>>,
+    ) -> Result<Vec<FetchedEvent>, RepositoryError> {
+        let events = self
+            .gateway
+            .list_events(&calendar_id, time_min, time_max)
+            .await?;
+        let (listed, unlisted_series_ids) = split_series(events);
 
-            for event in series {
-                fetched.push(
-                    self.with_exceptions(event, &calendar_id, &resource_name)
-                        .await?,
-                );
-            }
-        }
+        let unlisted: Vec<Event> = stream::iter(unlisted_series_ids)
+            .map(|series_id| {
+                let calendar_id = &calendar_id;
+                async move { self.gateway.get_event(calendar_id, &series_id).await }
+            })
+            .buffered(MAX_CONCURRENT_REQUESTS_PER_CALENDAR)
+            .try_collect::<Vec<Option<Event>>>()
+            .await?
+            .into_iter()
+            .flatten()
+            .filter(is_active_event)
+            .collect();
 
-        Ok(fetched)
+        stream::iter(listed.into_iter().chain(unlisted))
+            .map(|event| self.with_exceptions(event, &calendar_id, &resource_name))
+            .buffered(MAX_CONCURRENT_REQUESTS_PER_CALENDAR)
+            .try_collect()
+            .await
     }
 
     /// イベントに、それが繰り返しイベントなら規則どおりでない回のイベントを添える
