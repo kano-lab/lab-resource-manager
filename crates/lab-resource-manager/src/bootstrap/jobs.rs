@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// 予約の変更を監視する期間の長さ
 ///
@@ -102,11 +102,18 @@ pub(super) async fn start_reservation_notifications(
 pub(super) fn start_slot_observation(
     app_config: &AppConfig,
     services: &Services,
-    slack: &SlackConnection,
+    slack: Option<&SlackConnection>,
     shutdown: CancellationToken,
 ) -> Option<JoinHandle<()>> {
     let Some(observer) = services.observer.clone() else {
         info!("slot observation disabled: GPU_USAGE_REPORTS_DIR is not set");
+        return None;
+    };
+    let Some(slack) = slack else {
+        warn!(
+            "slot observation disabled: it messages reservation holders on Slack, \
+             but SLACK_BOT_TOKEN and SLACK_APP_TOKEN are not set"
+        );
         return None;
     };
 

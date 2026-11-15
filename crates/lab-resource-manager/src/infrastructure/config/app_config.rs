@@ -13,10 +13,8 @@ use std::path::PathBuf;
 pub struct AppConfig {
     /// Google サービスアカウントJSONキーのパス
     pub google_service_account_key_path: PathBuf,
-    /// Slack Bot User OAuth Token (xoxb-...)
-    pub slack_bot_token: String,
-    /// Socket Mode用のSlack App-Level Token (xapp-...)
-    pub slack_app_token: String,
+    /// Slackボットのトークン（未設定ならSlackボットと予約者へのDMを動かさない）
+    pub slack: Option<SlackTokens>,
     /// リソース設定ファイルのパス
     pub resource_config_path: PathBuf,
     /// ID紐付けファイルのパス
@@ -56,4 +54,25 @@ pub struct AppConfig {
     pub mcp_tls_cert_file: Option<PathBuf>,
     /// MCPサーバーのTLS秘密鍵ファイルのパス（PEM形式、未設定ならTLS無効）
     pub mcp_tls_key_file: Option<PathBuf>,
+}
+
+/// Slackボットのトークン
+///
+/// 2つはそろって初めて意味を持つ（片方だけでは接続できない）ため、組で持つ。
+#[derive(Clone)]
+pub struct SlackTokens {
+    /// Bot User OAuth Token（xoxb-...）
+    pub bot_token: String,
+    /// Socket Mode用のApp-Level Token（xapp-...）
+    pub app_token: String,
+}
+
+impl std::fmt::Debug for SlackTokens {
+    /// 設定をログやエラーに出してもトークンが漏れないよう、値は伏せる
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SlackTokens")
+            .field("bot_token", &"<redacted>")
+            .field("app_token", &"<redacted>")
+            .finish()
+    }
 }
