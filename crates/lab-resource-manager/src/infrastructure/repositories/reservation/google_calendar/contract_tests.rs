@@ -189,10 +189,7 @@ impl Calendar {
             "LRM_CONTRACT_SERVICE_ACCOUNT_KEYにサービスアカウントの鍵ファイルのパスを設定してください（.env.contract）",
         );
         // 相対パスはリポジトリ直下から数える
-        let key = repository_root()
-            .join(key)
-            .to_string_lossy()
-            .into_owned();
+        let key = repository_root().join(key).to_string_lossy().into_owned();
         let (gateway, service_account_email) = GoogleCalendarEventGateway::connect(&key)
             .await
             .expect("サービスアカウントでGoogle Calendar APIにつなげません");
