@@ -18,6 +18,7 @@
 //! | 今で終了 | [`Reservation::end_slot_early`] | 進行中の予約枠を今の時点で締め、残りの時間を空きに戻すこと。使った分は予約枠として残る |
 //! | 取り消し | [`Reservation::cancel`]、[`Reservation::cancel_slot`] | 予約や予約枠を無かったことにすること。単発予約の予約枠を取り消すと、その予約も取り消される |
 //! | 版 | [`Version`] | 保存先での予約の版。読んだときと同じ版のときだけ書き戻せる |
+//! | リソースの一覧 | [`ResourceCatalog`] | 予約できるリソース。利用者の指定（[`ResourceSelection`]）はこれに照らして予約の対象になる |
 //! | 空き | `ResourceAvailability` | どの予約枠とも重ならない時間 |
 //! | 実利用 | `ObservedUsage` | 実際にリソースが使われている様子。予約とは別に観測し、予約枠と突き合わせる |
 //!
@@ -57,5 +58,5 @@ pub use recurring::{Exception, ExceptionChange, RecurringSchedule};
 pub use reserved_slot::ReservedSlot;
 pub use value_objects::{
     OccurrenceKey, RecurrenceEnd, RecurrenceFrequency, RecurrenceRule, ReservationId,
-    ReservedSlotId, Version,
+    ReservedSlotId, ResourceCatalog, ResourceSelection, ResourceSelectionError, Version,
 };

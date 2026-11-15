@@ -2,7 +2,7 @@ use crate::application::error::ApplicationError;
 use crate::application::{Clock, SystemClock};
 use crate::domain::aggregates::reservation::{
     OccurrenceKey, Reservation,
-    value_objects::{ReservedSlotId, Resource},
+    value_objects::{ReservedSlotId, Resource, ResourceCatalog, ResourceSelection},
 };
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
@@ -25,6 +25,7 @@ type SessionKey = (String, DateTime<Utc>, Vec<String>);
 /// 同じ観測セッションに対する受諾が複数回起きても予約は1件に保たれる必要がある。
 pub struct AcceptReservationProposalUseCase<R: ReservationRepository + ReservedSlotQuery> {
     repository: Arc<R>,
+    catalog: Arc<ResourceCatalog>,
     conflict_checker: ResourceConflictChecker,
     /// この機会について確定した予約のID
     ///
@@ -36,9 +37,14 @@ pub struct AcceptReservationProposalUseCase<R: ReservationRepository + ReservedS
 
 impl<R: ReservationRepository + ReservedSlotQuery> AcceptReservationProposalUseCase<R> {
     /// 新しいユースケースインスタンスを作成
-    pub fn new(repository: Arc<R>) -> Self {
+    ///
+    /// # Arguments
+    /// * `repository` - 予約を保存し、既存の予約枠との競合を確かめるリポジトリ
+    /// * `catalog` - 予約できるリソースの一覧
+    pub fn new(repository: Arc<R>, catalog: Arc<ResourceCatalog>) -> Self {
         Self {
             repository,
+            catalog,
             conflict_checker: ResourceConflictChecker::new(),
             settled_sessions: tokio::sync::Mutex::new(HashMap::new()),
             clock: Arc::new(SystemClock),
@@ -57,7 +63,7 @@ impl<R: ReservationRepository + ReservedSlotQuery> AcceptReservationProposalUseC
     ///
     /// # Arguments
     /// * `holder_email` - 予約者
-    /// * `resources` - 実利用が観測されたリソース
+    /// * `selection` - 実利用が観測されたリソースの指定
     /// * `active_since` - 実利用の開始時刻。どの機会への受諾かを見分けるために使う
     /// * `duration` - 受諾された利用時間
     ///
@@ -65,15 +71,17 @@ impl<R: ReservationRepository + ReservedSlotQuery> AcceptReservationProposalUseC
     /// 作成または更新された予約のID
     ///
     /// # Errors
+    /// - 指定されたリソースが予約できるリソースの一覧に無い場合
     /// - 他の予約と競合する場合
     /// - リポジトリエラー
     pub async fn execute(
         &self,
         holder_email: EmailAddress,
-        resources: Vec<Resource>,
+        selection: &ResourceSelection,
         active_since: DateTime<Utc>,
         duration: Duration,
     ) -> Result<ReservedSlotId, ApplicationError> {
+        let resources = self.catalog.select(selection)?;
         // 予約は受諾した時点から始める。実利用の開始時刻を起点にすると、長く使い続けて
         // いる利用者では作った瞬間に終わっている予約になり、リソースを押さえられない。
         // 事後予約が果たす役割は、これから先を他の人に使われないようにすることである。
@@ -205,7 +213,8 @@ mod tests {
     fn usecase<R: ReservationRepository + ReservedSlotQuery>(
         repository: Arc<R>,
     ) -> AcceptReservationProposalUseCase<R> {
-        AcceptReservationProposalUseCase::new(repository)
+        let catalog = ResourceCatalog::new((0..8).map(gpu));
+        AcceptReservationProposalUseCase::new(repository, Arc::new(catalog))
             .with_clock(Arc::new(FixedClock::at(now())))
     }
 
@@ -215,6 +224,10 @@ mod tests {
             device_number,
             "A100".to_string(),
         ))
+    }
+
+    fn gpus(device_numbers: &[u32]) -> ResourceSelection {
+        ResourceSelection::gpus("Thalys", device_numbers.to_vec())
     }
 
     fn email(address: &str) -> EmailAddress {
@@ -267,7 +280,7 @@ mod tests {
         let returned_id = usecase
             .execute(
                 email("holder@example.com"),
-                vec![gpu(0), gpu(1)],
+                &gpus(&[0, 1]),
                 active_since,
                 Duration::hours(12),
             )
@@ -304,7 +317,7 @@ mod tests {
         usecase
             .execute(
                 email("holder@example.com"),
-                vec![gpu(0)],
+                &gpus(&[0]),
                 active_since,
                 Duration::hours(12),
             )
@@ -333,7 +346,7 @@ mod tests {
         usecase
             .execute(
                 email("holder@example.com"),
-                vec![gpu(0)],
+                &gpus(&[0]),
                 active_since,
                 Duration::hours(2),
             )
@@ -359,7 +372,7 @@ mod tests {
         usecase
             .execute(
                 email("holder@example.com"),
-                vec![gpu(0), gpu(1)],
+                &gpus(&[0, 1]),
                 active_since,
                 Duration::hours(3),
             )
@@ -397,7 +410,7 @@ mod tests {
         let result = usecase
             .execute(
                 email("holder@example.com"),
-                vec![gpu(0)],
+                &gpus(&[0]),
                 active_since,
                 Duration::hours(3),
             )
@@ -432,7 +445,7 @@ mod tests {
         usecase
             .execute(
                 email("holder@example.com"),
-                vec![gpu(1)],
+                &gpus(&[1]),
                 active_since,
                 Duration::hours(2),
             )
@@ -545,7 +558,7 @@ mod tests {
                 usecase
                     .execute(
                         email("holder@example.com"),
-                        vec![gpu(5)],
+                        &gpus(&[5]),
                         active_since,
                         Duration::hours(1),
                     )
@@ -558,7 +571,7 @@ mod tests {
                 usecase
                     .execute(
                         email("holder@example.com"),
-                        vec![gpu(5)],
+                        &gpus(&[5]),
                         active_since,
                         Duration::hours(1),
                     )
@@ -586,7 +599,7 @@ mod tests {
         let first = usecase
             .execute(
                 email("holder@example.com"),
-                vec![gpu(5)],
+                &gpus(&[5]),
                 active_since,
                 Duration::hours(1),
             )
@@ -597,7 +610,7 @@ mod tests {
         let second = usecase
             .execute(
                 email("holder@example.com"),
-                vec![gpu(5)],
+                &gpus(&[5]),
                 active_since,
                 Duration::hours(12),
             )
@@ -628,7 +641,7 @@ mod tests {
         usecase
             .execute(
                 email("holder@example.com"),
-                vec![gpu(0)],
+                &gpus(&[0]),
                 active_since,
                 Duration::hours(1),
             )
@@ -663,7 +676,7 @@ mod tests {
         let result = usecase
             .execute(
                 email("holder@example.com"),
-                vec![gpu(0)],
+                &gpus(&[0]),
                 active_since,
                 Duration::hours(1),
             )

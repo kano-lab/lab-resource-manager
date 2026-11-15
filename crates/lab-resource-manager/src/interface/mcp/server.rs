@@ -11,7 +11,6 @@ use crate::application::usecases::{
     GetReservedSlotUseCase, ListReservedSlotsHeldByUseCase, ListReservedSlotsUseCase,
     UpdateReservedSlotUseCase,
 };
-use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
 use crate::domain::aggregates::reservation::{ReservationEvent, ReservationId, ReservedSlotId};
 use crate::domain::common::EmailAddress;
 use crate::domain::common::TimePeriod;
@@ -21,7 +20,7 @@ use crate::interface::mcp::auth::ResolvedCaller;
 use crate::interface::mcp::dto::{
     CheckAvailabilityParams, CreateReservationParams, ReservationDto, ReservationIdParams,
     ReservedSlotDto, ReservedSlotIdParams, ResourceAvailabilityDto, ResourceCatalogDto,
-    UpdateReservedSlotParams, resources_to_check,
+    UpdateReservedSlotParams,
 };
 use rmcp::ErrorData;
 use rmcp::handler::server::tool::Extension;
@@ -137,65 +136,6 @@ where
         }
     }
 
-    /// `create_reservation`のリソース解決（`view_submissions/reserve.rs`と同型のロジック）
-    fn resolve_resources(&self, params: &CreateReservationParams) -> Result<Vec<Resource>, String> {
-        match params.resource_type.as_str() {
-            "gpu" => {
-                let server_name = params
-                    .server
-                    .clone()
-                    .ok_or("GPU予約にはserverの指定が必要です")?;
-                let server_config = self
-                    .resource_config
-                    .get_server(&server_name)
-                    .ok_or_else(|| format!("サーバー {} が見つかりません", server_name))?;
-
-                let device_numbers = params.device_numbers.clone().unwrap_or_default();
-
-                if device_numbers.is_empty() {
-                    // デバイス未指定の場合はサーバーの全デバイスを対象にする
-                    Ok(server_config
-                        .devices
-                        .iter()
-                        .map(|device| {
-                            Resource::Gpu(Gpu::new(
-                                server_name.clone(),
-                                device.id,
-                                device.model.clone(),
-                            ))
-                        })
-                        .collect())
-                } else {
-                    device_numbers
-                        .iter()
-                        .map(|device_id| {
-                            server_config
-                                .devices
-                                .iter()
-                                .find(|d| d.id == *device_id)
-                                .map(|d| {
-                                    Resource::Gpu(Gpu::new(
-                                        server_name.clone(),
-                                        d.id,
-                                        d.model.clone(),
-                                    ))
-                                })
-                                .ok_or_else(|| format!("デバイス {} が見つかりません", device_id))
-                        })
-                        .collect()
-                }
-            }
-            "room" => {
-                let room_name = params
-                    .room
-                    .clone()
-                    .ok_or("部屋予約にはroomの指定が必要です")?;
-                Ok(vec![Resource::Room { name: room_name }])
-            }
-            other => Err(format!("不明なresource_type: {}", other)),
-        }
-    }
-
     #[tool(
         description = "予約できるリソース（GPUサーバーとそのデバイス番号・モデル、部屋）を一覧表示する。create_reservationに指定できる名前と番号はここで確認できる"
     )]
@@ -222,21 +162,15 @@ where
             )));
         }
 
-        let resources = match resources_to_check(
-            &self.resource_config,
-            params.server.as_deref(),
-            params.room.as_deref(),
-        ) {
-            Ok(resources) => resources,
-            Err(message) => return Ok(tool_error(message)),
+        let selections = params.selections();
+        let check = &self.usecases.check_resource_availability;
+        let availabilities = if selections.is_empty() {
+            check.execute(&window).await
+        } else {
+            check.execute_for(&selections, &window).await
         };
 
-        match self
-            .usecases
-            .check_resource_availability
-            .execute(&resources, &window)
-            .await
-        {
+        match availabilities {
             Ok(availabilities) => {
                 let dtos: Vec<ResourceAvailabilityDto> = availabilities
                     .iter()
@@ -326,15 +260,15 @@ where
             Err(e) => return Ok(tool_error(e)),
         };
 
-        let resources = match self.resolve_resources(&params) {
-            Ok(resources) => resources,
+        let selection = match params.selection() {
+            Ok(selection) => selection,
             Err(message) => return Ok(tool_error(message)),
         };
 
         match self
             .usecases
             .create_reservation
-            .execute(caller, time_period, resources, params.notes)
+            .execute(caller, time_period, &selection, params.notes)
             .await
         {
             Ok(reservation_id) => Ok(success_text(&format!(

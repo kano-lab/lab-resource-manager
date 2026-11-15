@@ -1,7 +1,7 @@
 //! リソース予約モーダル送信ハンドラ
 
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::reservation::value_objects::resource::{Gpu, Resource};
+use crate::domain::aggregates::reservation::value_objects::ResourceSelection;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::interface::slack::app::SlackApp;
 use crate::interface::slack::constants::*;
@@ -57,79 +57,12 @@ where
     let holder_email = user_resolver::resolve_user_email(&user_id, identity_repo).await?;
     debug!(holder = %holder_email, "resolved holder");
 
-    // Extract resources based on type
-    let resource_type_val = resource_type.as_str();
-    let resources: Vec<Resource> = if resource_type_val == "gpu" {
-        // Get server name
-        let server_name = extract_form_data::get_selected_option_text(
-            view_submission,
-            ACTION_RESERVE_SERVER_SELECT,
-        )
-        .ok_or("サーバーが選択されていません")?;
-        debug!(server = %server_name, "selected server");
-
-        // Get server config
-        let server_config = config
-            .servers
-            .iter()
-            .find(|s| s.name == server_name)
-            .ok_or_else(|| format!("サーバー {} が見つかりません", server_name))?;
-
-        // Get selected devices (optional)
-        let device_id_values =
-            extract_form_data::get_selected_options(view_submission, ACTION_RESERVE_DEVICES);
-        debug!(devices = device_id_values.len(), "selected devices");
-
-        if device_id_values.is_empty() {
-            // No specific devices selected - reserve entire server (all devices)
-            server_config
-                .devices
-                .iter()
-                .map(|device| {
-                    Resource::Gpu(Gpu::new(
-                        server_name.clone(),
-                        device.id,
-                        device.model.clone(),
-                    ))
-                })
-                .collect()
-        } else {
-            // Parse device IDs from values
-            let mut gpu_resources = Vec::new();
-            for id_str in device_id_values {
-                let device_id = id_str
-                    .parse::<u32>()
-                    .map_err(|e| format!("デバイスIDのパースに失敗: {} ({})", id_str, e))?;
-                let device = server_config
-                    .devices
-                    .iter()
-                    .find(|d| d.id == device_id)
-                    .ok_or_else(|| format!("デバイス {} が見つかりません", device_id))?;
-                gpu_resources.push(Resource::Gpu(Gpu::new(
-                    server_name.clone(),
-                    device.id,
-                    device.model.clone(),
-                )));
-            }
-            gpu_resources
-        }
-    } else if resource_type_val == "room" {
-        let room_name = extract_form_data::get_selected_option_text(
-            view_submission,
-            ACTION_RESERVE_ROOM_SELECT,
-        )
-        .ok_or("部屋が選択されていません")?;
-        debug!(room = %room_name, "selected room");
-        vec![Resource::Room { name: room_name }]
-    } else {
-        return Err(format!("不明なリソースタイプ: {}", resource_type_val).into());
-    };
-
-    debug!(resources = ?resources, "resolved resources");
+    let selection = selection_from(view_submission, &resource_type)?;
+    debug!(selection = ?selection, "selected resources");
 
     // 結果のログでも参照するため、ユースケースへ渡す前に控えておく
     let logged_holder = holder_email.clone();
-    let logged_resources = format!("{:?}", resources);
+    let logged_resources = format!("{:?}", selection);
     let logged_start = time_period.start();
     let logged_end = time_period.end();
 
@@ -138,7 +71,7 @@ where
         .execute(
             crate::domain::common::EmailAddress::new(holder_email)?,
             time_period,
-            resources,
+            &selection,
             notes,
         )
         .await;
@@ -203,4 +136,41 @@ where
 
     // モーダルを閉じる
     Ok(None)
+}
+
+/// フォームで選ばれたリソースの指定
+///
+/// GPUはデバイスを選ばなければサーバーのすべてのデバイスを指す。
+fn selection_from(
+    view_submission: &SlackInteractionViewSubmissionEvent,
+    resource_type: &str,
+) -> Result<ResourceSelection, Box<dyn std::error::Error + Send + Sync>> {
+    match resource_type {
+        "gpu" => {
+            let server = extract_form_data::get_selected_option_text(
+                view_submission,
+                ACTION_RESERVE_SERVER_SELECT,
+            )
+            .ok_or("サーバーが選択されていません")?;
+            let device_numbers =
+                extract_form_data::get_selected_options(view_submission, ACTION_RESERVE_DEVICES)
+                    .iter()
+                    .map(|value| {
+                        value
+                            .parse::<u32>()
+                            .map_err(|e| format!("デバイスIDのパースに失敗: {} ({})", value, e))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+            Ok(ResourceSelection::gpus(server, device_numbers))
+        }
+        "room" => {
+            let room = extract_form_data::get_selected_option_text(
+                view_submission,
+                ACTION_RESERVE_ROOM_SELECT,
+            )
+            .ok_or("部屋が選択されていません")?;
+            Ok(ResourceSelection::room(room))
+        }
+        other => Err(format!("不明なリソースタイプ: {}", other).into()),
+    }
 }

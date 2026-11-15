@@ -1,7 +1,7 @@
 //! 事後予約提案の受諾ボタンハンドラ
 
 use crate::application::error::ApplicationError;
-use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
+use crate::domain::aggregates::reservation::value_objects::ResourceSelection;
 use crate::domain::common::EmailAddress;
 use crate::domain::ports::repositories::{ReservationRepository, ReservedSlotQuery};
 use crate::domain::services::reservation::errors::ResourceConflictError;
@@ -200,14 +200,18 @@ where
         "accepting a post-hoc reservation proposal"
     );
 
-    let resources = resolve_gpu_resources(app, &payload.server, &payload.device_numbers)?;
+    // 提案は観測されたデバイスを番号で指す。番号が無い提案をサーバー全体と読み替えない
+    let selection = ResourceSelection::Devices {
+        server: payload.server,
+        device_numbers: payload.device_numbers,
+    };
     let holder_email = EmailAddress::new(payload.holder_email)?;
 
     app.usecases()
         .accept_reservation_proposal
         .execute(
             holder_email.clone(),
-            resources,
+            &selection,
             payload.active_since,
             Duration::minutes(payload.duration_minutes),
         )
@@ -220,47 +224,11 @@ where
     Ok(())
 }
 
-/// デバイス番号からGPUリソースを復元する
-///
-/// モデル名はボタンのペイロードに載せていないため、リソース設定から引く。
-fn resolve_gpu_resources<R>(
-    app: &SlackApp<R>,
-    server_name: &str,
-    device_numbers: &[u32],
-) -> Result<Vec<Resource>, Box<dyn std::error::Error + Send + Sync>>
-where
-    R: ReservationRepository + ReservedSlotQuery + Send + Sync + 'static,
-{
-    let server = app
-        .resource_config()
-        .get_server(server_name)
-        .ok_or_else(|| format!("サーバーが見つかりません: {}", server_name))?;
-
-    device_numbers
-        .iter()
-        .map(|device_number| {
-            let device = server
-                .devices
-                .iter()
-                .find(|device| device.id == *device_number)
-                .ok_or_else(|| {
-                    format!("デバイス{}が{}に存在しません", device_number, server_name)
-                })?;
-
-            Ok(Resource::Gpu(Gpu::new(
-                server_name.to_string(),
-                *device_number,
-                device.model.clone(),
-            )))
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::aggregates::reservation::value_objects::{Gpu, Resource};
     use crate::domain::common::TimePeriod;
-    use crate::domain::services::reservation::errors::ResourceConflictError;
     use chrono::Utc;
 
     fn gpu(device_number: u32) -> Resource {
