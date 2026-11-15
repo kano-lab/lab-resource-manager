@@ -1,0 +1,43 @@
+# Release configuration (https://release-plz.dev/docs/config)
+#
+# The two crates are versioned by different contracts:
+#
+# - lab-resource-manager (the application) follows what operators rely on:
+#   configuration, data files, the systemd unit, Slack commands and MCP tools.
+#   Its version comes from commit messages, and `!` is reserved for changes that
+#   break that contract. deploy/auto-update.sh applies minor and patch releases
+#   on its own and leaves majors to an administrator.
+# - lab-resource-manager-core (the library) follows its Rust API. Breaking API
+#   changes are found by cargo-semver-checks, not declared in commit messages,
+#   so a library-only break does not make the application major.
+#
+# See docs/VERSIONING.md.
+
+[workspace]
+# Release only when the release pull request is merged.
+release_always = false
+# Propose a release only for changes operators or library users notice;
+# refactors, documentation and tests wait for the next one.
+release_commits = "^(feat|fix|perf)"
+pr_labels = ["release"]
+
+[[package]]
+name = "lab-resource-manager"
+changelog_path = "CHANGELOG.md"
+# deploy/auto-update.sh and existing installations look for vX.Y.Z tags.
+git_tag_name = "v{{ version }}"
+git_release_name = "v{{ version }}"
+# Its Rust API is internal to the binaries and not part of its contract.
+semver_check = false
+# A change in the library reaches operators only through a new application
+# release, so library commits are listed here too and bump it by at most a patch.
+changelog_include = ["lab-resource-manager-core"]
+
+[[package]]
+name = "lab-resource-manager-core"
+changelog_path = "crates/core/CHANGELOG.md"
+git_tag_name = "lab-resource-manager-core-v{{ version }}"
+# Tag only. A GitHub release of the library would become the repository's
+# "latest" release and point operators who download the application at it.
+# Library users get the changelog on crates.io and docs.rs.
+git_release_enable = false

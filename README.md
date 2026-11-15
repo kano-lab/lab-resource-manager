@@ -28,6 +28,7 @@ A resource reservation management system for laboratories.
 
 - **Users**: See [User Guide](docs/USER_GUIDE.md)
 - **Administrators**: See [Admin Guide](docs/ADMIN_GUIDE.md)
+- **Contributors**: See [Versioning](docs/VERSIONING.md) for how the application and the library are versioned
 
 ## Architecture
 
